@@ -1,0 +1,73 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+
+    <!-- PLAYER FRAME -->
+    <Frame name="UFL_PlayerFrame" inherits="SecureUnitButtonTemplate" parent="UIParent" hidden="true">
+        <Size x="160" y="35"/>
+        <Anchors>
+            <Anchor point="CENTER" relativePoint="CENTER" x="-220" y="-160"/>
+        </Anchors>
+        <Attributes>
+            <Attribute name="unit" value="player"/>
+        </Attributes>
+
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBG" parentKey="bg" setAllPoints="true">
+                    <Color r="0" g="0" b="0" a="0.35"/>
+                </Texture>
+            </Layer>
+
+            <Layer level="ARTWORK">
+                <Texture name="$parentHP" parentKey="hp">
+                    <Anchors>
+                        <Anchor point="LEFT" relativePoint="LEFT"/>
+                    </Anchors>
+                    <Size x="160" y="35"/>
+                    <Color r="0.2" g="0.8" b="0.2" a="1"/>
+                </Texture>
+
+                <FontString name="$parentText" parentKey="text" inherits="GameFontNormal" justifyH="CENTER">
+                    <Anchors>
+                        <Anchor point="CENTER"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+    </Frame>
+
+    <!-- TARGET FRAME -->
+    <Frame name="UFL_TargetFrame" inherits="SecureUnitButtonTemplate" parent="UIParent" hidden="true">
+        <Size x="160" y="35"/>
+        <Anchors>
+            <Anchor point="CENTER" relativePoint="CENTER" x="220" y="-160"/>
+        </Anchors>
+        <Attributes>
+            <Attribute name="unit" value="target"/>
+        </Attributes>
+
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBG" parentKey="bg" setAllPoints="true">
+                    <Color r="0" g="0" b="0" a="0.35"/>
+                </Texture>
+            </Layer>
+
+            <Layer level="ARTWORK">
+                <Texture name="$parentHP" parentKey="hp">
+                    <Anchors>
+                        <Anchor point="LEFT" relativePoint="LEFT"/>
+                    </Anchors>
+                    <Size x="160" y="35"/>
+                    <Color r="0.8" g="0.2" b="0.2" a="1"/>
+                </Texture>
+
+                <FontString name="$parentText" parentKey="text" inherits="GameFontNormal" justifyH="CENTER">
+                    <Anchors>
+                        <Anchor point="CENTER"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+    </Frame>
+
+</Ui>
