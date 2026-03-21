@@ -23,7 +23,14 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         statusbarTexture = "Blizzard",
         enabled       = true,
         reverseFill   = false,
-        portrait      = "Portrait Off",
+        portrait      = "Portrait Off",  -- legacy, kept for backwards compat
+        portraitMode  = "None",           -- "None" | "2D" | "3D" | "Unit Type"
+        portraitSide  = "Left",           -- "Left" | "Right"
+        portraitClamp = true,             -- clamp to unit frame dimensions
+        portraitW     = 35,               -- custom width when not clamped
+        portraitH     = 35,               -- custom height when not clamped
+        portraitX     = 0,               -- custom X offset when not clamped
+        portraitY     = 0,               -- custom Y offset when not clamped
         locked        = false,
         frameWidth    = 160,
         frameHeight   = 35,
@@ -34,12 +41,17 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showLevel     = true,
         showPowerBar  = false,
         showPowerText = false,
-        showResources     = true,
-        resourcePipWidth  = 18,
-        resourcePipHeight = 6,
-        resourcePipGap    = 3,
-        resourceX         = 0,
-        resourceY         = 0,
+        showResources        = true,
+        useBlizzResource     = false,   -- true = control Blizzard class resource bar instead of UFL pips
+        hideBlizzResourceBar = false,   -- true = suppress Blizzard bar via alpha regardless of source
+        resourcePipWidth     = 18,
+        resourcePipHeight    = 6,
+        resourcePipGap       = 3,
+        resourceX            = 0,
+        resourceY            = 0,
+        resourceAlpha        = 1.0,
+        resourceShowInCombat = false,   -- if true, only show in combat
+        resourceShowWithTarget = false, -- if true, also show when target exists
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -599,6 +611,7 @@ function UnitFramesLite_UpdateFrame(unit)
         frame.hp:Hide()
         if frame.power then frame.power:Hide() end
         frame.bg:SetColorTexture(0, 0, 0, 0)
+        if frame.portraitFrame then frame.portraitFrame:Hide() end
 
         local sz          = math.max(20, db.sphereSize or 80)
         local fillDir     = db.sphereFillDir  or "VERTICAL"
@@ -754,6 +767,7 @@ function UnitFramesLite_UpdateFrame(unit)
         if frame.orbFill2        then frame.orbFill2:Hide()       end
         if frame.orbBorderFrame  then frame.orbBorderFrame:Hide() end
         if frame.powerRingFrame  then frame.powerRingFrame:Hide() end
+        -- Portrait frame is hidden when sphere mode is active (handled in portrait block below)
 
         frame.hp:Show()
         frame.hp:SetWidth(w)
@@ -810,6 +824,76 @@ function UnitFramesLite_UpdateFrame(unit)
             db.levelTextX or 0, db.levelTextY or 0, db.levelTextAlign   or "CENTER")
     end
 
+    -- Portrait (bar mode only) ------------------------------------------------
+    if frame.portraitFrame then
+        local pMode  = db.portraitMode or "None"
+        local pSide  = db.portraitSide or "Left"
+        local clamp  = db.portraitClamp ~= false
+
+        if pMode == "None" or db.sphereMode then
+            frame.portraitFrame:Hide()
+        else
+            local pf = frame.portraitFrame
+            local pw, ph
+            if clamp then
+                -- Clamp: height = frame height, width = height (square)
+                ph = h
+                pw = h
+            else
+                pw = db.portraitW or h
+                ph = db.portraitH or h
+            end
+
+            pf:SetSize(pw, ph)
+            pf:ClearAllPoints()
+            if clamp then
+                -- Attach directly to the display frame edge
+                if pSide == "Left" then
+                    pf:SetPoint("RIGHT", frame, "LEFT", 0, 0)
+                else
+                    pf:SetPoint("LEFT",  frame, "RIGHT", 0, 0)
+                end
+            else
+                -- Freely positioned relative to frame centre
+                local px = db.portraitX or 0
+                local py = db.portraitY or 0
+                if pSide == "Left" then
+                    pf:SetPoint("RIGHT", frame, "LEFT",  px, py)
+                else
+                    pf:SetPoint("LEFT",  frame, "RIGHT", px, py)
+                end
+            end
+
+            -- Show correct sub-widget
+            if pMode == "2D" then
+                frame.portrait2D:Show()
+                if frame.portrait3D then frame.portrait3D:Hide() end
+                SetPortraitTexture(frame.portrait2D, unit)
+            elseif pMode == "3D" then
+                frame.portrait2D:Hide()
+                if frame.portrait3D then
+                    frame.portrait3D:Show()
+                    frame.portrait3D:SetUnit(unit)
+                end
+            elseif pMode == "Unit Type" then
+                frame.portrait2D:Hide()
+                if frame.portrait3D then
+                    frame.portrait3D:Show()
+                    -- Use creature model for non-player-controlled units; player model otherwise
+                    local isPlayer = UnitIsPlayer(unit)
+                    if isPlayer then
+                        frame.portrait3D:SetUnit(unit)
+                    else
+                        frame.portrait3D:SetCreature(UnitCreatureFamily(unit) or 0)
+                        frame.portrait3D:SetUnit(unit)  -- fallback sets the model correctly
+                    end
+                end
+            end
+
+            pf:Show()
+        end
+    end
+
     -- Bar border: always shown in bar mode, hidden in sphere mode
     if frame.borderFrame then
         if not db.sphereMode then
@@ -829,8 +913,9 @@ function UnitFramesLite_UpdateFrame(unit)
     UnitFramesLite_UpdateVisibility(unit)
     UnitFramesLite_UpdateAlpha(unit)
     if frame.OnUFLUpdate then frame:OnUFLUpdate() end
-    if unit == "player" and UnitFramesLite_UpdateResourceLayout then
-        UnitFramesLite_UpdateResourceLayout()
+    if unit == "player" then
+        if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
+        if UnitFramesLite_UpdateResourceVisibility then UnitFramesLite_UpdateResourceVisibility() end
     end
 end
 
@@ -853,7 +938,7 @@ function UnitFramesLite_CopyUnit(srcUnit, destUnit, mirror)
     -- Restore position (don't move the frame)
     dest.x = ox or dest.x
     dest.y = oy or dest.y
-    -- Mirror X text offsets if requested
+    -- Mirror X text offsets and portrait side if requested
     if mirror then
         dest.nameTextX  = -(dest.nameTextX  or 0)
         dest.hpTextX    = -(dest.hpTextX    or 0)
@@ -866,6 +951,10 @@ function UnitFramesLite_CopyUnit(srcUnit, destUnit, mirror)
         elseif dest.hpTextAlign == "RIGHT" then dest.hpTextAlign = "LEFT" end
         if dest.levelTextAlign == "LEFT" then dest.levelTextAlign = "RIGHT"
         elseif dest.levelTextAlign == "RIGHT" then dest.levelTextAlign = "LEFT" end
+        -- Mirror portrait: flip side and negate custom X offset
+        if dest.portraitSide == "Left" then dest.portraitSide = "Right"
+        elseif dest.portraitSide == "Right" then dest.portraitSide = "Left" end
+        dest.portraitX = -(dest.portraitX or 0)
     end
     UnitFramesLite_UpdateFrame(destUnit)
 end
@@ -943,6 +1032,81 @@ function UnitFramesLite_ProfileDelete(name)
 end
 
 -- Blizzard frame visibility --------------------------------------------------
+
+-- Per-class Blizzard resource bar frame names
+local BLIZZ_RESOURCE_FRAME = {
+    ROGUE       = "RogueComboPointBarFrame",
+    DRUID       = "DruidComboPointBarFrame",
+    WARLOCK     = "WarlockPowerFrame",
+    MAGE        = "MageArcaneChargesFrame",
+    MONK        = "MonkHarmonyBarFrame",
+    PALADIN     = "PaladinPowerBarFrame",
+    DEATHKNIGHT = "RuneFrame",
+    EVOKER      = "EssencePlayerFrame",
+}
+
+-- Returns the Blizzard resource frame for the player's class, or nil
+local function GetBlizzResourceFrame()
+    local cls = GetPlayerClass()
+    local name = cls and BLIZZ_RESOURCE_FRAME[cls]
+    return name and _G[name]
+end
+
+-- Unified: applies show/hide/alpha/position to whichever resource bar is active.
+-- Called on combat state changes, target changes, and when settings change.
+function UnitFramesLite_UpdateResourceVisibility()
+    local db = GetDB("player")
+    local inCombat   = UnitAffectingCombat("player")
+    local hasTarget  = UnitExists("target")
+
+    -- Determine if we should show
+    local shouldShow = true
+    if db.showResources == false then
+        shouldShow = false
+    elseif db.resourceShowInCombat and not db.resourceShowWithTarget then
+        -- in-combat only
+        shouldShow = inCombat
+    elseif db.resourceShowWithTarget and not db.resourceShowInCombat then
+        -- target-only
+        shouldShow = hasTarget
+    elseif db.resourceShowInCombat and db.resourceShowWithTarget then
+        -- either
+        shouldShow = inCombat or hasTarget
+    end
+    -- always-show if neither flag set
+
+    local alpha = db.resourceAlpha or 1.0
+
+    local bf = GetBlizzResourceFrame()
+
+    if db.useBlizzResource then
+        -- Show Blizzard bar, hide UFL pips
+        if bf then
+            bf:SetAlpha(shouldShow and alpha or 0)
+            -- Don't call Show/Hide on Blizzard frames — use alpha only to avoid taint
+        end
+        if resourceFrame then resourceFrame:SetAlpha(0) end
+    else
+        -- Show UFL pips, suppress Blizzard bar (via alpha)
+        if bf then
+            -- Suppress if user has ticked "hide Blizzard resource bar" OR we are using UFL pips
+            bf:SetAlpha(0)
+        end
+        if resourceFrame then
+            if shouldShow then
+                resourceFrame:SetAlpha(alpha)
+                UnitFramesLite_UpdateResourceLayout()
+            else
+                resourceFrame:SetAlpha(0)
+            end
+        end
+    end
+
+    -- Independent "just hide Blizzard resource bar" option (regardless of source)
+    if db.hideBlizzResourceBar and bf then
+        bf:SetAlpha(0)
+    end
+end
 
 local BLIZZ_FRAMES = {
     hideBlizzPlayer = {"PlayerFrame"},
@@ -1086,6 +1250,25 @@ local function SetupFrame(displayFrame, unit)
     displayFrame:HookScript("OnHide", function() textOverlay:Hide() end)
     displayFrame:HookScript("OnShow", function() textOverlay:Show() end)
 
+    -- ── Portrait ──────────────────────────────────────────────────────────
+    -- portraitFrame holds either a 2D texture or a 3D model.
+    -- Parented to UIParent so it sits beside (not inside) the unit frame.
+    local portraitFrame = CreateFrame("Frame", nil, UIParent)
+    portraitFrame:Hide()
+    portraitFrame:SetFrameLevel(displayFrame:GetFrameLevel() + 1)
+    displayFrame.portraitFrame = portraitFrame
+
+    -- 2D portrait texture (used for "2D" mode)
+    local portrait2D = portraitFrame:CreateTexture(nil, "ARTWORK")
+    portrait2D:SetAllPoints()
+    displayFrame.portrait2D = portrait2D
+
+    -- 3D portrait model (used for "3D" and "Unit Type" modes)
+    local portrait3D = CreateFrame("PlayerModel", nil, portraitFrame)
+    portrait3D:SetAllPoints()
+    portrait3D:Hide()
+    displayFrame.portrait3D = portrait3D
+
     -- ── Power ring (behind orb) ───────────────────────────────────────────
     local powerRingFrame = CreateFrame("Frame", nil, displayFrame)
     powerRingFrame:Hide()
@@ -1163,14 +1346,16 @@ local function SetupFrame(displayFrame, unit)
 
     -- ── Event listener ────────────────────────────────────────────────────
     local listener = CreateFrame("Frame")
-    listener:RegisterUnitEvent("UNIT_HEALTH",         unit)
-    listener:RegisterUnitEvent("UNIT_MAXHEALTH",      unit)
-    listener:RegisterUnitEvent("UNIT_NAME_UPDATE",    unit)
-    listener:RegisterUnitEvent("UNIT_FLAGS",          unit)
-    listener:RegisterUnitEvent("UNIT_LEVEL",          unit)
-    listener:RegisterUnitEvent("UNIT_POWER_UPDATE",   unit)
-    listener:RegisterUnitEvent("UNIT_POWER_FREQUENT", unit)
-    listener:RegisterUnitEvent("UNIT_DISPLAYPOWER",   unit)
+    listener:RegisterUnitEvent("UNIT_HEALTH",          unit)
+    listener:RegisterUnitEvent("UNIT_MAXHEALTH",       unit)
+    listener:RegisterUnitEvent("UNIT_NAME_UPDATE",     unit)
+    listener:RegisterUnitEvent("UNIT_FLAGS",           unit)
+    listener:RegisterUnitEvent("UNIT_LEVEL",           unit)
+    listener:RegisterUnitEvent("UNIT_POWER_UPDATE",    unit)
+    listener:RegisterUnitEvent("UNIT_POWER_FREQUENT",  unit)
+    listener:RegisterUnitEvent("UNIT_DISPLAYPOWER",    unit)
+    listener:RegisterUnitEvent("UNIT_PORTRAIT_UPDATE", unit)
+    listener:RegisterUnitEvent("UNIT_MODEL_CHANGED",   unit)
     if unit == "target" then listener:RegisterEvent("PLAYER_TARGET_CHANGED") end
     if unit == "focus"  then listener:RegisterEvent("PLAYER_FOCUS_CHANGED")  end
     if unit == "pet"    then listener:RegisterEvent("UNIT_PET")               end
@@ -1318,6 +1503,16 @@ local function SetupFrame(displayFrame, unit)
                 displayFrame.levelText:Hide()
             end
         end
+
+        -- Portrait texture/model refresh (only if portrait is shown)
+        if displayFrame.portraitFrame and displayFrame.portraitFrame:IsShown() then
+            local pMode = db.portraitMode or "None"
+            if pMode == "2D" and displayFrame.portrait2D then
+                SetPortraitTexture(displayFrame.portrait2D, unit)
+            elseif (pMode == "3D" or pMode == "Unit Type") and displayFrame.portrait3D then
+                displayFrame.portrait3D:SetUnit(unit)
+            end
+        end
     end
 
     listener:SetScript("OnEvent", function() Update() end)
@@ -1348,10 +1543,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         UnitFramesLiteDB = UnitFramesLiteDB or {}
         -- Global (non-unit) settings
         UnitFramesLiteDB.global = UnitFramesLiteDB.global or {
-            hideBlizzPlayer = false,
-            hideBlizzTarget = false,
-            hideBlizzFocus  = false,
-            hideBlizzPet    = false,
+            hideBlizzPlayer   = false,
+            hideBlizzTarget   = false,
+            hideBlizzFocus    = false,
+            hideBlizzPet      = false,
         }
         -- Profiles table: { active="Default", profiles={ Default={player={...}, target={...}, ...} } }
         UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
@@ -1376,10 +1571,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         UnitFramesLite_ApplyBlizzardFrames()
         SetupResourcePips()
         RegisterResourceOnUpdate(eventFrame)
+        UnitFramesLite_UpdateResourceVisibility()
     elseif event == "PLAYER_TARGET_CHANGED" then
         UnitFramesLite_UpdateVisibility("target")
         UnitFramesLite_UpdateAlpha("player")
         UnitFramesLite_UpdateAlpha("target")
+        UnitFramesLite_UpdateResourceVisibility()
     elseif event == "PLAYER_FOCUS_CHANGED" then
         UnitFramesLite_UpdateVisibility("focus")
         UnitFramesLite_UpdateAlpha("focus")
@@ -1392,11 +1589,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         SetupResourcePips()
         UnitFramesLite_UpdateResourceLayout()
         UpdateResourcePips()
+        UnitFramesLite_UpdateResourceVisibility()
     elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then
         for unit in pairs(frames) do
             UnitFramesLite_UpdateAlpha(unit)
             UnitFramesLite_UpdateVisibility(unit)
         end
+        UnitFramesLite_UpdateResourceVisibility()
     else
         for unit in pairs(frames) do UnitFramesLite_UpdateVisibility(unit) end
     end
