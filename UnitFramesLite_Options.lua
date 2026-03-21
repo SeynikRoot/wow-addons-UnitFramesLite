@@ -612,11 +612,15 @@ local function BuildOrbContent(content, unit, getDB, panel)
     s,b,r = CreateNudgeSlider(content,"Ring Thickness (px)",4,40,1, x,-394,160,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s,b,r
 
-    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -438,
+    CreateLabel(content, "Ring Background Colour", x, -426)
+    local ringBgBtn = CreateColorSwatch(content, x + 220, -426, getDB, "orbPowerRingBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = ringBgBtn
+
+    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -482,
         function() return getDB().orbPowerRingCCW or false end,
         function(v) getDB().orbPowerRingCCW = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -466,
+    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -510,
         function() return getDB().orbPowerRingUseTypeColor ~= false end,
         function(v)
             getDB().orbPowerRingUseTypeColor = v
@@ -624,7 +628,7 @@ local function BuildOrbContent(content, unit, getDB, panel)
             UnitFramesLite_UpdateFrame(unit)
         end)
 
-    local ringColBtn = CreateColorSwatch(content, x + 220, -466, getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local ringColBtn = CreateColorSwatch(content, x + 220, -510, getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringColBtn
     panel.ringColBtn = ringColBtn
 

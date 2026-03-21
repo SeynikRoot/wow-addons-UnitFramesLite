@@ -75,6 +75,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         orbPowerRingCCW          = false,
         orbPowerRingUseTypeColor = true,
         orbPowerRingColor        = {0, 0.5, 1, 1},
+        orbPowerRingBgColor      = {0, 0, 0, 0.9},
     }
 end
 
@@ -430,8 +431,8 @@ function UnitFramesLite_UpdateFrame(unit)
             prf:ClearAllPoints()
             prf:SetPoint("CENTER", orbFrame, "CENTER", 0, 0)
 
-            local rc = db.barBG or {0, 0, 0, 0.9}
-            frame.powerRingBg:SetColorTexture(rc[1]*0.3, rc[2]*0.3, rc[3]*0.3, 0.9)
+            local rc = db.orbPowerRingBgColor or {0, 0, 0, 0.9}
+            frame.powerRingBg:SetColorTexture(rc[1], rc[2], rc[3], rc[4])
 
             -- Re-apply mask after SetStatusBarTexture
             local function SetupRingBar(bar)
