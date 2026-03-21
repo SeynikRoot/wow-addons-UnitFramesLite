@@ -4,36 +4,93 @@ _G.UnitFramesLite = UFL
 
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 
--- Defaults
+local ORB_MASK = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
+
+-- Defaults -------------------------------------------------------------------
+
+local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, orbEnd)
+    return {
+        x = x, y = y,
+        font = "Friz Quadrata TT",
+        nameAlign = "LEFT",
+        hpColor = {1, 1, 1, 1},
+        barBG = {0, 0, 0, 0.35},
+        useSolidColor = false,
+        solidColor    = solidColor,
+        gradientStart = gradStart,
+        gradientEnd   = gradEnd,
+        gradientDir   = "HORIZONTAL",
+        statusbarTexture = "Blizzard",
+        enabled       = true,
+        reverseFill   = false,
+        portrait      = "Portrait Off",
+        locked        = false,
+        frameWidth    = 160,
+        frameHeight   = 35,
+        hpBarHeight   = 0,
+        showName      = true,
+        showHPText    = true,
+        showHPPct     = false,
+        showLevel     = true,
+        showPowerBar  = false,
+        showPowerText = false,
+        hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
+        hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
+        nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
+        hpTextFontSize   = 11, hpTextX   = 0, hpTextY   = 0,
+        levelTextFontSize= 11, levelTextX= 0, levelTextY= 0,
+        -- Per-element text colors
+        nameColor        = {1, 1, 1, 1},
+        hpTextColor      = {1, 1, 1, 1},
+        hpPctColor       = {1, 1, 1, 1},
+        levelColor       = {1, 1, 1, 1},
+        -- Per-element text alignments
+        hpTextAlign      = "CENTER",
+        levelTextAlign   = "CENTER",
+        -- HP Percent (independent of HP text)
+        hpPctShowSymbol  = true,
+        hpPctFontSize    = 11, hpPctX = 0, hpPctY = -14,
+        hpPctAlign       = "CENTER",
+        loadMounted = false, loadInVehicle = false, loadResting  = false,
+        loadStealthed = false, loadInCombat = false, loadOutOfCombat = false,
+        loadSolo = false, loadInGroup = false, loadInInstance = false,
+        syncAlpha = false, keepTextVisible = false,
+        alphaAffects = "Everything",
+        alphaCombat = 1.0, alphaOutCombat = 1.0,
+        fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
+        barBorderEnabled = false, barBorderThickness = 1,
+        barBorderColor = {0, 0, 0, 1},
+        -- Orb
+        sphereMode        = false,
+        sphereSize        = 80,
+        sphereFillDir     = "VERTICAL",
+        orbGradientDir    = "VERTICAL",   -- gradient direction (independent of fill dir)
+        orbUseSolidColor  = false,
+        orbSolidColor     = orbStart,
+        orbGradientStart  = orbStart,
+        orbGradientEnd    = orbEnd,
+        -- Power ring
+        showOrbPower             = false,
+        orbPowerRingThickness    = 8,
+        orbPowerRingCCW          = false,
+        orbPowerRingUseTypeColor = true,
+        orbPowerRingColor        = {0, 0.5, 1, 1},
+    }
+end
+
 local defaults = {
-    player = {
-        x = -220, y = -160,
-        font = "Friz Quadrata TT",
-        fontSize = 14,
-        nameAlign = "LEFT",
-        hpColor = {1, 1, 1, 1},
-        barBG = {0, 0, 0, 0.35},
-        useSolidColor = false,
-        solidColor = {0.2, 0.8, 0.2, 1},
-        gradientStart = {0.2, 0.8, 0.2, 1},
-        gradientEnd   = {0.1, 0.4, 0.1, 1},
-        gradientDir   = "HORIZONTAL",
-        statusbarTexture = "Blizzard",
-    },
-    target = {
-        x = 220, y = -160,
-        font = "Friz Quadrata TT",
-        fontSize = 14,
-        nameAlign = "LEFT",
-        hpColor = {1, 1, 1, 1},
-        barBG = {0, 0, 0, 0.35},
-        useSolidColor = false,
-        solidColor = {0.8, 0.2, 0.2, 1},
-        gradientStart = {0.8, 0.2, 0.2, 1},
-        gradientEnd   = {0.4, 0.1, 0.1, 1},
-        gradientDir   = "HORIZONTAL",
-        statusbarTexture = "Blizzard",
-    },
+    player = MakeUnitDefaults(-220, -160,
+        {0.2,0.8,0.2,1}, {0.2,0.8,0.2,1}, {0.1,0.4,0.1,1},
+        {0.2,0.5,0.9,1}, {0.05,0.15,0.6,1}),
+    target = MakeUnitDefaults( 220, -160,
+        {0.8,0.2,0.2,1}, {0.8,0.2,0.2,1}, {0.4,0.1,0.1,1},
+        {0.9,0.3,0.1,1}, {0.5,0.1,0.05,1}),
+    focus  = MakeUnitDefaults(   0, -220,
+        {0.6,0.1,0.9,1}, {0.6,0.1,0.9,1}, {0.3,0.05,0.5,1},
+        {0.5,0.1,0.9,1}, {0.25,0.05,0.45,1}),
+    pet    = MakeUnitDefaults(-220, -240,
+        {0.1,0.7,0.4,1}, {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1},
+        {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1}),
 }
 
 local frames = {}
@@ -52,68 +109,485 @@ end
 
 local function GetDB(unit)
     UnitFramesLiteDB = UnitFramesLiteDB or {}
-    UnitFramesLiteDB[unit] = CopyDefaults(defaults[unit], UnitFramesLiteDB[unit] or {})
+    local def = defaults[unit] or defaults.player
+    UnitFramesLiteDB[unit] = CopyDefaults(def, UnitFramesLiteDB[unit] or {})
     return UnitFramesLiteDB[unit]
 end
 
-local function SetTextAlignment(fontString, align)
-    fontString:ClearAllPoints()
-    if align == "LEFT" then
-        fontString:SetPoint("LEFT", fontString:GetParent(), "LEFT", 4, 0)
-        fontString:SetJustifyH("LEFT")
-    elseif align == "RIGHT" then
-        fontString:SetPoint("RIGHT", fontString:GetParent(), "RIGHT", -4, 0)
-        fontString:SetJustifyH("RIGHT")
-    else
-        fontString:SetPoint("CENTER", fontString:GetParent(), "CENTER", 0, 0)
-        fontString:SetJustifyH("CENTER")
-    end
+-- Visibility -----------------------------------------------------------------
+
+local function CheckLoadConditions(unit)
+    local db = GetDB(unit)
+    local anySet = db.loadMounted or db.loadInVehicle or db.loadResting or
+                   db.loadStealthed or db.loadInCombat or db.loadOutOfCombat or
+                   db.loadSolo or db.loadInGroup or db.loadInInstance
+    if not anySet then return true end
+    if db.loadMounted     and IsMounted()                       then return true end
+    if db.loadInVehicle   and UnitInVehicle("player")           then return true end
+    if db.loadResting     and IsResting()                       then return true end
+    if db.loadStealthed   and IsStealthed()                     then return true end
+    if db.loadInCombat    and UnitAffectingCombat("player")     then return true end
+    if db.loadOutOfCombat and not UnitAffectingCombat("player") then return true end
+    if db.loadSolo        and not IsInGroup()                   then return true end
+    if db.loadInGroup     and IsInGroup()                       then return true end
+    if db.loadInInstance  and IsInInstance()                    then return true end
+    return false
 end
+
+function UnitFramesLite_UpdateVisibility(unit)
+    local frame = frames[unit]
+    if not frame then return end
+    local db = GetDB(unit)
+    if not db.enabled then frame:Hide(); return end
+    -- Hide unit-specific frames when unit doesn't exist
+    if unit ~= "player" and not UnitExists(unit) then frame:Hide(); return end
+    frame:SetShown(CheckLoadConditions(unit))
+end
+
+-- Alpha ----------------------------------------------------------------------
+
+function UnitFramesLite_UpdateAlpha(unit)
+    local frame = frames[unit]
+    if not frame then return end
+    local db = GetDB(unit)
+
+    local alphaDB = (unit == "target" and db.syncAlpha) and GetDB("player") or db
+    local inCombat = UnitAffectingCombat("player")
+    local alpha = inCombat and (alphaDB.alphaCombat or 1) or (alphaDB.alphaOutCombat or 1)
+
+    if unit == "player" and db.fadeNoTarget and not UnitExists("target") then
+        alpha = db.fadeNoTargetAlpha or 0.4
+    end
+
+    local textAlpha = db.keepTextVisible and 1 or alpha
+    local affects   = alphaDB.alphaAffects or "Everything"
+
+    if affects == "Foreground" then
+        frame.hp:SetAlpha(alpha)
+        if frame.power      then frame.power:SetAlpha(alpha) end
+        frame.bg:SetAlpha(1)
+        if frame.orbFill    then frame.orbFill:SetAlpha(alpha) end
+        if frame.orbFill2   then frame.orbFill2:SetAlpha(alpha) end
+    elseif affects == "Background" then
+        frame.bg:SetAlpha(alpha)
+        frame.hp:SetAlpha(1)
+        if frame.power      then frame.power:SetAlpha(1) end
+        if frame.orbFill    then frame.orbFill:SetAlpha(1) end
+        if frame.orbFill2   then frame.orbFill2:SetAlpha(1) end
+        if frame.orbBg      then frame.orbBg:SetAlpha(alpha) end
+    else
+        frame.hp:SetAlpha(alpha)
+        if frame.power      then frame.power:SetAlpha(alpha) end
+        frame.bg:SetAlpha(alpha)
+        if frame.orbFill    then frame.orbFill:SetAlpha(alpha) end
+        if frame.orbFill2   then frame.orbFill2:SetAlpha(alpha) end
+        if frame.orbBg      then frame.orbBg:SetAlpha(alpha) end
+    end
+
+    -- Apply to power ring as well
+    if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(alpha) end
+
+    -- Set alpha on the overlay frame AND directly on each FontString.
+    -- The HIGH strata of textOverlay can cause alpha inheritance issues in WoW,
+    -- so we belt-and-suspenders by setting both the frame and each text element.
+    if frame.textOverlay then frame.textOverlay:SetAlpha(textAlpha) end
+    if frame.nameText    then frame.nameText:SetAlpha(textAlpha)    end
+    if frame.hpText      then frame.hpText:SetAlpha(textAlpha)      end
+    if frame.hpPctText   then frame.hpPctText:SetAlpha(textAlpha)   end
+    if frame.levelText   then frame.levelText:SetAlpha(textAlpha)   end
+end
+
+-- Health text ----------------------------------------------------------------
+-- content: "Cur / Max" | "Current" | "Max"
+-- format:  "Full" (raw integers) | "Short" (÷1000, "k" suffix)
+--
+-- pcall guards ALL arithmetic/format on secret health values (WoW 12.0+).
+-- string.format("%d", secretNum) is safe and returns a secret string.
+-- secretNum / 1000 is arithmetic and throws — caught by pcall, returns nil.
+-- NEVER compare the return value to another string — only compare to nil.
+local function GetHealthText(hp, maxhp, isDead, content, format)
+    if isDead then return nil end
+    local isShort = (format == "Short")
+    local ok, text = pcall(function()
+        if content == "Current" then
+            if isShort then return string.format("%.0fk", hp / 1000)
+            else             return string.format("%d", hp) end
+        elseif content == "Max" then
+            if isShort then return string.format("%.0fk", maxhp / 1000)
+            else             return string.format("%d", maxhp) end
+        else  -- "Cur / Max" (default)
+            if isShort then return string.format("%.0fk / %.0fk", hp / 1000, maxhp / 1000)
+            else             return string.format("%d / %d", hp, maxhp) end
+        end
+    end)
+    return ok and text or nil
+end
+
+local function GetHPPercentText(isDead, showSymbol, unit)
+    if isDead then return nil end
+    local sym = (showSymbol ~= false) and "%" or ""
+    -- Every health API returns secret numbers in 12.x — arithmetic and comparison
+    -- all taint. string.format("%s") is the only safe extraction: it calls tostring
+    -- internally and returns a plain string for secret numbers.
+    -- We use string.find (returns plain number positions, never secret) to branch,
+    -- and string.sub/gsub to extract the percentage digits without comparison.
+    local ok, result = pcall(function()
+        local pct = UnitHealthPercent(unit)
+        -- %s on a secret number returns a plain string ("0.75", "1", "0", etc.)
+        local s = string.format("%s", pct)
+        -- Use string.find to check for a "." — returns plain numbers (positions) or nil.
+        local dot = string.find(s, ".", 1, true)
+        if not dot then
+            -- No decimal: "0" or "1" — use %d formatting on a known-plain string
+            -- to get "0" or "100" without any secret-number ops.
+            local n = string.find(s, "^1")  -- plain number result, safe
+            if n then return "100" .. sym end
+            return "0" .. sym
+        end
+        -- Has decimal: "0.75", "0.08", etc. Extract digits after the dot.
+        local frac = string.sub(s, dot + 1, dot + 2)  -- "75", "08"
+        -- Strip a leading zero via gsub pattern (no comparison)
+        frac = string.gsub(frac, "^0(%d)", "%1")       -- "08"->"8", "75"->"75"
+        -- Handle empty result from gsub (shouldn't happen but be safe)
+        frac = string.gsub(frac, "^$", "0")
+        return frac .. sym
+    end)
+    return ok and result or nil
+end
+
+-- Font resolution helper -----------------------------------------------------
+-- Resolves a per-element font key (e.g. "nameFont") with fallback to db.font.
+
+local function ResolveFont(db, elemKey)
+    local name = db[elemKey] or db.font
+    if LSM and name then return LSM:Fetch("font", name) or STANDARD_TEXT_FONT end
+    return STANDARD_TEXT_FONT
+end
+
+-- Text element helper --------------------------------------------------------
+
+local function ApplyTextElement(fs, anchorFrame, fontPath, fontSize, color, x, y, justifyH)
+    if not fs then return end
+    fs:SetFont(fontPath, fontSize or 12, "OUTLINE")
+    if color then fs:SetTextColor(color[1], color[2], color[3], color[4]) end
+    fs:ClearAllPoints()
+    fs:SetPoint("CENTER", anchorFrame, "CENTER", x or 0, y or 0)
+    fs:SetWidth(anchorFrame:GetWidth() - 4)
+    fs:SetJustifyH(justifyH or "CENTER")
+end
+
+-- Orb fill helper ------------------------------------------------------------
+-- reversedGrad: used for the lower half of CENTRE mode — swaps gradient start/end
+-- vertically so the orb centre is always gradientStart (bright) with no seam.
+
+local function ApplyOrbFill(bar, db, circMask, reversedGrad)
+    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    if db.orbUseSolidColor then
+        local c = db.orbSolidColor or {0.1, 0.3, 0.9, 1}
+        bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+    else
+        bar:SetStatusBarColor(1, 1, 1, 1)
+        local gs   = db.orbGradientStart or {0.2, 0.5, 0.9, 1}
+        local ge   = db.orbGradientEnd   or {0.05, 0.15, 0.6, 1}
+        local gDir = db.orbGradientDir   or "VERTICAL"
+        -- CENTRE gradient uses VERTICAL internally; the two-half split in
+        -- UpdateFrame creates the radial effect. reversedGrad flips the lower half
+        -- so both halves are bright at the orb centre with no visible seam.
+        local effectiveDir = (gDir == "CENTRE") and "VERTICAL" or gDir
+        local sbTex = bar:GetStatusBarTexture()
+        if sbTex then
+            if reversedGrad and effectiveDir == "VERTICAL" then
+                sbTex:SetGradient(effectiveDir,
+                    CreateColor(ge[1], ge[2], ge[3], ge[4]),
+                    CreateColor(gs[1], gs[2], gs[3], gs[4]))
+            else
+                sbTex:SetGradient(effectiveDir,
+                    CreateColor(gs[1], gs[2], gs[3], gs[4]),
+                    CreateColor(ge[1], ge[2], ge[3], ge[4]))
+            end
+        end
+    end
+    local sbTex = bar:GetStatusBarTexture()
+    if sbTex and circMask then sbTex:AddMaskTexture(circMask) end
+end
+
+-- Power ring fill helper -----------------------------------------------------
+
+local POWER_COLORS = {}
+local function SetPC(key, r, g, b)
+    if key ~= nil then POWER_COLORS[key] = {r, g, b} end
+end
+SetPC(Enum.PowerType.Mana,        0.00, 0.00, 1.00)
+SetPC(Enum.PowerType.Rage,        1.00, 0.00, 0.00)
+SetPC(Enum.PowerType.Focus,       1.00, 0.50, 0.25)
+SetPC(Enum.PowerType.Energy,      1.00, 1.00, 0.00)
+SetPC(Enum.PowerType.ComboPoints, 1.00, 0.96, 0.41)
+SetPC(Enum.PowerType.RunicPower,  0.00, 0.82, 1.00)
+SetPC(Enum.PowerType.Fury,        0.79, 0.26, 0.99)
+SetPC(Enum.PowerType.Pain,        1.00, 0.61, 0.00)
+SetPC(Enum.PowerType.Essence,     0.31, 1.00, 0.74)
+
+local function GetPowerColor(unit)
+    local pt = UnitPowerType(unit)
+    return (pt and POWER_COLORS[pt]) or {0, 0, 1}
+end
+
+local function UpdatePowerColor(frame, unit)
+    if not frame.power then return end
+    local c = GetPowerColor(unit)
+    frame.power:SetStatusBarColor(c[1], c[2], c[3], 1)
+end
+
+local function ApplyPowerRingColor(frame, unit)
+    local db = GetDB(unit)
+    local c
+    if db.orbPowerRingUseTypeColor then
+        c = GetPowerColor(unit)
+    else
+        c = db.orbPowerRingColor or {0, 0.5, 1, 1}
+    end
+    if frame.powerRingFillR then frame.powerRingFillR:SetStatusBarColor(c[1], c[2], c[3], 1) end
+    if frame.powerRingFillL then frame.powerRingFillL:SetStatusBarColor(c[1], c[2], c[3], 1) end
+end
+
+-- Update frame layout --------------------------------------------------------
 
 function UnitFramesLite_UpdateFrame(unit)
     local frame = frames[unit]
     if not frame then return end
-
     local db = GetDB(unit)
 
+    local w = db.frameWidth  or 160
+    local h = db.frameHeight or 35
+    frame:SetSize(w, h)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", db.x or 0, db.y or 0)
 
-    -- Background panel
     local br, bg, bb, ba = unpack(db.barBG)
     frame.bg:SetColorTexture(br, bg, bb, ba)
 
-    -- Health bar colour: solid or gradient
-    if db.useSolidColor then
-        local sr, sg, sb, sa = unpack(db.solidColor)
-        frame.hp:SetColorTexture(sr, sg, sb, sa)
-    else
-        local texPath = "Interface\\TARGETINGFRAME\\UI-StatusBar"
-        if LSM and db.statusbarTexture then
-            texPath = LSM:Fetch("statusbar", db.statusbarTexture) or texPath
+    local barH = (db.hpBarHeight and db.hpBarHeight > 0) and db.hpBarHeight or h
+
+    if db.sphereMode then
+        -- ── Orb / sphere mode ─────────────────────────────────────────────
+        frame.hp:Hide()
+        if frame.power then frame.power:Hide() end
+        frame.bg:SetColorTexture(0, 0, 0, 0)
+
+        local sz          = math.max(20, db.sphereSize or 80)
+        local fillDir     = db.sphereFillDir  or "VERTICAL"
+        local gradDir     = db.orbGradientDir or "VERTICAL"
+        local orbFrame    = frame.orbFrame
+        orbFrame:SetSize(sz, sz)
+        orbFrame:ClearAllPoints()
+        orbFrame:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        orbFrame:Show()
+
+        -- Background circle
+        local bc = db.barBG or {0, 0, 0, 0.9}
+        frame.orbBg:SetColorTexture(bc[1], bc[2], bc[3], math.max(0.7, bc[4]))
+
+        -- Fill bars
+        -- When Gradient Direction is CENTRE the orb is split into lower and upper
+        -- halves. Each half tracks health independently (scaled per-half via Update).
+        -- The reversed gradient on the lower half ensures both halves meet at the
+        -- orbGradientStart colour at the centre, creating a seamless radial glow.
+        if gradDir == "CENTRE" then
+            local halfSz = sz / 2
+            -- Lower half (bottom of orb)
+            frame.orbFill:ClearAllPoints()
+            frame.orbFill:SetPoint("BOTTOMLEFT", orbFrame, "BOTTOMLEFT", 0, 0)
+            frame.orbFill:SetSize(sz, halfSz)
+            frame.orbFill:SetOrientation(fillDir)
+            frame.orbFill:SetReverseFill(db.reverseFill or false)
+            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true)   -- reversed gradient
+            if frame.orbFill2 then
+                -- Upper half (top of orb)
+                frame.orbFill2:ClearAllPoints()
+                frame.orbFill2:SetPoint("TOPLEFT", orbFrame, "TOPLEFT", 0, 0)
+                frame.orbFill2:SetSize(sz, halfSz)
+                frame.orbFill2:SetOrientation(fillDir)
+                frame.orbFill2:SetReverseFill(db.reverseFill or false)
+                ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false)  -- normal gradient
+                frame.orbFill2:Show()
+            end
+        else
+            frame.orbFill:ClearAllPoints()
+            frame.orbFill:SetAllPoints(orbFrame)
+            frame.orbFill:SetOrientation(fillDir)
+            frame.orbFill:SetReverseFill(db.reverseFill or false)
+            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask)
+            if frame.orbFill2 then frame.orbFill2:Hide() end
         end
-        frame.hp:SetTexture(texPath)
-        local dir = db.gradientDir or "HORIZONTAL"
-        local sr, sg, sb, sa = unpack(db.gradientStart)
-        local er, eg, eb, ea = unpack(db.gradientEnd)
-        frame.hp:SetGradient(dir, CreateColor(sr, sg, sb, sa), CreateColor(er, eg, eb, ea))
+
+        -- Power ring
+        if db.showOrbPower and frame.powerRingFrame then
+            local thick    = math.max(4, db.orbPowerRingThickness or 8)
+            local ringSz   = sz + thick * 2
+            local halfRing = ringSz / 2
+            local prf      = frame.powerRingFrame
+            prf:SetSize(ringSz, ringSz)
+            prf:ClearAllPoints()
+            prf:SetPoint("CENTER", orbFrame, "CENTER", 0, 0)
+
+            local rc = db.barBG or {0, 0, 0, 0.9}
+            frame.powerRingBg:SetColorTexture(rc[1]*0.3, rc[2]*0.3, rc[3]*0.3, 0.9)
+
+            -- Re-apply mask after SetStatusBarTexture
+            local function SetupRingBar(bar)
+                bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+                local st = bar:GetStatusBarTexture()
+                if st and frame.powerRingCircMask then st:AddMaskTexture(frame.powerRingCircMask) end
+            end
+
+            local ccw = db.orbPowerRingCCW or false
+            -- Left half covers the left 50% of the ring frame (TOPLEFT → left-center).
+            -- Anchoring TOPLEFT at prf TOPLEFT ensures the bar spans the full left half
+            -- (top to bottom), not just the lower quarter (old "CENTER" bug).
+            -- CW: left fills top-down (9→12 then 6→9); CCW: left fills bottom-up.
+            frame.powerRingFillL:ClearAllPoints()
+            frame.powerRingFillL:SetPoint("TOPLEFT", prf, "TOPLEFT", 0, 0)
+            frame.powerRingFillL:SetSize(halfRing, ringSz)
+            frame.powerRingFillL:SetOrientation("VERTICAL")
+            frame.powerRingFillL:SetReverseFill(not ccw)  -- CW: top-down; CCW: bottom-up
+            SetupRingBar(frame.powerRingFillL)
+            -- Right half covers the right 50% of the ring frame (TOPRIGHT → right-center).
+            -- CW: right fills bottom-up (3→6 then 12→3); CCW: right fills top-down.
+            frame.powerRingFillR:ClearAllPoints()
+            frame.powerRingFillR:SetPoint("TOPRIGHT", prf, "TOPRIGHT", 0, 0)
+            frame.powerRingFillR:SetSize(halfRing, ringSz)
+            frame.powerRingFillR:SetOrientation("VERTICAL")
+            frame.powerRingFillR:SetReverseFill(ccw)      -- CW: bottom-up; CCW: top-down
+            SetupRingBar(frame.powerRingFillR)
+
+            ApplyPowerRingColor(frame, unit)
+            prf:Show()
+        else
+            if frame.powerRingFrame then frame.powerRingFrame:Hide() end
+        end
+
+        -- Text (uses Text tab settings, positioned relative to orb centre)
+        if frame.nameText then
+            local c = db.nameColor or {1, 1, 1, 1}
+            frame.nameText:SetFont(ResolveFont(db, "nameFont"), db.nameTextFontSize or 12, "OUTLINE")
+            frame.nameText:SetTextColor(c[1], c[2], c[3], c[4])
+            frame.nameText:ClearAllPoints()
+            frame.nameText:SetPoint("CENTER", frame, "CENTER",
+                db.nameTextX or 0, (db.nameTextY or 0) + sz / 2 + 8)
+            frame.nameText:SetWidth(sz + 40)
+            frame.nameText:SetJustifyH(db.nameAlign or "CENTER")
+        end
+        if frame.hpText then
+            local c = db.hpTextColor or {1, 1, 1, 1}
+            frame.hpText:SetFont(ResolveFont(db, "hpTextFont"), db.hpTextFontSize or 11, "OUTLINE")
+            frame.hpText:SetTextColor(c[1], c[2], c[3], c[4])
+            frame.hpText:ClearAllPoints()
+            frame.hpText:SetPoint("CENTER", frame, "CENTER",
+                db.hpTextX or 0, db.hpTextY or 0)
+            frame.hpText:SetWidth(sz - 4)
+            frame.hpText:SetJustifyH(db.hpTextAlign or "CENTER")
+        end
+        if frame.hpPctText then
+            local c = db.hpPctColor or {1, 1, 1, 1}
+            frame.hpPctText:SetFont(ResolveFont(db, "hpPctFont"), db.hpPctFontSize or 11, "OUTLINE")
+            frame.hpPctText:SetTextColor(c[1], c[2], c[3], c[4])
+            frame.hpPctText:ClearAllPoints()
+            frame.hpPctText:SetPoint("CENTER", frame, "CENTER",
+                db.hpPctX or 0, db.hpPctY or -14)
+            frame.hpPctText:SetWidth(sz - 4)
+            frame.hpPctText:SetJustifyH(db.hpPctAlign or "CENTER")
+        end
+        if frame.levelText then
+            local c = db.levelColor or {1, 1, 1, 1}
+            frame.levelText:SetFont(ResolveFont(db, "levelFont"), db.levelTextFontSize or 11, "OUTLINE")
+            frame.levelText:SetTextColor(c[1], c[2], c[3], c[4])
+            frame.levelText:ClearAllPoints()
+            frame.levelText:SetPoint("CENTER", frame, "CENTER",
+                db.levelTextX or 0, (db.levelTextY or 0) - sz / 2 - 8)
+            frame.levelText:SetWidth(sz)
+            frame.levelText:SetJustifyH(db.levelTextAlign or "CENTER")
+        end
+
+    else
+        -- ── Bar mode ──────────────────────────────────────────────────────
+        if frame.orbFrame        then frame.orbFrame:Hide() end
+        if frame.orbFill2        then frame.orbFill2:Hide() end
+        if frame.powerRingFrame  then frame.powerRingFrame:Hide() end
+
+        frame.hp:Show()
+        frame.hp:SetWidth(w)
+
+        if db.useSolidColor then
+            local texPath = "Interface\\TARGETINGFRAME\\UI-StatusBar"
+            if LSM and db.statusbarTexture then
+                texPath = LSM:Fetch("statusbar", db.statusbarTexture) or texPath
+            end
+            frame.hp:SetStatusBarTexture(texPath)
+            local sr, sg, sb, sa = unpack(db.solidColor)
+            frame.hp:SetStatusBarColor(sr, sg, sb, sa)
+        else
+            frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+            frame.hp:SetStatusBarColor(1, 1, 1, 1)
+            local dir = db.gradientDir or "HORIZONTAL"
+            local sr, sg, sb, sa = unpack(db.gradientStart)
+            local er, eg, eb, ea = unpack(db.gradientEnd)
+            local sbTex = frame.hp:GetStatusBarTexture()
+            if sbTex then
+                sbTex:SetGradient(dir,
+                    CreateColor(sr, sg, sb, sa), CreateColor(er, eg, eb, ea))
+            end
+        end
+        frame.hp:SetReverseFill(db.reverseFill or false)
+
+        if frame.power then
+            frame.power:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+            frame.power:SetWidth(w)
+            if db.showPowerBar then
+                local hpH = math.max(10, barH - 8)
+                frame.hp:SetHeight(hpH)
+                frame.power:SetHeight(8)
+                frame.power:Show()
+            else
+                frame.hp:SetHeight(barH)
+                frame.power:Hide()
+            end
+        else
+            frame.hp:SetHeight(barH)
+        end
+
+        ApplyTextElement(frame.nameText,  frame, ResolveFont(db, "nameFont"),
+            db.nameTextFontSize  or 12, db.nameColor    or {1,1,1,1},
+            db.nameTextX  or 0, db.nameTextY  or 0, db.nameAlign        or "LEFT")
+        ApplyTextElement(frame.hpText,    frame, ResolveFont(db, "hpTextFont"),
+            db.hpTextFontSize    or 11, db.hpTextColor  or {1,1,1,1},
+            db.hpTextX    or 0, db.hpTextY    or 0, db.hpTextAlign      or "CENTER")
+        ApplyTextElement(frame.hpPctText, frame, ResolveFont(db, "hpPctFont"),
+            db.hpPctFontSize     or 11, db.hpPctColor   or {1,1,1,1},
+            db.hpPctX     or 0, db.hpPctY     or -14,   db.hpPctAlign   or "CENTER")
+        ApplyTextElement(frame.levelText, frame, ResolveFont(db, "levelFont"),
+            db.levelTextFontSize or 11, db.levelColor   or {1,1,1,1},
+            db.levelTextX or 0, db.levelTextY or 0, db.levelTextAlign   or "CENTER")
     end
 
-    -- Font
-    local fontPath = STANDARD_TEXT_FONT
-    if LSM and db.font then
-        fontPath = LSM:Fetch("font", db.font) or fontPath
+    -- Bar border (bar mode only)
+    if frame.borderFrame then
+        if db.barBorderEnabled and not db.sphereMode then
+            local t = math.max(1, db.barBorderThickness or 1)
+            local c = db.barBorderColor or {0, 0, 0, 1}
+            frame.borderFrame:SetBackdrop({
+                edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = t,
+                insets   = {left=0, right=0, top=0, bottom=0},
+            })
+            frame.borderFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
+            frame.borderFrame:Show()
+        else
+            frame.borderFrame:Hide()
+        end
     end
-    frame.text:SetFont(fontPath, db.fontSize or 14, "OUTLINE")
 
-    local hr, hg, hb, ha = unpack(db.hpColor)
-    frame.text:SetTextColor(hr, hg, hb, ha)
-
-    SetTextAlignment(frame.text, db.nameAlign or "CENTER")
-
-    if frame.OnUFLUpdate then
-        frame:OnUFLUpdate()
-    end
+    UnitFramesLite_UpdateVisibility(unit)
+    UnitFramesLite_UpdateAlpha(unit)
+    if frame.OnUFLUpdate then frame:OnUFLUpdate() end
 end
 
 function UnitFramesLite_SetPosition(unit, x, y)
@@ -122,117 +596,403 @@ function UnitFramesLite_SetPosition(unit, x, y)
     UnitFramesLite_UpdateFrame(unit)
 end
 
-function UnitFramesLite_GetDB(unit)
-    return GetDB(unit)
-end
+function UnitFramesLite_GetDB(unit) return GetDB(unit) end
 
--- Slash commands
+-- Slash commands -------------------------------------------------------------
+
 SLASH_UNITFRAMESLITE1 = "/ufl"
 SLASH_UNITFRAMESLITE2 = "/unitframeslite"
 SlashCmdList["UNITFRAMESLITE"] = function(msg)
     local cmd = (msg or ""):lower():match("^%s*(.-)%s*$")
     if cmd == "" or cmd == "options" or cmd == "opt" then
-        if UnitFramesLite_ShowOptions then
-            UnitFramesLite_ShowOptions()
-        else
-            print("UnitFramesLite: options not ready yet.")
-        end
+        if UnitFramesLite_ShowOptions then UnitFramesLite_ShowOptions()
+        else print("UnitFramesLite: options not ready yet.") end
         return
     end
     if cmd == "reset" then
         UnitFramesLiteDB = {}
-        UnitFramesLiteDB.player = CopyDefaults(defaults.player, {})
-        UnitFramesLiteDB.target = CopyDefaults(defaults.target, {})
-        UnitFramesLite_UpdateFrame("player")
-        UnitFramesLite_UpdateFrame("target")
+        for unit in pairs(defaults) do
+            UnitFramesLiteDB[unit] = CopyDefaults(defaults[unit], {})
+        end
+        for unit in pairs(frames) do UnitFramesLite_UpdateFrame(unit) end
         print("UnitFramesLite: settings reset to defaults.")
         return
     end
-    print("UnitFramesLite commands:")
-    print("  /ufl options  - open options panel")
-    print("  /ufl reset    - reset all settings to defaults")
+    print("UnitFramesLite commands:  /ufl options  /ufl reset")
 end
 
--- Status flag helpers
+-- Status flags ---------------------------------------------------------------
+
 local CLASSIFICATION_LABELS = {
-    worldboss = " [Boss]",
-    rareelite = " [Rare Elite]",
-    elite     = " [Elite]",
-    rare      = " [Rare]",
+    worldboss = " [Boss]", rareelite = " [Rare Elite]",
+    elite = " [Elite]",    rare      = " [Rare]",
 }
 
 local function BuildStatusText(unit)
     local parts = {}
-    if unit == "target" then
+    if unit == "target" or unit == "focus" then
         local label = CLASSIFICATION_LABELS[UnitClassification(unit)]
-        if label then parts[#parts + 1] = label end
+        if label then parts[#parts+1] = label end
     end
-    if UnitIsGhost(unit) then
-        parts[#parts + 1] = " [Ghost]"
-    elseif UnitIsDead(unit) then
-        parts[#parts + 1] = " [Dead]"
-    elseif UnitAffectingCombat(unit) then
-        parts[#parts + 1] = " [Combat]"
-    end
+    if UnitIsGhost(unit)             then parts[#parts+1] = " [Ghost]"
+    elseif UnitIsDead(unit)          then parts[#parts+1] = " [Dead]"
+    elseif UnitAffectingCombat(unit) then parts[#parts+1] = " [Combat]" end
     return table.concat(parts)
 end
 
--- Frame setup (no fade animations — they caused continuous flashing)
-local function SetupFrame(frame, unit)
-    if not frame then return end
-    frames[unit] = frame
+-- Frame setup ----------------------------------------------------------------
 
-    RegisterStateDriver(frame, "visibility", "show")
-
-    -- Events
-    frame:RegisterUnitEvent("UNIT_HEALTH",      unit)
-    frame:RegisterUnitEvent("UNIT_MAXHEALTH",   unit)
-    frame:RegisterUnitEvent("UNIT_NAME_UPDATE", unit)
-    frame:RegisterUnitEvent("UNIT_FLAGS",       unit)
-    if unit == "target" then
-        frame:RegisterEvent("PLAYER_TARGET_CHANGED")
-    end
-
-    frame.OnUFLUpdate = function()
-        local hp     = UnitHealth(unit)
-        local maxhp  = UnitHealthMax(unit)
-        local name   = UnitName(unit) or unit
-        local isDead = UnitIsDead(unit)
-        local status = BuildStatusText(unit)
-
-        if isDead or maxhp == 0 then
-            frame.text:SetText(name .. status)
-        else
-            frame.text:SetText(string.format("%s%s  %d / %d", name, status, hp, maxhp))
-        end
-
-        local pct = (maxhp > 0 and not isDead) and (hp / maxhp) or 0
-        frame.hp:SetWidth(math.max(1, frame:GetWidth() * pct))
-    end
-
-    frame:SetScript("OnEvent", function(self, event, ...)
-        self:OnUFLUpdate()
-    end)
+-- Dynamically creates a display frame with the same structure as the XML frames.
+-- Used for focus and pet (which are not declared in XML).
+local function CreateUFLDisplayFrame(frameName, defX, defY)
+    if _G[frameName] then return _G[frameName] end   -- already exists (XML)
+    local f = CreateFrame("Button", frameName, UIParent)
+    f:SetSize(160, 35)
+    f:SetPoint("CENTER", UIParent, "CENTER", defX, defY)
+    f:Hide()
+    local bg = f:CreateTexture(frameName.."BG", "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.35)
+    f.bg = bg
+    local hp = CreateFrame("StatusBar", frameName.."HP", f)
+    hp:SetPoint("TOPLEFT", f, "TOPLEFT")
+    hp:SetSize(160, 35)
+    f.hp = hp
+    local power = CreateFrame("StatusBar", frameName.."Power", f)
+    power:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT")
+    power:SetSize(160, 8)
+    power:Hide()
+    f.power = power
+    _G[frameName] = f
+    return f
 end
 
--- Addon lifecycle
+local function SetupFrame(displayFrame, unit)
+    if not displayFrame then return end
+    frames[unit] = displayFrame
+
+    displayFrame:SetMovable(true)
+    displayFrame:EnableMouse(true)
+    displayFrame:RegisterForDrag("LeftButton")
+    displayFrame:SetScript("OnDragStart", function(self)
+        if not GetDB(unit).locked then self:StartMoving() end
+    end)
+    displayFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local cx, cy = self:GetCenter()
+        local px, py = UIParent:GetCenter()
+        if cx and cy and px and py then
+            local db = GetDB(unit)
+            db.x = math.floor(cx - px + 0.5)
+            db.y = math.floor(cy - py + 0.5)
+            self:ClearAllPoints()
+            self:SetPoint("CENTER", UIParent, "CENTER", db.x, db.y)
+        end
+    end)
+
+    if displayFrame.hp    then displayFrame.hp:SetFrameStrata("LOW")    end
+    if displayFrame.power then displayFrame.power:SetFrameStrata("LOW") end
+
+    local parentLevel = displayFrame:GetFrameLevel()
+    local borderFrame = CreateFrame("Frame", nil, displayFrame, "BackdropTemplate")
+    borderFrame:SetAllPoints()
+    borderFrame:SetFrameLevel(parentLevel + 5)
+    borderFrame:Hide()
+    displayFrame.borderFrame = borderFrame
+
+    local textOverlay = CreateFrame("Frame", nil, displayFrame)
+    textOverlay:SetAllPoints()
+    textOverlay:SetFrameStrata("HIGH")
+    displayFrame.textOverlay = textOverlay
+
+    displayFrame.nameText   = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    displayFrame.hpText     = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    displayFrame.hpPctText  = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    displayFrame.levelText  = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+
+    displayFrame:HookScript("OnHide", function() textOverlay:Hide() end)
+    displayFrame:HookScript("OnShow", function() textOverlay:Show() end)
+
+    -- ── Power ring (behind orb) ───────────────────────────────────────────
+    local powerRingFrame = CreateFrame("Frame", nil, displayFrame)
+    powerRingFrame:Hide()
+    displayFrame.powerRingFrame = powerRingFrame
+
+    local powerRingBg = powerRingFrame:CreateTexture(nil, "BACKGROUND")
+    powerRingBg:SetAllPoints()
+    displayFrame.powerRingBg = powerRingBg
+
+    local powerRingCircMask = powerRingFrame:CreateMaskTexture()
+    powerRingCircMask:SetTexture(ORB_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    powerRingCircMask:SetAllPoints()
+    powerRingBg:AddMaskTexture(powerRingCircMask)
+    displayFrame.powerRingCircMask = powerRingCircMask
+
+    -- Right half: fills the 3-o'clock side of the ring
+    local prFillR = CreateFrame("StatusBar", nil, powerRingFrame)
+    prFillR:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    displayFrame.powerRingFillR = prFillR
+    local prStR = prFillR:GetStatusBarTexture()
+    if prStR then prStR:AddMaskTexture(powerRingCircMask) end
+
+    -- Left half: fills the 9-o'clock side
+    local prFillL = CreateFrame("StatusBar", nil, powerRingFrame)
+    prFillL:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    displayFrame.powerRingFillL = prFillL
+    local prStL = prFillL:GetStatusBarTexture()
+    if prStL then prStL:AddMaskTexture(powerRingCircMask) end
+
+    -- ── Orb (above power ring) ────────────────────────────────────────────
+    local orbFrame = CreateFrame("Frame", nil, displayFrame)
+    orbFrame:Hide()
+    -- Ensure orbFrame renders above the ring
+    orbFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 2)
+    displayFrame.orbFrame = orbFrame
+
+    local orbBg = orbFrame:CreateTexture(nil, "BACKGROUND")
+    orbBg:SetAllPoints()
+    displayFrame.orbBg = orbBg
+
+    local orbCircleMask = orbFrame:CreateMaskTexture()
+    orbCircleMask:SetTexture(ORB_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    orbCircleMask:SetAllPoints()
+    orbBg:AddMaskTexture(orbCircleMask)
+    displayFrame.orbCircleMask = orbCircleMask
+
+    local orbFill = CreateFrame("StatusBar", nil, orbFrame)
+    orbFill:SetAllPoints()
+    orbFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    displayFrame.orbFill = orbFill
+    local st = orbFill:GetStatusBarTexture()
+    if st then st:AddMaskTexture(orbCircleMask) end
+
+    local orbFill2 = CreateFrame("StatusBar", nil, orbFrame)
+    orbFill2:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    orbFill2:Hide()
+    displayFrame.orbFill2 = orbFill2
+    local st2 = orbFill2:GetStatusBarTexture()
+    if st2 then st2:AddMaskTexture(orbCircleMask) end
+
+    -- ── Event listener ────────────────────────────────────────────────────
+    local listener = CreateFrame("Frame")
+    listener:RegisterUnitEvent("UNIT_HEALTH",         unit)
+    listener:RegisterUnitEvent("UNIT_MAXHEALTH",      unit)
+    listener:RegisterUnitEvent("UNIT_NAME_UPDATE",    unit)
+    listener:RegisterUnitEvent("UNIT_FLAGS",          unit)
+    listener:RegisterUnitEvent("UNIT_LEVEL",          unit)
+    listener:RegisterUnitEvent("UNIT_POWER_UPDATE",   unit)
+    listener:RegisterUnitEvent("UNIT_POWER_FREQUENT", unit)
+    listener:RegisterUnitEvent("UNIT_DISPLAYPOWER",   unit)
+    if unit == "target" then listener:RegisterEvent("PLAYER_TARGET_CHANGED") end
+    if unit == "focus"  then listener:RegisterEvent("PLAYER_FOCUS_CHANGED")  end
+    if unit == "pet"    then listener:RegisterEvent("UNIT_PET")               end
+
+    local function Update()
+        local hp       = UnitHealth(unit)
+        local maxhp    = UnitHealthMax(unit)
+        local power    = UnitPower(unit)
+        local maxPower = UnitPowerMax(unit)
+        local name     = UnitName(unit) or unit
+        local isDead   = UnitIsDead(unit)
+        local db       = GetDB(unit)
+
+        displayFrame.hp:SetMinMaxValues(0, maxhp)
+        displayFrame.hp:SetValue(isDead and 0 or hp)
+
+        if displayFrame.orbFill then
+            if db.sphereMode and db.orbGradientDir == "CENTRE"
+               and displayFrame.orbFill2 and displayFrame.orbFill2:IsShown() then
+                -- CENTRE gradient: lower half covers 0–50% of health, upper 50–100%.
+                -- Arithmetic on secret health values must be pcall-guarded.
+                local lowerPct, upperPct = 0, 0
+                pcall(function()
+                    if maxhp > 0 then
+                        local pct = hp / maxhp
+                        lowerPct = math.min(1, pct * 2)
+                        upperPct = math.max(0, (pct - 0.5) * 2)
+                    end
+                end)
+                local dead = isDead and 0
+                displayFrame.orbFill:SetMinMaxValues(0, 1)
+                displayFrame.orbFill:SetValue(dead or lowerPct)
+                displayFrame.orbFill2:SetMinMaxValues(0, 1)
+                displayFrame.orbFill2:SetValue(dead or upperPct)
+            else
+                displayFrame.orbFill:SetMinMaxValues(0, maxhp)
+                displayFrame.orbFill:SetValue(isDead and 0 or hp)
+                if displayFrame.orbFill2 then
+                    displayFrame.orbFill2:SetMinMaxValues(0, maxhp)
+                    displayFrame.orbFill2:SetValue(isDead and 0 or hp)
+                end
+            end
+        end
+
+        -- Power bar
+        if displayFrame.power then
+            displayFrame.power:SetMinMaxValues(0, maxPower)
+            displayFrame.power:SetValue(isDead and 0 or power)
+            UpdatePowerColor(displayFrame, unit)
+        end
+
+        -- Power ring — power values may also be secret in arenas/rated PvP,
+        -- so guard the percentage arithmetic with pcall.
+        if displayFrame.powerRingFillR and displayFrame.powerRingFillL and db.showOrbPower then
+            maxPower = maxPower or 0
+            power    = power    or 0
+            local pct = 0
+            local _ok, _result = pcall(function()
+                return (maxPower > 0) and (power / maxPower) or 0
+            end)
+            if _ok then pct = _result or 0 end
+            local ccw     = db.orbPowerRingCCW or false
+            local rFill, lFill
+            if not ccw then
+                -- Clockwise drain from 12 o'clock:
+                -- left fills first (top-down: 9→12, then 6→9) for 0–50%
+                -- right fills second (bottom-up: 3→6, then 12→3) for 50–100%
+                lFill = math.min(1, pct * 2)
+                rFill = math.max(0, (pct - 0.5) * 2)
+            else
+                -- Counter-clockwise drain from 12 o'clock:
+                -- right fills first (top-down: 12→3, then 3→6) for 0–50%
+                -- left fills second (bottom-up: 6→9, then 9→12) for 50–100%
+                rFill = math.min(1, pct * 2)
+                lFill = math.max(0, (pct - 0.5) * 2)
+            end
+            displayFrame.powerRingFillR:SetMinMaxValues(0, 1)
+            displayFrame.powerRingFillR:SetValue(rFill)
+            displayFrame.powerRingFillL:SetMinMaxValues(0, 1)
+            displayFrame.powerRingFillL:SetValue(lFill)
+            ApplyPowerRingColor(displayFrame, unit)
+        end
+
+        -- Name
+        if db.showName ~= false then
+            if displayFrame.nameText then
+                displayFrame.nameText:SetText(name)
+                displayFrame.nameText:Show()
+            end
+        else
+            if displayFrame.nameText then displayFrame.nameText:Hide() end
+        end
+
+        -- HP text
+        -- IMPORTANT: GetHealthText may return a secret string.
+        -- We check hpStr ~= nil (type comparison, safe) rather than comparing
+        -- the string value itself, to avoid the "attempt to compare secret string" error.
+        if displayFrame.hpText then
+            if db.showHPText ~= false then
+                local hpStr   = GetHealthText(hp, maxhp, isDead, db.hpContent, db.hpFormat)
+                local statStr = db.sphereMode and "" or BuildStatusText(unit)
+                -- statStr is always a plain string (our own literals), safe to compare.
+                if hpStr ~= nil or statStr ~= "" then
+                    displayFrame.hpText:SetText((hpStr or "") .. statStr)
+                    displayFrame.hpText:Show()
+                else
+                    displayFrame.hpText:Hide()
+                end
+            else
+                displayFrame.hpText:Hide()
+            end
+        end
+
+        -- HP Percent text (independent of HP text)
+        if displayFrame.hpPctText then
+            if db.showHPPct then
+                local pctStr = GetHPPercentText(isDead, db.hpPctShowSymbol ~= false, unit)
+                if pctStr ~= nil then
+                    displayFrame.hpPctText:SetText(pctStr)
+                    displayFrame.hpPctText:Show()
+                else
+                    displayFrame.hpPctText:Hide()
+                end
+            else
+                displayFrame.hpPctText:Hide()
+            end
+        end
+
+        -- Level (no "L" prefix)
+        if displayFrame.levelText then
+            if db.showLevel ~= false and UnitExists(unit) then
+                local level = UnitLevel(unit)
+                if level and level > 0 then
+                    displayFrame.levelText:SetText(tostring(level))
+                    displayFrame.levelText:Show()
+                elseif level == -1 then
+                    displayFrame.levelText:SetText("??")
+                    displayFrame.levelText:Show()
+                else
+                    displayFrame.levelText:Hide()
+                end
+            else
+                displayFrame.levelText:Hide()
+            end
+        end
+    end
+
+    listener:SetScript("OnEvent", function() Update() end)
+    displayFrame.OnUFLUpdate = Update
+end
+
+-- Addon lifecycle ------------------------------------------------------------
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+eventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
+eventFrame:RegisterEvent("UPDATE_STEALTH")
+eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+eventFrame:RegisterEvent("UNIT_PET")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         UnitFramesLiteDB = UnitFramesLiteDB or {}
-        UnitFramesLiteDB.player = CopyDefaults(defaults.player, UnitFramesLiteDB.player or {})
-        UnitFramesLiteDB.target = CopyDefaults(defaults.target, UnitFramesLiteDB.target or {})
-        -- CreateOptionsPanel is defined in UnitFramesLite_Options.lua
+        for unit, def in pairs(defaults) do
+            UnitFramesLiteDB[unit] = CopyDefaults(def, UnitFramesLiteDB[unit] or {})
+        end
         local ok, err = pcall(CreateOptionsPanel)
         if not ok then
             print("|cffff4444UnitFramesLite|r: options panel error: " .. tostring(err))
         end
     elseif event == "PLAYER_LOGIN" then
+        -- Player and Target are declared in XML; Focus and Pet are dynamic
+        local focusFrame = CreateUFLDisplayFrame("UFL_FocusFrame", 0,    -220)
+        local petFrame   = CreateUFLDisplayFrame("UFL_PetFrame",   -220, -240)
         SetupFrame(UFL_PlayerFrame, "player")
         SetupFrame(UFL_TargetFrame, "target")
-        UnitFramesLite_UpdateFrame("player")
-        UnitFramesLite_UpdateFrame("target")
+        SetupFrame(focusFrame,      "focus")
+        SetupFrame(petFrame,        "pet")
+        for unit in pairs(defaults) do
+            UnitFramesLite_UpdateFrame(unit)
+        end
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        UnitFramesLite_UpdateVisibility("target")
+        UnitFramesLite_UpdateAlpha("player")
+        UnitFramesLite_UpdateAlpha("target")
+    elseif event == "PLAYER_FOCUS_CHANGED" then
+        UnitFramesLite_UpdateVisibility("focus")
+        UnitFramesLite_UpdateAlpha("focus")
+    elseif event == "UNIT_PET" then
+        UnitFramesLite_UpdateVisibility("pet")
+        UnitFramesLite_UpdateAlpha("pet")
+    elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then
+        for unit in pairs(frames) do
+            UnitFramesLite_UpdateAlpha(unit)
+            UnitFramesLite_UpdateVisibility(unit)
+        end
+    else
+        for unit in pairs(frames) do UnitFramesLite_UpdateVisibility(unit) end
     end
+end)
+
+local vehicleFrame = CreateFrame("Frame")
+vehicleFrame:RegisterUnitEvent("UNIT_ENTERED_VEHICLE", "player")
+vehicleFrame:RegisterUnitEvent("UNIT_EXITED_VEHICLE",  "player")
+vehicleFrame:SetScript("OnEvent", function()
+    for unit in pairs(frames) do UnitFramesLite_UpdateVisibility(unit) end
 end)

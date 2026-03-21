@@ -4,13 +4,12 @@ local function GetFontList()
     if not LSM then return {"Friz Quadrata TT"} end
     local list = LSM:List("font"); table.sort(list); return list
 end
-
 local function GetTextureList()
     if not LSM then return {"Blizzard"} end
     local list = LSM:List("statusbar"); table.sort(list); return list
 end
 
--- UI helpers ----------------------------------------------------------------
+-- UI helpers -----------------------------------------------------------------
 
 local function CreateLabel(parent, text, x, y)
     local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -19,41 +18,132 @@ local function CreateLabel(parent, text, x, y)
     return fs
 end
 
-local function CreateNumberBox(parent, width, x, y, onChanged)
-    local eb = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-    eb:SetSize(width, 20)
-    eb:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    eb:SetAutoFocus(false)
-    eb:SetNumeric(true)
-    eb:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-        local v = tonumber(self:GetText())
-        if v then onChanged(v) end
-    end)
-    eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    return eb
+local function CreateCheckbox(parent, label, x, y, getValue, setValue)
+    local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    cb:SetSize(24, 24)
+    cb:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+    fs:SetText(label)
+    cb:SetChecked(getValue())
+    cb:SetScript("OnClick", function(self) setValue(self:GetChecked()) end)
+    cb.Refresh = function(self) self:SetChecked(getValue()) end
+    return cb
 end
 
-local function CreateSlider(parent, label, minVal, maxVal, step, x, y, onChanged)
+local function CreateGroupBox(parent, label, x, y, w, h)
+    local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    f:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    f:SetSize(w, h)
+    f:SetBackdrop({
+        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        tile = true, tileSize = 16, edgeSize = 1,
+        insets = {left=3, right=3, top=3, bottom=3},
+    })
+    f:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+    f:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+    if label and label ~= "" then
+        local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        lbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -5)
+        lbl:SetText(label)
+    end
+    return f
+end
+
+local function CreateNudgeSlider(parent, label, minV, maxV, step, x, y, sliderW, dbKey, getDB, onChange)
+    local lbl = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    lbl:SetText(label)
+
+    local minus = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    minus:SetSize(20, 20)
+    minus:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 15)
+    minus:SetText("-")
+
     local s = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
-    s:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    s:SetMinMaxValues(minVal, maxVal)
+    s:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 22, y - 13)
+    s:SetWidth(sliderW)
+    s:SetMinMaxValues(minV, maxV)
     s:SetValueStep(step)
     s:SetObeyStepOnDrag(true)
-    s.Text:SetText(label)
-    s.Low:SetText(tostring(minVal))
-    s.High:SetText(tostring(maxVal))
-    s:SetScript("OnValueChanged", function(self, v) onChanged(v) end)
-    return s
+    s.Text:SetText(""); s.Low:SetText(""); s.High:SetText("")
+
+    local plus = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    plus:SetSize(20, 20)
+    plus:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 24 + sliderW, y - 15)
+    plus:SetText("+")
+
+    local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    box:SetSize(44, 20)
+    box:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 46 + sliderW, y - 15)
+    box:SetAutoFocus(false)
+
+    local updating = false
+    local function SetVal(v)
+        if updating then return end
+        v = math.max(minV, math.min(maxV, math.floor(v / step + 0.5) * step))
+        getDB()[dbKey] = v
+        updating = true; s:SetValue(v); updating = false
+        box:SetText(tostring(v))
+        onChange()
+    end
+    s:SetScript("OnValueChanged", function(self, v) if not updating then SetVal(v) end end)
+    box:SetScript("OnEnterPressed", function(self) self:ClearFocus(); local v=tonumber(self:GetText()); if v then SetVal(v) end end)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    minus:SetScript("OnClick", function() SetVal((getDB()[dbKey] or 0) - step) end)
+    plus:SetScript("OnClick",  function() SetVal((getDB()[dbKey] or 0) + step) end)
+
+    local function Refresh()
+        local v = getDB()[dbKey] or 0
+        updating = true; s:SetValue(math.max(minV, math.min(maxV, v))); updating = false
+        box:SetText(tostring(v))
+    end
+    Refresh()
+    return s, box, Refresh
 end
 
--- Dropdown: UIDropDownMenu if available, otherwise a simple cycle button.
--- UIDropDownMenu was deprecated in Dragonflight and may be absent in 12.0.
--- x is the visual left edge; the function handles template offset internally.
+local function CreateAlphaSliderRow(parent, label, x, y, dbKey, getDB, onChange)
+    local lbl = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    lbl:SetPoint("TOP", parent, "TOPLEFT", x + 130, y)
+    lbl:SetText(label)
+
+    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 20)
+    slider:SetWidth(260); slider:SetMinMaxValues(0, 1); slider:SetValueStep(0.01)
+    slider:SetObeyStepOnDrag(true)
+    slider.Text:SetText(""); slider.Low:SetText("0"); slider.High:SetText("1")
+
+    local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    box:SetSize(45, 20); box:SetPoint("TOP", slider, "BOTTOM", 0, -4); box:SetAutoFocus(false)
+
+    local minus = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    minus:SetSize(22, 22); minus:SetPoint("RIGHT", box, "LEFT", -2, 0); minus:SetText("-")
+    local plus = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    plus:SetSize(22, 22); plus:SetPoint("LEFT", box, "RIGHT", 2, 0); plus:SetText("+")
+
+    local function SetVal(v)
+        v = math.max(0, math.min(1, math.floor(v * 100 + 0.5) / 100))
+        getDB()[dbKey] = v; slider:SetValue(v); box:SetText(string.format("%.2f", v)); onChange()
+    end
+    slider:SetScript("OnValueChanged", function(self, v) SetVal(v) end)
+    box:SetScript("OnEnterPressed", function(self) self:ClearFocus(); local v=tonumber(self:GetText()); if v then SetVal(v) end end)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    minus:SetScript("OnClick", function() SetVal(getDB()[dbKey] - 0.05) end)
+    plus:SetScript("OnClick",  function() SetVal(getDB()[dbKey] + 0.05) end)
+
+    local function Refresh()
+        local v = getDB()[dbKey] or 1.0
+        slider:SetValue(v); box:SetText(string.format("%.2f", v))
+    end
+    Refresh()
+    return slider, box, Refresh
+end
+
 local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
     if UIDropDownMenu_Initialize then
         local dd = CreateFrame("Frame", nil, parent, "UIDropDownMenuTemplate")
-        dd:SetPoint("TOPLEFT", parent, "TOPLEFT", x - 16, y)   -- template has 16px left pad
+        dd:SetPoint("TOPLEFT", parent, "TOPLEFT", x - 16, y)
         UIDropDownMenu_SetWidth(dd, width)
         UIDropDownMenu_Initialize(dd, function(self, level)
             local info = UIDropDownMenu_CreateInfo()
@@ -72,255 +162,630 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
         function dd:SetSelection(name) UIDropDownMenu_SetSelectedName(self, name) end
         return dd
     end
-
-    -- Fallback: click cycles through values
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    btn:SetSize(width + 24, 22)
-    btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    btn:SetSize(width + 24, 22); btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     btn:SetText(tostring(getValue()))
     btn:SetScript("OnClick", function(self)
-        local cur = getValue()
-        local nxt = items[1]
-        for i, v in ipairs(items) do
-            if v == cur then nxt = items[i % #items + 1]; break end
-        end
-        setValue(nxt)
-        self:SetText(tostring(nxt))
+        local cur = getValue(); local nxt = items[1]
+        for i, v in ipairs(items) do if v == cur then nxt = items[i % #items + 1]; break end end
+        setValue(nxt); self:SetText(tostring(nxt))
     end)
     function btn:SetSelection(name) self:SetText(tostring(name)) end
     return btn
 end
 
--- Color swatch button: small preview square + opens the color picker
 local function CreateColorSwatch(parent, x, y, getDB, key, callback)
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    btn:SetSize(90, 22)
-    btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    btn:SetText("  Pick...")
-
+    btn:SetSize(90, 22); btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y); btn:SetText("  Pick...")
     local swatch = btn:CreateTexture(nil, "OVERLAY")
-    swatch:SetSize(12, 12)
-    swatch:SetPoint("LEFT", btn, "LEFT", 6, 0)
-
+    swatch:SetSize(12, 12); swatch:SetPoint("LEFT", btn, "LEFT", 6, 0)
     local function RefreshSwatch()
-        local c = getDB()[key] or {1, 1, 1, 1}
-        swatch:SetColorTexture(c[1], c[2], c[3], 1)
+        local c = getDB()[key] or {1,1,1,1}; swatch:SetColorTexture(c[1], c[2], c[3], 1)
     end
-    RefreshSwatch()
-    btn.RefreshSwatch = RefreshSwatch
-
+    RefreshSwatch(); btn.RefreshSwatch = RefreshSwatch
     btn:SetScript("OnClick", function()
-        local db = getDB()
-        local r, g, b, a = unpack(db[key] or {1, 1, 1, 1})
-
+        local db = getDB(); local r,g,b,a = unpack(db[key] or {1,1,1,1})
         if ColorPickerFrame.SetupColorPickerAndShow then
-            -- Modern API: Dragonflight / Patch 10.0+
             ColorPickerFrame:SetupColorPickerAndShow({
-                swatchFunc = function()
-                    local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                    local na = ColorPickerFrame:GetColorAlpha()
-                    getDB()[key] = {nr, ng, nb, na}
-                    RefreshSwatch(); callback()
-                end,
-                opacityFunc = function()
-                    local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                    local na = ColorPickerFrame:GetColorAlpha()
-                    getDB()[key] = {nr, ng, nb, na}
-                    RefreshSwatch(); callback()
-                end,
-                cancelFunc = function(prev)
-                    getDB()[key] = {
-                        prev and prev.r       or r,
-                        prev and prev.g       or g,
-                        prev and prev.b       or b,
-                        prev and prev.opacity or a,
-                    }
-                    RefreshSwatch(); callback()
-                end,
-                hasOpacity = true,
-                opacity    = a,
-                r = r, g = g, b = b,
+                swatchFunc  = function() local nr,ng,nb=ColorPickerFrame:GetColorRGB(); local na=ColorPickerFrame:GetColorAlpha(); getDB()[key]={nr,ng,nb,na}; RefreshSwatch(); callback() end,
+                opacityFunc = function() local nr,ng,nb=ColorPickerFrame:GetColorRGB(); local na=ColorPickerFrame:GetColorAlpha(); getDB()[key]={nr,ng,nb,na}; RefreshSwatch(); callback() end,
+                cancelFunc  = function(prev) getDB()[key]={prev and prev.r or r, prev and prev.g or g, prev and prev.b or b, prev and prev.opacity or a}; RefreshSwatch(); callback() end,
+                hasOpacity=true, opacity=a, r=r, g=g, b=b,
             })
         else
-            -- Legacy API: pre-10.0
-            ColorPickerFrame.hasOpacity      = true
-            ColorPickerFrame.opacity         = 1 - a
-            ColorPickerFrame.previousValues  = {r, g, b, a}
-            ColorPickerFrame.func = function()
-                local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                local na = 1 - OpacitySliderFrame:GetValue()
-                getDB()[key] = {nr, ng, nb, na}
-                RefreshSwatch(); callback()
-            end
-            ColorPickerFrame.cancelFunc = function(prev)
-                getDB()[key] = prev or {r, g, b, a}
-                RefreshSwatch(); callback()
-            end
-            ColorPickerFrame:SetColorRGB(r, g, b)
-            ColorPickerFrame:Show()
+            ColorPickerFrame.hasOpacity=true; ColorPickerFrame.opacity=1-a
+            ColorPickerFrame.previousValues={r,g,b,a}
+            ColorPickerFrame.func=function() local nr,ng,nb=ColorPickerFrame:GetColorRGB(); local na=1-OpacitySliderFrame:GetValue(); getDB()[key]={nr,ng,nb,na}; RefreshSwatch(); callback() end
+            ColorPickerFrame.cancelFunc=function(prev) getDB()[key]=prev or {r,g,b,a}; RefreshSwatch(); callback() end
+            ColorPickerFrame:SetColorRGB(r,g,b); ColorPickerFrame:Show()
         end
     end)
     return btn
 end
 
--- Unit panel builder --------------------------------------------------------
-
-local alignOptions = {"LEFT", "CENTER", "RIGHT"}
-local dirOptions   = {"HORIZONTAL", "VERTICAL"}
-
-local function BuildUnitPanel(panel, unit)
-    -- Always read live DB so resets are reflected correctly
-    local function getDB() return UnitFramesLite_GetDB(unit) end
-
-    panel.swatchButtons = {}
-
-    -- Refresh: push DB values back into all controls
-    panel.refresh = function(self)
-        local db = getDB()
-        self.xSlider:SetValue(db.x or 0)
-        self.xBox:SetText(tostring(db.x or 0))
-        self.ySlider:SetValue(db.y or 0)
-        self.yBox:SetText(tostring(db.y or 0))
-        self.fontSizeSlider:SetValue(db.fontSize or 14)
-        self.fontDD:SetSelection(db.font             or "Friz Quadrata TT")
-        self.nameAlignDD:SetSelection(db.nameAlign   or "LEFT")
-        self.texDD:SetSelection(db.statusbarTexture  or "Blizzard")
-        self.dirDD:SetSelection(db.gradientDir       or "HORIZONTAL")
-        self.solidCheckbox:SetChecked(db.useSolidColor)
-        for _, b in ipairs(self.swatchButtons) do b:RefreshSwatch() end
-        self:UpdateColourMode()
+local function DeepCopyDB(src)
+    local t = {}
+    for k, v in pairs(src) do
+        if type(v) == "table" then
+            t[k] = {}; for i,c in ipairs(v) do t[k][i] = c end
+        else t[k] = v end
     end
+    return t
+end
 
-    -- Show/hide solid vs gradient controls
-    panel.UpdateColourMode = function(self)
-        local isSolid = getDB().useSolidColor
-        for _, w in ipairs(self.solidGroup)    do w:SetShown(isSolid)     end
-        for _, w in ipairs(self.gradientGroup) do w:SetShown(not isSolid) end
-    end
+-- Options lists --------------------------------------------------------------
 
-    local screenW = UIParent:GetWidth()
-    local screenH = UIParent:GetHeight()
-    local maxX    = math.floor(screenW / 2)
-    local maxY    = math.floor(screenH / 2)
-    local leftX   = 16
-    local rightX  = 330
+local alignOptions        = {"LEFT", "CENTER", "RIGHT"}
+local dirOptions          = {"HORIZONTAL", "VERTICAL"}
+local portraitOptions     = {"Portrait Off", "Portrait Left", "Portrait Right"}
+local alphaAffectsOptions = {"Everything", "Foreground", "Background"}
+local hpContentOptions    = {"Cur / Max", "Current", "Max"}
+local hpFormatOptions     = {"Full", "Short"}
+local fillDirOptions      = {"VERTICAL", "HORIZONTAL"}
 
-    -- == Position section ===================================================
-    CreateLabel(panel, "Position", leftX, -16)
+-- Tab 1: General -------------------------------------------------------------
 
-    panel.xSlider = CreateSlider(panel, "X Offset", -maxX, maxX, 1, leftX, -38, function(v)
-        v = math.floor(v + 0.5)
-        getDB().x = v
-        panel.xBox:SetText(tostring(v))
-        UnitFramesLite_UpdateFrame(unit)
+local function BuildGeneralContent(content, unit, getDB, panel)
+    local x = 16
+    local halfW = math.floor(UIParent:GetWidth()  / 2)
+    local halfH = math.floor(UIParent:GetHeight() / 2)
+    local gx = 8; local s, b, r
+
+    CreateLabel(content, "Frame Basics", x, -8)
+    panel.enabledCheck = CreateCheckbox(content, "Enable this frame", x, -28,
+        function() return getDB().enabled ~= false end,
+        function(v) getDB().enabled = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.reverseFillCheck = CreateCheckbox(content, "Reverse fill (HP/Power)", x, -56,
+        function() return getDB().reverseFill or false end,
+        function(v) getDB().reverseFill = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.lockedCheck = CreateCheckbox(content, "Lock frame (disable dragging)", x, -84,
+        function() return getDB().locked or false end,
+        function(v) getDB().locked = v end)
+    CreateLabel(content, "Portrait", x, -114)
+    panel.portraitDD = CreateDropdown(content, x, -132, 150, portraitOptions,
+        function() return getDB().portrait or "Portrait Off" end,
+        function(v) getDB().portrait = v end)
+
+    local posGroup = CreateGroupBox(content, "Position", x, -166, 320, 102)
+    s,b,r = CreateNudgeSlider(posGroup,"X Offset",-halfW,halfW,1, gx,-20,178,"x",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.xSlider,panel.xBox,panel.xRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(posGroup,"Y Offset",-halfH,halfH,1, gx,-58,178,"y",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.ySlider,panel.yBox,panel.yRefresh = s,b,r
+
+    local sizeGroup = CreateGroupBox(content, "Frame Size", x, -278, 320, 102)
+    s,b,r = CreateNudgeSlider(sizeGroup,"Width",60,500,1, gx,-20,178,"frameWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.widthSlider,panel.widthBox,panel.widthRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(sizeGroup,"Height",12,120,1, gx,-58,178,"frameHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.heightSlider,panel.heightBox,panel.heightRefresh = s,b,r
+
+    -- Copy settings
+    local copyGroup = CreateGroupBox(content, "Copy Settings", x, -392, 320, 60)
+    local unitLabels = {player="Player", target="Target", focus="Focus", pet="Pet"}
+    local others = {}
+    for u in pairs(unitLabels) do if u ~= unit then others[#others+1] = u end end
+    table.sort(others)
+
+    local copyTargetUnit = others[1]
+    local copyUnitLabels = {}
+    for _, u in ipairs(others) do copyUnitLabels[#copyUnitLabels+1] = unitLabels[u] or u end
+
+    local copyToBtn = CreateFrame("Button", nil, copyGroup, "UIPanelButtonTemplate")
+    copyToBtn:SetSize(120, 22)
+    copyToBtn:SetPoint("TOPLEFT", copyGroup, "TOPLEFT", 8, -30)
+    copyToBtn:SetText("Copy to " .. (unitLabels[copyTargetUnit] or copyTargetUnit))
+
+    local copyUnitDD = CreateDropdown(copyGroup, 140, -22, 120, copyUnitLabels,
+        function() return unitLabels[copyTargetUnit] or copyTargetUnit end,
+        function(v)
+            for u, lbl in pairs(unitLabels) do
+                if lbl == v then copyTargetUnit = u; break end
+            end
+            copyToBtn:SetText("Copy to " .. v)
+        end)
+
+    copyToBtn:SetScript("OnClick", function()
+        local src = UnitFramesLite_GetDB(unit)
+        UnitFramesLiteDB[copyTargetUnit] = UnitFramesLiteDB[copyTargetUnit] or {}
+        local dest = UnitFramesLiteDB[copyTargetUnit]
+        local ox, oy = dest.x, dest.y
+        for k, v in pairs(DeepCopyDB(src)) do dest[k] = v end
+        dest.x, dest.y = ox or dest.x, oy or dest.y
+        UnitFramesLite_UpdateFrame(copyTargetUnit)
     end)
-    panel.xBox = CreateNumberBox(panel, 55, leftX + 248, -44, function(v)
-        getDB().x = v; panel.xSlider:SetValue(v); UnitFramesLite_UpdateFrame(unit)
-    end)
+end
 
-    panel.ySlider = CreateSlider(panel, "Y Offset", -maxY, maxY, 1, leftX, -78, function(v)
-        v = math.floor(v + 0.5)
-        getDB().y = v
-        panel.yBox:SetText(tostring(v))
-        UnitFramesLite_UpdateFrame(unit)
-    end)
-    panel.yBox = CreateNumberBox(panel, 55, leftX + 248, -84, function(v)
-        getDB().y = v; panel.ySlider:SetValue(v); UnitFramesLite_UpdateFrame(unit)
-    end)
+-- Tab 2: Text ----------------------------------------------------------------
 
-    -- == Left column: Text ==================================================
-    local textY = -130
+local function BuildTextContent(content, unit, getDB, panel)
+    local s, b, r
+    local COL_W = 163
+    local c1 = 6
+    local c2 = c1 + COL_W + 3
+    local c3 = c2 + COL_W + 3
+    local c4 = c3 + COL_W + 3
 
-    CreateLabel(panel, "Text", leftX, textY)
-
-    CreateLabel(panel, "Font", leftX, textY - 20)
-    panel.fontDD = CreateDropdown(panel, leftX, textY - 38, 150, GetFontList(),
+    -- Global default font (fallback when per-section font is nil)
+    CreateLabel(content, "Default Font", c1, -8)
+    panel.fontDD = CreateDropdown(content, c1, -26, 200, GetFontList(),
         function() return getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().font = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    CreateLabel(panel, "Font Size", leftX, textY - 80)
-    panel.fontSizeSlider = CreateSlider(panel, "", 8, 24, 1, leftX, textY - 100, function(v)
-        getDB().fontSize = math.floor(v + 0.5); UnitFramesLite_UpdateFrame(unit)
-    end)
+    -- Colour swatch helper (parent-aware)
+    local function ColSwatch(parent, x, y, colorKey)
+        local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        btn:SetSize(72, 20)
+        btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+        btn:SetText("  Col...")
+        local sw = btn:CreateTexture(nil, "OVERLAY")
+        sw:SetSize(10, 10); sw:SetPoint("LEFT", btn, "LEFT", 4, 0)
+        local function Refresh()
+            local c = getDB()[colorKey] or {1,1,1,1}; sw:SetColorTexture(c[1],c[2],c[3],1)
+        end
+        Refresh(); btn.RefreshSwatch = Refresh
+        btn:SetScript("OnClick", function()
+            local db = getDB(); local r,g,b,a = unpack(db[colorKey] or {1,1,1,1})
+            if ColorPickerFrame.SetupColorPickerAndShow then
+                ColorPickerFrame:SetupColorPickerAndShow({
+                    swatchFunc  = function() local nr,ng,nb=ColorPickerFrame:GetColorRGB(); local na=ColorPickerFrame:GetColorAlpha(); db[colorKey]={nr,ng,nb,na}; Refresh(); UnitFramesLite_UpdateFrame(unit) end,
+                    opacityFunc = function() local nr,ng,nb=ColorPickerFrame:GetColorRGB(); local na=ColorPickerFrame:GetColorAlpha(); db[colorKey]={nr,ng,nb,na}; Refresh(); UnitFramesLite_UpdateFrame(unit) end,
+                    cancelFunc  = function(prev) db[colorKey]={prev and prev.r or r,prev and prev.g or g,prev and prev.b or b,prev and prev.opacity or a}; Refresh(); UnitFramesLite_UpdateFrame(unit) end,
+                    hasOpacity=true, opacity=a, r=r, g=g, b=b,
+                })
+            else
+                ColorPickerFrame.hasOpacity=true; ColorPickerFrame.opacity=1-a
+                ColorPickerFrame.previousValues={r,g,b,a}
+                ColorPickerFrame.func=function() local nr,ng,nb=ColorPickerFrame:GetColorRGB(); local na=1-OpacitySliderFrame:GetValue(); db[colorKey]={nr,ng,nb,na}; Refresh(); UnitFramesLite_UpdateFrame(unit) end
+                ColorPickerFrame.cancelFunc=function(prev) db[colorKey]=prev or {r,g,b,a}; Refresh(); UnitFramesLite_UpdateFrame(unit) end
+                ColorPickerFrame:SetColorRGB(r,g,b); ColorPickerFrame:Show()
+            end
+        end)
+        panel.swatchButtons[#panel.swatchButtons+1] = btn
+        return btn
+    end
 
-    CreateLabel(panel, "Name Alignment", leftX, textY - 142)
-    panel.nameAlignDD = CreateDropdown(panel, leftX, textY - 160, 110, alignOptions,
+    -- Inside each group box:
+    --   y=-24: Show checkbox (below the group box title at y=-5)
+    --   y=-50: Colour swatch
+    --   y=-76: Collapsible container (font/align/position controls)
+    local GX      = 4    -- x padding inside group box
+    local CTR_TOP = -76  -- collapsible container top inside group box
+
+    -- ── Column 1: Name Text ──────────────────────────────────────────────────
+    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 340)
+    local nameCtr  -- forward declaration so checkbox closure can reference it
+    local function NameShown() return getDB().showName ~= false end
+    panel.showNameCheck = CreateCheckbox(nameBox, "Show", GX, -24, NameShown,
+        function(v) getDB().showName = v; nameCtr:SetShown(NameShown()); UnitFramesLite_UpdateFrame(unit) end)
+    panel.showNameCheck.Refresh = function(self)
+        self:SetChecked(NameShown()); nameCtr:SetShown(NameShown())
+    end
+    ColSwatch(nameBox, GX, -50, "nameColor")
+
+    nameCtr = CreateFrame("Frame", nil, nameBox)
+    nameCtr:SetPoint("TOPLEFT", nameBox, "TOPLEFT", GX, CTR_TOP)
+    nameCtr:SetSize(COL_W - GX * 2, 270)
+
+    CreateLabel(nameCtr, "Font", 0, -8)
+    panel.nameFontDD = CreateDropdown(nameCtr, 16, -26, COL_W - 30, GetFontList(),
+        function() return getDB().nameFont or getDB().font or "Friz Quadrata TT" end,
+        function(v) getDB().nameFont = v; UnitFramesLite_UpdateFrame(unit) end)
+    CreateLabel(nameCtr, "Align", 0, -68)
+    panel.nameAlignDD = CreateDropdown(nameCtr, 52, -66, 86, alignOptions,
         function() return getDB().nameAlign or "LEFT" end,
         function(v) getDB().nameAlign = v; UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameCtr,"Size",6,36,1, 0,-104,60,"nameTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.nameFontSizeSlider, panel.nameFontSizeBox, panel.nameFontSizeRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(nameCtr,"X Off",-500,500,1, 0,-144,60,"nameTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.nameXSlider, panel.nameXBox, panel.nameXRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(nameCtr,"Y Off",-500,500,1, 0,-184,60,"nameTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.nameYSlider, panel.nameYBox, panel.nameYRefresh = s,b,r
+    nameCtr:SetShown(NameShown())
 
-    CreateLabel(panel, "Name Colour", leftX, textY - 202)
-    local nameBtn = CreateColorSwatch(panel, leftX, textY - 220, getDB, "nameColor",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons + 1] = nameBtn
+    -- ── Column 2: HP Text ────────────────────────────────────────────────────
+    local hpTextBox = CreateGroupBox(content, "HP Text", c2, -50, COL_W, 460)
+    local hpTextCtr
+    local function HPTextShown() return getDB().showHPText ~= false end
+    panel.showHPTextCheck = CreateCheckbox(hpTextBox, "Show", GX, -24, HPTextShown,
+        function(v) getDB().showHPText = v; hpTextCtr:SetShown(HPTextShown()); UnitFramesLite_UpdateFrame(unit) end)
+    panel.showHPTextCheck.Refresh = function(self)
+        self:SetChecked(HPTextShown()); hpTextCtr:SetShown(HPTextShown())
+    end
+    ColSwatch(hpTextBox, GX, -50, "hpTextColor")
 
-    CreateLabel(panel, "HP Colour", leftX, textY - 258)
-    local hpBtn = CreateColorSwatch(panel, leftX, textY - 276, getDB, "hpColor",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons + 1] = hpBtn
+    hpTextCtr = CreateFrame("Frame", nil, hpTextBox)
+    hpTextCtr:SetPoint("TOPLEFT", hpTextBox, "TOPLEFT", GX, CTR_TOP)
+    hpTextCtr:SetSize(COL_W - GX * 2, 380)
 
-    -- == Right column: Bar ==================================================
-    local barY = -16
+    CreateLabel(hpTextCtr, "Font", 0, -8)
+    panel.hpTextFontDD = CreateDropdown(hpTextCtr, 16, -26, COL_W - 30, GetFontList(),
+        function() return getDB().hpTextFont or getDB().font or "Friz Quadrata TT" end,
+        function(v) getDB().hpTextFont = v; UnitFramesLite_UpdateFrame(unit) end)
+    CreateLabel(hpTextCtr, "Align", 0, -68)
+    panel.hpTextAlignDD = CreateDropdown(hpTextCtr, 52, -66, 86, alignOptions,
+        function() return getDB().hpTextAlign or "CENTER" end,
+        function(v) getDB().hpTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextCtr,"Size",6,36,1, 0,-104,60,"hpTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpFontSizeSlider, panel.hpFontSizeBox, panel.hpFontSizeRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(hpTextCtr,"X Off",-500,500,1, 0,-144,60,"hpTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpXSlider, panel.hpXBox, panel.hpXRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(hpTextCtr,"Y Off",-500,500,1, 0,-184,60,"hpTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpYSlider, panel.hpYBox, panel.hpYRefresh = s,b,r
+    -- Content: which HP values to show
+    CreateLabel(hpTextCtr, "Content", 0, -228)
+    panel.hpContentDD = CreateDropdown(hpTextCtr, 16, -246, COL_W - 30, hpContentOptions,
+        function() return getDB().hpContent or "Cur / Max" end,
+        function(v) getDB().hpContent = v; UnitFramesLite_UpdateFrame(unit) end)
+    -- Format: how to display the numbers (Full = raw, Short = ÷1000k)
+    CreateLabel(hpTextCtr, "Format", 0, -286)
+    panel.hpFormatDD = CreateDropdown(hpTextCtr, 16, -304, COL_W - 30, hpFormatOptions,
+        function() return getDB().hpFormat or "Full" end,
+        function(v) getDB().hpFormat = v; UnitFramesLite_UpdateFrame(unit) end)
+    hpTextCtr:SetShown(HPTextShown())
 
-    CreateLabel(panel, "Bar", rightX, barY)
+    -- ── Column 3: HP Percent ─────────────────────────────────────────────────
+    local hpPctBox = CreateGroupBox(content, "HP Percent", c3, -50, COL_W, 380)
+    local hpPctCtr
+    local function HPPctShown() return getDB().showHPPct or false end
+    panel.showHPPctCheck = CreateCheckbox(hpPctBox, "Show", GX, -24, HPPctShown,
+        function(v) getDB().showHPPct = v; hpPctCtr:SetShown(HPPctShown()); UnitFramesLite_UpdateFrame(unit) end)
+    panel.showHPPctCheck.Refresh = function(self)
+        self:SetChecked(HPPctShown()); hpPctCtr:SetShown(HPPctShown())
+    end
+    ColSwatch(hpPctBox, GX, -50, "hpPctColor")
 
-    CreateLabel(panel, "Background Colour", rightX, barY - 20)
-    local bgBtn = CreateColorSwatch(panel, rightX, barY - 38, getDB, "barBG",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons + 1] = bgBtn
+    hpPctCtr = CreateFrame("Frame", nil, hpPctBox)
+    hpPctCtr:SetPoint("TOPLEFT", hpPctBox, "TOPLEFT", GX, CTR_TOP)
+    hpPctCtr:SetSize(COL_W - GX * 2, 290)
 
-    CreateLabel(panel, "Statusbar Texture", rightX, barY - 76)
-    panel.texDD = CreateDropdown(panel, rightX, barY - 94, 150, GetTextureList(),
+    CreateLabel(hpPctCtr, "Font", 0, -8)
+    panel.hpPctFontDD = CreateDropdown(hpPctCtr, 16, -26, COL_W - 30, GetFontList(),
+        function() return getDB().hpPctFont or getDB().font or "Friz Quadrata TT" end,
+        function(v) getDB().hpPctFont = v; UnitFramesLite_UpdateFrame(unit) end)
+    CreateLabel(hpPctCtr, "Align", 0, -68)
+    panel.hpPctAlignDD = CreateDropdown(hpPctCtr, 52, -66, 86, alignOptions,
+        function() return getDB().hpPctAlign or "CENTER" end,
+        function(v) getDB().hpPctAlign = v; UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctCtr,"Size",6,36,1, 0,-104,60,"hpPctFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpPctFontSizeSlider, panel.hpPctFontSizeBox, panel.hpPctFontSizeRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(hpPctCtr,"X Off",-500,500,1, 0,-144,60,"hpPctX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpPctXSlider, panel.hpPctXBox, panel.hpPctXRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(hpPctCtr,"Y Off",-500,500,1, 0,-184,60,"hpPctY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpPctYSlider, panel.hpPctYBox, panel.hpPctYRefresh = s,b,r
+    panel.hpPctSymbolCheck = CreateCheckbox(hpPctCtr, "Show %", 0, -228,
+        function() return getDB().hpPctShowSymbol ~= false end,
+        function(v) getDB().hpPctShowSymbol = v; UnitFramesLite_UpdateFrame(unit) end)
+    hpPctCtr:SetShown(HPPctShown())
+
+    -- ── Column 4: Level Text ─────────────────────────────────────────────────
+    local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 340)
+    local levelCtr
+    local function LevelShown() return getDB().showLevel ~= false end
+    panel.showLevelCheck = CreateCheckbox(levelBox, "Show", GX, -24, LevelShown,
+        function(v) getDB().showLevel = v; levelCtr:SetShown(LevelShown()); UnitFramesLite_UpdateFrame(unit) end)
+    panel.showLevelCheck.Refresh = function(self)
+        self:SetChecked(LevelShown()); levelCtr:SetShown(LevelShown())
+    end
+    ColSwatch(levelBox, GX, -50, "levelColor")
+
+    levelCtr = CreateFrame("Frame", nil, levelBox)
+    levelCtr:SetPoint("TOPLEFT", levelBox, "TOPLEFT", GX, CTR_TOP)
+    levelCtr:SetSize(COL_W - GX * 2, 270)
+
+    CreateLabel(levelCtr, "Font", 0, -8)
+    panel.levelFontDD = CreateDropdown(levelCtr, 16, -26, COL_W - 30, GetFontList(),
+        function() return getDB().levelFont or getDB().font or "Friz Quadrata TT" end,
+        function(v) getDB().levelFont = v; UnitFramesLite_UpdateFrame(unit) end)
+    CreateLabel(levelCtr, "Align", 0, -68)
+    panel.levelTextAlignDD = CreateDropdown(levelCtr, 52, -66, 86, alignOptions,
+        function() return getDB().levelTextAlign or "CENTER" end,
+        function(v) getDB().levelTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelCtr,"Size",6,36,1, 0,-104,60,"levelTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.levelFontSizeSlider, panel.levelFontSizeBox, panel.levelFontSizeRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(levelCtr,"X Off",-500,500,1, 0,-144,60,"levelTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.levelXSlider, panel.levelXBox, panel.levelXRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(levelCtr,"Y Off",-500,500,1, 0,-184,60,"levelTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.levelYSlider, panel.levelYBox, panel.levelYRefresh = s,b,r
+    levelCtr:SetShown(LevelShown())
+end
+
+-- Tab 3: Bar -----------------------------------------------------------------
+
+local function BuildBarContent(content, unit, getDB, panel)
+    local x = 16; local s, b, r
+
+    CreateLabel(content, "Bar", x, -8)
+    CreateLabel(content, "Background Colour", x, -26)
+    local bgBtn = CreateColorSwatch(content, x, -44, getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = bgBtn
+
+    panel.showPowerCheck = CreateCheckbox(content, "Show power bar", x, -76,
+        function() return getDB().showPowerBar or false end,
+        function(v) getDB().showPowerBar = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    s,b,r = CreateNudgeSlider(content,"HP Bar Height (0 = full frame height)",0,120,1, x,-110,200,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
+
+    CreateLabel(content, "Statusbar Texture (solid colour mode only)", x, -148)
+    panel.texDD = CreateDropdown(content, x, -166, 200, GetTextureList(),
         function() return getDB().statusbarTexture or "Blizzard" end,
         function(v) getDB().statusbarTexture = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    -- == Colour mode ========================================================
-    local modeY = barY - 140
+    CreateLabel(content, "Colour Mode", x, -204)
+    panel.solidCheckbox = CreateCheckbox(content, "Use Solid Colour", x, -222,
+        function() return getDB().useSolidColor or false end,
+        function(v) getDB().useSolidColor = v; panel:UpdateColourMode(); UnitFramesLite_UpdateFrame(unit) end)
 
-    CreateLabel(panel, "Colour Mode", rightX, modeY)
-
-    panel.solidCheckbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-    panel.solidCheckbox:SetSize(24, 24)
-    panel.solidCheckbox:SetPoint("TOPLEFT", panel, "TOPLEFT", rightX, modeY - 18)
-    local cbLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cbLabel:SetPoint("LEFT", panel.solidCheckbox, "RIGHT", 4, 0)
-    cbLabel:SetText("Use Solid Colour")
-    panel.solidCheckbox:SetChecked(getDB().useSolidColor)
-    panel.solidCheckbox:SetScript("OnClick", function(self)
-        getDB().useSolidColor = self:GetChecked()
-        panel:UpdateColourMode()
-        UnitFramesLite_UpdateFrame(unit)
-    end)
-
-    -- Solid colour (shown when useSolidColor = true)
-    local solidLabel = CreateLabel(panel, "Solid Colour", rightX, modeY - 56)
-    local solidBtn   = CreateColorSwatch(panel, rightX, modeY - 74, getDB, "solidColor",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons + 1] = solidBtn
-
-    -- Gradient controls (shown when useSolidColor = false)
-    local gradStartLabel = CreateLabel(panel, "Gradient Start", rightX, modeY - 56)
-    local gradStartBtn   = CreateColorSwatch(panel, rightX, modeY - 74, getDB, "gradientStart",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons + 1] = gradStartBtn
-
-    local gradEndLabel = CreateLabel(panel, "Gradient End", rightX, modeY - 112)
-    local gradEndBtn   = CreateColorSwatch(panel, rightX, modeY - 130, getDB, "gradientEnd",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons + 1] = gradEndBtn
-
-    local gradDirLabel = CreateLabel(panel, "Direction", rightX, modeY - 168)
-    panel.dirDD = CreateDropdown(panel, rightX, modeY - 186, 120, dirOptions,
+    local solidLabel   = CreateLabel(content, "Solid Colour",    x, -260)
+    local solidBtn     = CreateColorSwatch(content, x,     -278, getDB, "solidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = solidBtn
+    local gradSLabel   = CreateLabel(content, "Gradient Start",  x, -260)
+    local gradSBtn     = CreateColorSwatch(content, x,     -278, getDB, "gradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = gradSBtn
+    local gradELabel   = CreateLabel(content, "Gradient End",    x, -316)
+    local gradEBtn     = CreateColorSwatch(content, x,     -334, getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = gradEBtn
+    local gradDirLabel = CreateLabel(content, "Direction",       x, -372)
+    panel.dirDD = CreateDropdown(content, x, -390, 120, dirOptions,
         function() return getDB().gradientDir or "HORIZONTAL" end,
         function(v) getDB().gradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     panel.solidGroup    = {solidLabel, solidBtn}
-    panel.gradientGroup = {gradStartLabel, gradStartBtn, gradEndLabel, gradEndBtn,
-                           gradDirLabel, panel.dirDD}
+    panel.gradientGroup = {gradSLabel, gradSBtn, gradELabel, gradEBtn, gradDirLabel, panel.dirDD}
 
-    -- Reset button
+    local sep = content:CreateTexture(nil,"ARTWORK"); sep:SetColorTexture(0.3,0.3,0.3,0.8); sep:SetHeight(1)
+    sep:SetPoint("TOPLEFT",content,"TOPLEFT",x,-424); sep:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-424)
+
+    CreateLabel(content, "Bar Border", x, -434)
+    panel.barBorderCheck = CreateCheckbox(content, "Enabled", x+84, -434,
+        function() return getDB().barBorderEnabled or false end,
+        function(v) getDB().barBorderEnabled = v; UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(content,"Border Thickness",1,20,1, x,-462,160,"barBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.borderThicknessSlider,panel.borderThicknessBox,panel.borderThicknessRefresh = s,b,r
+    CreateLabel(content, "Border Colour", x, -500)
+    local borderBtn = CreateColorSwatch(content, x, -518, getDB, "barBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = borderBtn
+end
+
+-- Tab 4: Orb -----------------------------------------------------------------
+
+local function BuildOrbContent(content, unit, getDB, panel)
+    local x = 16; local s, b, r
+
+    CreateLabel(content, "Orb / Sphere Mode", x, -8)
+    panel.sphereModeCheck = CreateCheckbox(content, "Enable sphere mode", x, -28,
+        function() return getDB().sphereMode or false end,
+        function(v) getDB().sphereMode = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    s,b,r = CreateNudgeSlider(content,"Sphere Diameter (px)",20,300,1, x,-60,180,"sphereSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.sphereSizeSlider,panel.sphereSizeBox,panel.sphereSizeRefresh = s,b,r
+
+    CreateLabel(content, "Fill Direction", x, -104)
+    panel.sphereFillDirDD = CreateDropdown(content, x, -122, 140, fillDirOptions,
+        function() return getDB().sphereFillDir or "VERTICAL" end,
+        function(v) getDB().sphereFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
+    CreateLabel(content, "VERTICAL=bottom-up  HORIZONTAL=left-right", x, -160)
+
+    CreateLabel(content, "Gradient Direction", x, -178)
+    panel.orbGradDirDD = CreateDropdown(content, x, -196, 140, {"VERTICAL","HORIZONTAL","CENTRE"},
+        function() return getDB().orbGradientDir or "VERTICAL" end,
+        function(v) getDB().orbGradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    -- Orb colour
+    local sep1 = content:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
+    sep1:SetPoint("TOPLEFT",content,"TOPLEFT",x,-222); sep1:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-222)
+
+    CreateLabel(content, "Orb Colour", x, -232)
+    panel.orbSolidCheck = CreateCheckbox(content, "Use Solid Colour", x, -250,
+        function() return getDB().orbUseSolidColor or false end,
+        function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
+
+    local orbSolidLbl  = CreateLabel(content, "Solid Colour",    x,     -284)
+    local orbSolidBtn  = CreateColorSwatch(content, x,     -302, getDB, "orbSolidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = orbSolidBtn
+
+    local orbGSLbl = CreateLabel(content, "Gradient Start",  x,     -284)
+    local orbGSBtn = CreateColorSwatch(content, x,     -302, getDB, "orbGradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = orbGSBtn
+    local orbGELbl = CreateLabel(content, "Gradient End",    x+110, -284)
+    local orbGEBtn = CreateColorSwatch(content, x+110, -302, getDB, "orbGradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = orbGEBtn
+
+    panel.orbSolidGroup    = {orbSolidLbl, orbSolidBtn}
+    panel.orbGradientGroup = {orbGSLbl, orbGSBtn, orbGELbl, orbGEBtn}
+
+    panel.UpdateOrbColourMode = function(self)
+        local isSolid = getDB().orbUseSolidColor
+        for _, w in ipairs(self.orbSolidGroup    or {}) do w:SetShown(isSolid)     end
+        for _, w in ipairs(self.orbGradientGroup or {}) do w:SetShown(not isSolid) end
+    end
+    panel:UpdateOrbColourMode()
+
+    -- Power ring
+    local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
+    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-330); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-330)
+
+    CreateLabel(content, "Power Ring", x, -340)
+    panel.showOrbPowerCheck = CreateCheckbox(content, "Show power ring around orb", x, -358,
+        function() return getDB().showOrbPower or false end,
+        function(v) getDB().showOrbPower = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    s,b,r = CreateNudgeSlider(content,"Ring Thickness (px)",4,40,1, x,-394,160,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s,b,r
+
+    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -438,
+        function() return getDB().orbPowerRingCCW or false end,
+        function(v) getDB().orbPowerRingCCW = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -466,
+        function() return getDB().orbPowerRingUseTypeColor ~= false end,
+        function(v)
+            getDB().orbPowerRingUseTypeColor = v
+            panel:UpdateRingColourMode()
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+
+    local ringColBtn = CreateColorSwatch(content, x + 220, -466, getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = ringColBtn
+    panel.ringColBtn = ringColBtn
+
+    panel.UpdateRingColourMode = function(self)
+        local useType = getDB().orbPowerRingUseTypeColor ~= false
+        ringColBtn:SetShown(not useType)
+    end
+    panel:UpdateRingColourMode()
+end
+
+-- Tab 5: Conditions (includes Alpha section) ---------------------------------
+
+local function BuildConditionsContent(content, unit, getDB, panel)
+    local x = 16
+    CreateLabel(content, "Load Conditions", x, -8)
+    CreateLabel(content, "Show this frame only when checked conditions are met.\nIf none are checked, the frame is always shown.", x, -26)
+    local condDefs = {
+        {"Mounted","loadMounted",1,1}, {"In vehicle","loadInVehicle",1,2},
+        {"Resting","loadResting",1,3}, {"Stealthed","loadStealthed",1,4},
+        {"In combat","loadInCombat",1,5},
+        {"Out of combat","loadOutOfCombat",2,1}, {"Solo","loadSolo",2,2},
+        {"In group","loadInGroup",2,3}, {"In instance","loadInInstance",2,4},
+    }
+    local colX = {x, x+200}; local startY = -72; local rowH = 32
+    panel.conditionChecks = {}
+    for _, def in ipairs(condDefs) do
+        local label, key, col, row = def[1], def[2], def[3], def[4]
+        local cb = CreateCheckbox(content, label, colX[col], startY - (row-1)*rowH,
+            function() return getDB()[key] or false end,
+            function(v) getDB()[key] = v; UnitFramesLite_UpdateVisibility(unit) end)
+        panel.conditionChecks[key] = cb
+    end
+
+    -- Alpha section ----------------------------------------------------------
+    local sepY = -252
+    local sep = content:CreateTexture(nil,"ARTWORK"); sep:SetColorTexture(0.3,0.3,0.3,0.8); sep:SetHeight(1)
+    sep:SetPoint("TOPLEFT",content,"TOPLEFT",x,sepY); sep:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,sepY)
+
+    local ay = sepY - 14
+    CreateLabel(content, "Alpha", x, ay)
+    panel.syncAlphaCheck = CreateCheckbox(content, "Sync both", x+260, ay,
+        function() return getDB().syncAlpha or false end,
+        function(v) getDB().syncAlpha = v; UnitFramesLite_UpdateAlpha(unit) end)
+    panel.keepTextVisCheck = CreateCheckbox(content, "Keep text + portrait visible", x, ay-28,
+        function() return getDB().keepTextVisible or false end,
+        function(v) getDB().keepTextVisible = v; UnitFramesLite_UpdateAlpha(unit) end)
+    CreateLabel(content, "Alpha sliders affect", x, ay-60)
+    panel.alphaAffectsDD = CreateDropdown(content, x+150, ay-78, 120, alphaAffectsOptions,
+        function() return getDB().alphaAffects or "Everything" end,
+        function(v) getDB().alphaAffects = v; UnitFramesLite_UpdateAlpha(unit) end)
+
+    local _,_,rCombat    = CreateAlphaSliderRow(content,"Alpha in combat",    x,ay-120,"alphaCombat",   getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
+    local _,_,rOutCombat = CreateAlphaSliderRow(content,"Alpha out of combat", x,ay-210,"alphaOutCombat",getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
+
+    local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
+    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,ay-296); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,ay-296)
+    CreateLabel(content, "Fade Conditions", x, ay-306)
+    panel.fadeNoTargetCheck = CreateCheckbox(content, "Fade when no target selected", x, ay-324,
+        function() return getDB().fadeNoTarget or false end,
+        function(v) getDB().fadeNoTarget = v; UnitFramesLite_UpdateAlpha(unit) end)
+    local _,_,rFade = CreateAlphaSliderRow(content,"Fade alpha",x,ay-360,"fadeNoTargetAlpha",getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
+
+    panel.refreshAlpha = function()
+        rCombat(); rOutCombat(); rFade()
+        panel.syncAlphaCheck:Refresh(); panel.keepTextVisCheck:Refresh()
+        panel.fadeNoTargetCheck:Refresh()
+        panel.alphaAffectsDD:SetSelection(getDB().alphaAffects or "Everything")
+    end
+end
+
+-- Unit panel (5 tabs, buttons live on the main frame) -------------------------
+
+local function BuildUnitPanel(panel, unit, tabSync)
+    local function getDB() return UnitFramesLite_GetDB(unit) end
+    panel.swatchButtons = {}
+
+    panel.UpdateColourMode = function(self)
+        local isSolid = getDB().useSolidColor
+        for _, w in ipairs(self.solidGroup    or {}) do w:SetShown(isSolid)     end
+        for _, w in ipairs(self.gradientGroup or {}) do w:SetShown(not isSolid) end
+    end
+    panel.UpdateOrbColourMode = function() end
+    panel.UpdateRingColourMode = function() end
+
+    -- Tab buttons are created externally (on the main frame header).
+    -- We only create scroll frames + content here.
+    local tabNames        = {"General", "Text", "Bar", "Orb", "Conditions"}
+    local tabContents     = {}   -- scroll child frames (passed to Build* functions)
+    local tabScrollFrames = {}   -- scroll frame wrappers (shown/hidden by SelectTab)
+
+    for i = 1, #tabNames do
+        -- Scroll frame for the tab (provides vertical scrollbar automatically)
+        local sf = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+        sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0,   -4)
+        sf:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -26,  40)
+        sf:Hide()
+        tabScrollFrames[i] = sf
+
+        -- Scroll child: tall enough for all content; width synced with scroll frame
+        local sc = CreateFrame("Frame", nil, sf)
+        sc:SetSize(620, 800)
+        sf:SetScrollChild(sc)
+        sf:HookScript("OnSizeChanged", function(self) sc:SetWidth(self:GetWidth()) end)
+        tabContents[i] = sc
+    end
+
+    local function SelectTab(idx)
+        for i, sf in ipairs(tabScrollFrames) do sf:SetShown(i == idx) end
+    end
+    SelectTab(tabSync.current or 1)
+    panel.SelectTab = SelectTab
+
+    BuildGeneralContent(tabContents[1],    unit, getDB, panel)
+    BuildTextContent(tabContents[2],       unit, getDB, panel)
+    BuildBarContent(tabContents[3],        unit, getDB, panel)
+    BuildOrbContent(tabContents[4],        unit, getDB, panel)
+    BuildConditionsContent(tabContents[5], unit, getDB, panel)
+
+    panel.refresh = function(self)
+        local db = getDB()
+        self.enabledCheck:Refresh(); self.reverseFillCheck:Refresh(); self.lockedCheck:Refresh()
+        self.portraitDD:SetSelection(db.portrait or "Portrait Off")
+        self.xRefresh(); self.yRefresh(); self.widthRefresh(); self.heightRefresh()
+        self.showNameCheck:Refresh(); self.showHPTextCheck:Refresh()
+        self.showHPPctCheck:Refresh(); self.showLevelCheck:Refresh()
+        self.fontDD:SetSelection(db.font or "Friz Quadrata TT")
+        if self.nameFontDD  then self.nameFontDD:SetSelection(db.nameFont  or db.font or "Friz Quadrata TT") end
+        if self.hpTextFontDD then self.hpTextFontDD:SetSelection(db.hpTextFont or db.font or "Friz Quadrata TT") end
+        if self.hpPctFontDD then self.hpPctFontDD:SetSelection(db.hpPctFont or db.font or "Friz Quadrata TT") end
+        if self.levelFontDD then self.levelFontDD:SetSelection(db.levelFont or db.font or "Friz Quadrata TT") end
+        self.nameAlignDD:SetSelection(db.nameAlign or "LEFT")
+        if self.hpContentDD then self.hpContentDD:SetSelection(db.hpContent or "Cur / Max") end
+        if self.hpFormatDD  then self.hpFormatDD:SetSelection(db.hpFormat   or "Full")      end
+        self.hpTextAlignDD:SetSelection(db.hpTextAlign or "CENTER")
+        self.hpPctAlignDD:SetSelection(db.hpPctAlign or "CENTER")
+        self.hpPctSymbolCheck:Refresh()
+        self.levelTextAlignDD:SetSelection(db.levelTextAlign or "CENTER")
+        self.nameFontSizeRefresh(); self.nameXRefresh(); self.nameYRefresh()
+        self.hpFontSizeRefresh();   self.hpXRefresh();   self.hpYRefresh()
+        self.hpPctFontSizeRefresh(); self.hpPctXRefresh(); self.hpPctYRefresh()
+        self.levelFontSizeRefresh(); self.levelXRefresh(); self.levelYRefresh()
+        self.texDD:SetSelection(db.statusbarTexture or "Blizzard")
+        self.solidCheckbox:Refresh(); self.showPowerCheck:Refresh()
+        if self.dirDD then self.dirDD:SetSelection(db.gradientDir or "HORIZONTAL") end
+        self.hpBarHeightRefresh(); self.barBorderCheck:Refresh(); self.borderThicknessRefresh()
+        self.sphereModeCheck:Refresh(); self.sphereSizeRefresh()
+        self.sphereFillDirDD:SetSelection(db.sphereFillDir or "VERTICAL")
+        self.orbGradDirDD:SetSelection(db.orbGradientDir or "VERTICAL")
+        self.orbSolidCheck:Refresh()
+        self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
+        self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
+        for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
+        if self.refreshAlpha then self:refreshAlpha() end
+        for _, btn in ipairs(self.swatchButtons) do btn:RefreshSwatch() end
+        self:UpdateColourMode()
+        self:UpdateOrbColourMode()
+        self:UpdateRingColourMode()
+    end
+
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetBtn:SetSize(120, 22)
-    resetBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 16, 16)
+    resetBtn:SetSize(120, 22); resetBtn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 12)
     resetBtn:SetText("Reset to Defaults")
     resetBtn:SetScript("OnClick", function()
         local key = "UFL_RESET_" .. unit:upper()
@@ -337,128 +802,124 @@ local function BuildUnitPanel(panel, unit)
         StaticPopup_Show(key)
     end)
 
-    -- Refresh values when the panel is shown
-    panel:SetScript("OnShow", function(self) self:refresh() end)
-    -- Apply initial show/hide state for solid vs gradient controls
+    panel:SetScript("OnShow", function(self)
+        self:refresh()
+        SelectTab(tabSync.current or 1)
+    end)
     panel:UpdateColourMode()
 end
 
--- Main options frame --------------------------------------------------------
--- A single draggable frame with Player / Target tabs.
--- Also registered with Settings for game menu access (Main Menu → Options → Addons).
+-- Main options frame ---------------------------------------------------------
 
 function CreateOptionsPanel()
-    local OPTS_W, OPTS_H = 700, 530
+    local OPTS_W, OPTS_H = 700, 620
 
     local mainFrame = CreateFrame("Frame", "UnitFramesLiteOptions", UIParent, "BackdropTemplate")
-    mainFrame:SetSize(OPTS_W, OPTS_H)
-    mainFrame:SetPoint("CENTER")
-    mainFrame:SetFrameStrata("HIGH")
-    mainFrame:SetMovable(true)
-    mainFrame:EnableMouse(true)
+    mainFrame:SetSize(OPTS_W, OPTS_H); mainFrame:SetPoint("CENTER")
+    mainFrame:SetFrameStrata("HIGH"); mainFrame:SetMovable(true); mainFrame:EnableMouse(true)
     mainFrame:RegisterForDrag("LeftButton")
     mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
     mainFrame:SetScript("OnDragStop",  mainFrame.StopMovingOrSizing)
+    mainFrame:SetResizable(true)
+    mainFrame:SetResizeBounds(500, 400, 1400, 900)
+    mainFrame:EnableMouseWheel(true)
+    mainFrame:SetScript("OnMouseWheel", function(self, delta)
+        if not IsControlKeyDown() then return end
+        local s = math.max(0.5, math.min(2.0, self:GetScale() + delta * 0.05))
+        self:SetScale(s)
+    end)
     mainFrame:Hide()
     _G.UnitFramesLiteOptions = mainFrame
 
-    -- Backdrop
     mainFrame:SetBackdrop({
         bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
         tile = true, tileSize = 32, edgeSize = 32,
-        insets = {left = 11, right = 12, top = 12, bottom = 11},
+        insets = {left=11, right=12, top=12, bottom=11},
     })
     mainFrame:SetBackdropColor(0, 0, 0, 1)
 
-    -- Title
     local titleText = mainFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    titleText:SetPoint("TOP", mainFrame, "TOP", 0, -16)
-    titleText:SetText("UnitFramesLite")
+    titleText:SetPoint("TOP", mainFrame, "TOP", 0, -16); titleText:SetText("UnitFramesLite")
 
-    -- Close button
     local closeBtn = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", 2, 2)
 
-    -- Tab buttons (Player / Target)
-    local playerTab = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
-    playerTab:SetSize(110, 24)
-    playerTab:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 16, -36)
-    playerTab:SetText("Player")
+    -- Unit selector dropdown
+    CreateLabel(mainFrame, "Unit:", 16, -38)
+    local unitItems = {"Player", "Target", "Focus", "Pet"}
+    local unitMap   = {Player="player", Target="target", Focus="focus", Pet="pet"}
+    local currentLabel = "Player"
 
-    local targetTab = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
-    targetTab:SetSize(110, 24)
-    targetTab:SetPoint("LEFT", playerTab, "RIGHT", 6, 0)
-    targetTab:SetText("Target")
-
-    -- Divider line below tabs
     local divider = mainFrame:CreateTexture(nil, "ARTWORK")
-    divider:SetColorTexture(0.3, 0.3, 0.3, 0.8)
-    divider:SetHeight(1)
+    divider:SetColorTexture(0.3, 0.3, 0.3, 0.8); divider:SetHeight(1)
     divider:SetPoint("TOPLEFT",  mainFrame, "TOPLEFT",  16, -64)
     divider:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -16, -64)
 
-    -- Content frames (parented to mainFrame, positioned below tab bar)
-    local CONTENT_TOP = -68
+    local tabSync = {current = 1}
 
-    local playerContent = CreateFrame("Frame", nil, mainFrame)
-    playerContent:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, CONTENT_TOP)
-    playerContent:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
-    BuildUnitPanel(playerContent, "player")
-
-    local targetContent = CreateFrame("Frame", nil, mainFrame)
-    targetContent:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, CONTENT_TOP)
-    targetContent:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
-    targetContent:Hide()
-    BuildUnitPanel(targetContent, "target")
-
-    -- Tab switching
-    local function SelectTab(showPlayer)
-        playerContent:SetShown(showPlayer)
-        targetContent:SetShown(not showPlayer)
+    -- Build a panel for each unit
+    local unitPanels = {}
+    for _, label in ipairs(unitItems) do
+        local u = unitMap[label]
+        local c = CreateFrame("Frame", nil, mainFrame)
+        c:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, -68)
+        c:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
+        c:Hide()
+        BuildUnitPanel(c, u, tabSync)
+        unitPanels[u] = c
     end
-    playerTab:SetScript("OnClick", function() SelectTab(true) end)
-    targetTab:SetScript("OnClick", function() SelectTab(false) end)
+    unitPanels["player"]:Show()
 
-    -- Register with Settings for game menu (Main Menu → Options → Addons)
-    mainFrame.name = "UnitFramesLite"
-    local UFL = _G.UnitFramesLite
-    if Settings and Settings.RegisterAddOnCategory then
-        local ok, cat = pcall(Settings.RegisterAddOnCategory, mainFrame)
-        if ok and cat then
-            UFL.optionsCategory = cat
+    local function SelectUnit(unit)
+        for _, p in pairs(unitPanels) do p:Hide() end
+        if unitPanels[unit] then
+            unitPanels[unit]:Show()
+            if unitPanels[unit].SelectTab then
+                unitPanels[unit].SelectTab(tabSync.current)
+            end
         end
-    elseif InterfaceOptions_AddCategory then
-        pcall(InterfaceOptions_AddCategory, mainFrame)
     end
+
+    -- The dropdown needs to be created after SelectUnit is defined
+    local unitDD = CreateDropdown(mainFrame, 60, -28, 120, unitItems,
+        function() return currentLabel end,
+        function(v)
+            currentLabel = v
+            SelectUnit(unitMap[v])
+        end)
+
+    -- Tab buttons on the main frame header, right of the unit dropdown
+    local tabNames = {"General", "Text", "Bar", "Orb", "Conditions"}
+    local sharedTabBtns = {}
+    for i, name in ipairs(tabNames) do
+        local btn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
+        btn:SetSize(76, 22); btn:SetText(name)
+        if i == 1 then btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 210, -38)
+        else            btn:SetPoint("LEFT", sharedTabBtns[i-1], "RIGHT", 2, 0) end
+        sharedTabBtns[i] = btn
+        btn:SetScript("OnClick", function()
+            tabSync.current = i
+            for _, p in pairs(unitPanels) do
+                if p.SelectTab then p.SelectTab(i) end
+            end
+        end)
+    end
+
+    -- Resize grip (bottom-right corner)
+    local sizeGrip = CreateFrame("Button", nil, mainFrame)
+    sizeGrip:SetSize(16, 16)
+    sizeGrip:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -4, 4)
+    sizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    sizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    sizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    sizeGrip:SetScript("OnMouseDown", function() mainFrame:StartSizing("BOTTOMRIGHT") end)
+    sizeGrip:SetScript("OnMouseUp",   function() mainFrame:StopMovingOrSizing() end)
+    sizeGrip:SetFrameLevel(sizeGrip:GetFrameLevel() + 10)
 end
 
--- Show/hide the options panel -----------------------------------------------
-
 function UnitFramesLite_ShowOptions()
-    local UFL = _G.UnitFramesLite
-
-    -- 1. Try modern Settings API (game menu integration)
-    if Settings and Settings.OpenToCategory and UFL and UFL.optionsCategory then
-        local ok = pcall(function()
-            Settings.OpenToCategory(UFL.optionsCategory:GetID())
-        end)
-        if ok then return end
-    end
-
-    -- 2. Try legacy InterfaceOptions
-    if InterfaceOptionsFrame_OpenToCategory and _G.UnitFramesLiteOptions then
-        pcall(InterfaceOptionsFrame_OpenToCategory, _G.UnitFramesLiteOptions)
-        return
-    end
-
-    -- 3. Direct toggle — always works
     local frame = _G.UnitFramesLiteOptions
-    if frame then
-        if frame:IsShown() then
-            frame:Hide()
-        else
-            frame:Show()
-        end
-    end
+    if not frame then return end
+    if frame:IsShown() then frame:Hide() else frame:Show() end
 end
