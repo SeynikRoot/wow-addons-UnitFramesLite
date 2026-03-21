@@ -834,35 +834,37 @@ local function SetupFrame(displayFrame, unit)
             UpdatePowerColor(displayFrame, unit)
         end
 
-        -- Power ring — power values may also be secret in arenas/rated PvP,
-        -- so guard the percentage arithmetic with pcall.
+        -- Power ring — power values are secret numbers in WoW 12.x.
+        -- Avoid all Lua comparison/arithmetic on secret values; instead encode
+        -- the half-ring split directly into SetMinMaxValues so WoW handles the
+        -- math internally.  All arithmetic on secret numbers stays inside pcall.
+        --
+        -- CW ring visual: left half fills 0-50% of ring (power 0→max/2),
+        --                 right half fills 50-100% (power max/2→max).
+        -- Achieved by:   left  → SetMinMaxValues(0, halfMax),  SetValue(power)
+        --                right → SetMinMaxValues(halfMax, max), SetValue(power)
+        -- SetMinMaxValues and SetValue accept secret numbers just like StatusBar
+        -- hp/power bars do — no taint error.
         if displayFrame.powerRingFillR and displayFrame.powerRingFillL and db.showOrbPower then
-            maxPower = maxPower or 0
-            power    = power    or 0
-            local pct = 0
-            local _ok, _result = pcall(function()
-                return (maxPower > 0) and (power / maxPower) or 0
-            end)
-            if _ok then pct = _result or 0 end
-            local ccw     = db.orbPowerRingCCW or false
-            local rFill, lFill
+            local ccw    = db.orbPowerRingCCW or false
+            local fillR  = displayFrame.powerRingFillR
+            local fillL  = displayFrame.powerRingFillL
+            -- halfMax is a secret number computed inside pcall; 0 fallback if it fails.
+            local halfMax = 0
+            pcall(function() halfMax = maxPower / 2 end)
             if not ccw then
-                -- Clockwise drain from 12 o'clock:
-                -- left fills first (top-down: 9→12, then 6→9) for 0–50%
-                -- right fills second (bottom-up: 3→6, then 12→3) for 50–100%
-                lFill = math.min(1, pct * 2)
-                rFill = math.max(0, (pct - 0.5) * 2)
+                -- CW: left fills first (9→12 then 6→9), right fills second (3→6 then 12→3)
+                fillL:SetMinMaxValues(0, halfMax)
+                fillL:SetValue(power)
+                fillR:SetMinMaxValues(halfMax, maxPower)
+                fillR:SetValue(power)
             else
-                -- Counter-clockwise drain from 12 o'clock:
-                -- right fills first (top-down: 12→3, then 3→6) for 0–50%
-                -- left fills second (bottom-up: 6→9, then 9→12) for 50–100%
-                rFill = math.min(1, pct * 2)
-                lFill = math.max(0, (pct - 0.5) * 2)
+                -- CCW: right fills first (12→3 then 3→6), left fills second (6→9 then 9→12)
+                fillR:SetMinMaxValues(0, halfMax)
+                fillR:SetValue(power)
+                fillL:SetMinMaxValues(halfMax, maxPower)
+                fillL:SetValue(power)
             end
-            displayFrame.powerRingFillR:SetMinMaxValues(0, 1)
-            displayFrame.powerRingFillR:SetValue(rFill)
-            displayFrame.powerRingFillL:SetMinMaxValues(0, 1)
-            displayFrame.powerRingFillL:SetValue(lFill)
             ApplyPowerRingColor(displayFrame, unit)
         end
 
