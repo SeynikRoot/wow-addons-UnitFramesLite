@@ -600,27 +600,43 @@ local function BuildOrbContent(content, unit, getDB, panel)
     end
     panel:UpdateOrbColourMode()
 
-    -- Power ring
+    -- Inner border
     local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
     sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-330); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-330)
 
-    CreateLabel(content, "Power Ring", x, -340)
-    panel.showOrbPowerCheck = CreateCheckbox(content, "Show power ring around orb", x, -358,
+    CreateLabel(content, "Inner Border", x, -340)
+    panel.showOrbBorderCheck = CreateCheckbox(content, "Show border around health orb", x, -358,
+        function() return getDB().showOrbBorder or false end,
+        function(v) getDB().showOrbBorder = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    local s2,b2,r2 = CreateNudgeSlider(content,"Border Thickness (px)",1,40,1, x,-394,160,"orbBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbBorderThickSlider,panel.orbBorderThickBox,panel.orbBorderThickRefresh = s2,b2,r2
+
+    CreateLabel(content, "Border Colour", x, -426)
+    local borderBtn = CreateColorSwatch(content, x + 220, -426, getDB, "orbBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = borderBtn
+
+    -- Power ring
+    local sep3 = content:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
+    sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-446); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-446)
+
+    CreateLabel(content, "Power Ring", x, -456)
+    panel.showOrbPowerCheck = CreateCheckbox(content, "Show power ring around orb", x, -474,
         function() return getDB().showOrbPower or false end,
         function(v) getDB().showOrbPower = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    s,b,r = CreateNudgeSlider(content,"Ring Thickness (px)",4,40,1, x,-394,160,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    local s,b,r = CreateNudgeSlider(content,"Ring Thickness (px)",4,40,1, x,-510,160,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s,b,r
 
-    CreateLabel(content, "Ring Background Colour", x, -426)
-    local ringBgBtn = CreateColorSwatch(content, x + 220, -426, getDB, "orbPowerRingBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    CreateLabel(content, "Ring Background Colour", x, -542)
+    local ringBgBtn = CreateColorSwatch(content, x + 220, -542, getDB, "orbPowerRingBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringBgBtn
 
-    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -482,
+    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -598,
         function() return getDB().orbPowerRingCCW or false end,
         function(v) getDB().orbPowerRingCCW = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -510,
+    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -626,
         function() return getDB().orbPowerRingUseTypeColor ~= false end,
         function(v)
             getDB().orbPowerRingUseTypeColor = v
@@ -628,7 +644,7 @@ local function BuildOrbContent(content, unit, getDB, panel)
             UnitFramesLite_UpdateFrame(unit)
         end)
 
-    local ringColBtn = CreateColorSwatch(content, x + 220, -510, getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local ringColBtn = CreateColorSwatch(content, x + 220, -626, getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringColBtn
     panel.ringColBtn = ringColBtn
 
@@ -778,6 +794,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.sphereFillDirDD:SetSelection(db.sphereFillDir or "VERTICAL")
         self.orbGradDirDD:SetSelection(db.orbGradientDir or "VERTICAL")
         self.orbSolidCheck:Refresh()
+        self.showOrbBorderCheck:Refresh(); self.orbBorderThickRefresh()
         self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end

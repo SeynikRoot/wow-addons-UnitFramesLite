@@ -69,6 +69,10 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         orbSolidColor     = orbStart,
         orbGradientStart  = orbStart,
         orbGradientEnd    = orbEnd,
+        -- Orb inner border (ring between health orb and power ring)
+        showOrbBorder      = false,
+        orbBorderThickness = 4,
+        orbBorderColor     = {0, 0, 0, 1},
         -- Power ring
         showOrbPower             = false,
         orbPowerRingThickness    = 8,
@@ -186,7 +190,8 @@ function UnitFramesLite_UpdateAlpha(unit)
     end
 
     -- Apply to power ring as well
-    if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(alpha) end
+    if frame.powerRingFrame  then frame.powerRingFrame:SetAlpha(alpha)  end
+    if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
 
     -- Set alpha on the overlay frame AND directly on each FontString.
     -- The HIGH strata of textOverlay can cause alpha inheritance issues in WoW,
@@ -421,6 +426,20 @@ function UnitFramesLite_UpdateFrame(unit)
             if frame.orbFill2 then frame.orbFill2:Hide() end
         end
 
+        -- Inner border (circular band just outside the health orb)
+        if db.showOrbBorder and frame.orbBorderFrame then
+            local bt = math.max(1, db.orbBorderThickness or 4)
+            local borderSz = sz + bt * 2
+            frame.orbBorderFrame:SetSize(borderSz, borderSz)
+            frame.orbBorderFrame:ClearAllPoints()
+            frame.orbBorderFrame:SetPoint("CENTER", frame, "CENTER", 0, 0)
+            local bc = db.orbBorderColor or {0, 0, 0, 1}
+            frame.orbBorderTex:SetColorTexture(bc[1], bc[2], bc[3], bc[4])
+            frame.orbBorderFrame:Show()
+        elseif frame.orbBorderFrame then
+            frame.orbBorderFrame:Hide()
+        end
+
         -- Power ring
         if db.showOrbPower and frame.powerRingFrame then
             local thick    = math.max(4, db.orbPowerRingThickness or 8)
@@ -511,8 +530,9 @@ function UnitFramesLite_UpdateFrame(unit)
 
     else
         -- ── Bar mode ──────────────────────────────────────────────────────
-        if frame.orbFrame        then frame.orbFrame:Hide() end
-        if frame.orbFill2        then frame.orbFill2:Hide() end
+        if frame.orbFrame        then frame.orbFrame:Hide()       end
+        if frame.orbFill2        then frame.orbFill2:Hide()       end
+        if frame.orbBorderFrame  then frame.orbBorderFrame:Hide() end
         if frame.powerRingFrame  then frame.powerRingFrame:Hide() end
 
         frame.hp:Show()
@@ -743,11 +763,26 @@ local function SetupFrame(displayFrame, unit)
     local prStL = prFillL:GetStatusBarTexture()
     if prStL then prStL:AddMaskTexture(powerRingCircMask) end
 
-    -- ── Orb (above power ring) ────────────────────────────────────────────
+    -- ── Orb inner border (between power ring fills and health orb) ───────
+    local orbBorderFrame = CreateFrame("Frame", nil, displayFrame)
+    orbBorderFrame:Hide()
+    orbBorderFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 2)
+    displayFrame.orbBorderFrame = orbBorderFrame
+
+    local orbBorderTex = orbBorderFrame:CreateTexture(nil, "BACKGROUND")
+    orbBorderTex:SetAllPoints()
+    orbBorderTex:SetColorTexture(0, 0, 0, 1)
+    displayFrame.orbBorderTex = orbBorderTex
+
+    local orbBorderMask = orbBorderFrame:CreateMaskTexture()
+    orbBorderMask:SetTexture(ORB_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    orbBorderMask:SetAllPoints()
+    orbBorderTex:AddMaskTexture(orbBorderMask)
+
+    -- ── Orb (above power ring and inner border) ───────────────────────────
     local orbFrame = CreateFrame("Frame", nil, displayFrame)
     orbFrame:Hide()
-    -- Ensure orbFrame renders above the ring
-    orbFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 2)
+    orbFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 3)
     displayFrame.orbFrame = orbFrame
 
     local orbBg = orbFrame:CreateTexture(nil, "BACKGROUND")
