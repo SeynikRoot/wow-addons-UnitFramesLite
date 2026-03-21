@@ -34,6 +34,12 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showLevel     = true,
         showPowerBar  = false,
         showPowerText = false,
+        showResources     = true,
+        resourcePipWidth  = 18,
+        resourcePipHeight = 6,
+        resourcePipGap    = 3,
+        resourceX         = 0,
+        resourceY         = 0,
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -58,7 +64,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         alphaAffects = "Everything",
         alphaCombat = 1.0, alphaOutCombat = 1.0,
         fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
-        barBorderEnabled = false, barBorderThickness = 1,
+        barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
         sphereMode        = false,
@@ -83,16 +89,32 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
     }
 end
 
+local function SetTextDefaults(d, nameX, nameY, nameAlign, hpX, hpY, hpAlign, lvlX, lvlY, lvlAlign)
+    d.nameTextX = nameX; d.nameTextY = nameY; d.nameAlign = nameAlign
+    d.hpTextX   = hpX;   d.hpTextY   = hpY;   d.hpTextAlign = hpAlign
+    d.levelTextX= lvlX;  d.levelTextY= lvlY;  d.levelTextAlign = lvlAlign
+    return d
+end
+
 local defaults = {
-    player = MakeUnitDefaults(-220, -160,
+    player = SetTextDefaults(MakeUnitDefaults(-220, -160,
         {0.2,0.8,0.2,1}, {0.2,0.8,0.2,1}, {0.1,0.4,0.1,1},
         {0.2,0.5,0.9,1}, {0.05,0.15,0.6,1}),
-    target = MakeUnitDefaults( 220, -160,
+        0, 15, "LEFT",    -- name: X=0, Y=15, LEFT
+        70, -15, "CENTER", -- hp:   X=70, Y=-15, CENTER
+        70, 15, "CENTER"), -- level: X=70, Y=15, CENTER
+    target = SetTextDefaults(MakeUnitDefaults( 220, -160,
         {0.8,0.2,0.2,1}, {0.8,0.2,0.2,1}, {0.4,0.1,0.1,1},
         {0.9,0.3,0.1,1}, {0.5,0.1,0.05,1}),
-    focus  = MakeUnitDefaults(   0, -220,
+        0, 15, "RIGHT",    -- name: X=0, Y=15, RIGHT (mirrored from player)
+        -70, -15, "CENTER", -- hp:   X=-70 (mirrored), Y=-15, CENTER
+        -70, 15, "CENTER"), -- level: X=-70 (mirrored), Y=15, CENTER
+    focus  = SetTextDefaults(MakeUnitDefaults(   0, -220,
         {0.6,0.1,0.9,1}, {0.6,0.1,0.9,1}, {0.3,0.05,0.5,1},
         {0.5,0.1,0.9,1}, {0.25,0.05,0.45,1}),
+        0, 15, "LEFT",    -- focus matches player
+        70, -15, "CENTER",
+        70, 15, "CENTER"),
     pet    = MakeUnitDefaults(-220, -240,
         {0.1,0.7,0.4,1}, {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1},
         {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1}),
@@ -332,6 +354,28 @@ SetPC(Enum.PowerType.Fury,        0.79, 0.26, 0.99)
 SetPC(Enum.PowerType.Pain,        1.00, 0.61, 0.00)
 SetPC(Enum.PowerType.Essence,     0.31, 1.00, 0.74)
 
+-- Secondary resource (class resource) power types and max counts
+local CLASS_RESOURCES = {
+    ROGUE       = { powerType = Enum.PowerType.ComboPoints, maxPips = 7 },
+    DRUID       = { powerType = Enum.PowerType.ComboPoints, maxPips = 7 },
+    PALADIN     = { powerType = Enum.PowerType.HolyPower,   maxPips = 5 },
+    MONK        = { powerType = Enum.PowerType.Chi,         maxPips = 6 },
+    WARLOCK     = { powerType = Enum.PowerType.SoulShards,  maxPips = 5 },
+    DEATHKNIGHT = { powerType = nil, isRunes = true,        maxPips = 6 },
+    MAGE        = { powerType = Enum.PowerType.ArcaneCharges, maxPips = 4 },
+    EVOKER      = { powerType = Enum.PowerType.Essence,     maxPips = 6 },
+}
+
+local RESOURCE_COLORS = {
+    [Enum.PowerType.ComboPoints]   = {1.00, 0.96, 0.41},
+    [Enum.PowerType.HolyPower]     = {0.95, 0.90, 0.10},
+    [Enum.PowerType.Chi]           = {0.71, 0.96, 0.71},
+    [Enum.PowerType.SoulShards]    = {0.50, 0.32, 0.55},
+    [Enum.PowerType.ArcaneCharges] = {0.40, 0.60, 1.00},
+    [Enum.PowerType.Essence]       = {0.31, 1.00, 0.74},
+    runes                          = {0.77, 0.12, 0.23},
+}
+
 local function GetPowerColor(unit)
     local pt = UnitPowerType(unit)
     return (pt and POWER_COLORS[pt]) or {0, 0, 1}
@@ -354,6 +398,182 @@ local function ApplyPowerRingColor(frame, unit)
     local fa = (db.orbPowerRingColor and db.orbPowerRingColor[4]) or 1
     if frame.powerRingFillR then frame.powerRingFillR:SetStatusBarColor(c[1], c[2], c[3], fa) end
     if frame.powerRingFillL then frame.powerRingFillL:SetStatusBarColor(c[1], c[2], c[3], fa) end
+end
+
+-- Resource pips (class resources: combo points, holy power, etc.) ------------
+
+local resourceFrame = nil   -- created once on PLAYER_LOGIN
+local resourcePips  = {}
+local resourceClass = nil
+
+local function GetPlayerClass()
+    local _, cls = UnitClass("player")
+    return cls
+end
+
+local function SetupResourcePips()
+    local cls = GetPlayerClass()
+    resourceClass = cls
+    local cfg = CLASS_RESOURCES[cls]
+    if not cfg then
+        if resourceFrame then resourceFrame:Hide() end
+        return
+    end
+
+    local playerFrame = frames["player"]
+    if not playerFrame then return end
+
+    local db = GetDB("player")
+    local maxPips = cfg.maxPips
+
+    if not resourceFrame then
+        resourceFrame = CreateFrame("Frame", "UFL_ResourceFrame", UIParent)
+        resourceFrame:SetMovable(true)
+        resourceFrame:EnableMouse(false)
+    end
+
+    -- Build pips
+    for i = 1, maxPips do
+        if not resourcePips[i] then
+            local pip = CreateFrame("StatusBar", nil, resourceFrame)
+            pip:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+            pip:SetMinMaxValues(0, 1)
+            pip:SetValue(0)
+            local bg = pip:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+            pip.bg = bg
+            resourcePips[i] = pip
+        end
+    end
+    -- Hide unused pips
+    for i = maxPips + 1, #resourcePips do
+        resourcePips[i]:Hide()
+    end
+
+    UnitFramesLite_UpdateResourceLayout()
+end
+
+function UnitFramesLite_UpdateResourceLayout()
+    local playerFrame = frames["player"]
+    if not playerFrame or not resourceFrame then return end
+    local db = GetDB("player")
+    local cls = resourceClass
+    local cfg = cls and CLASS_RESOURCES[cls]
+    if not cfg then resourceFrame:Hide(); return end
+
+    if db.showResources == false then resourceFrame:Hide(); return end
+
+    local maxPips = cfg.maxPips
+    local pipW    = db.resourcePipWidth   or 18
+    local pipH    = db.resourcePipHeight  or 6
+    local pipGap  = db.resourcePipGap     or 3
+    local totalW  = maxPips * pipW + (maxPips - 1) * pipGap
+    resourceFrame:SetSize(totalW, pipH)
+
+    -- Position: anchored to player frame, below it
+    resourceFrame:ClearAllPoints()
+    local rx = db.resourceX or 0
+    local ry = db.resourceY or 0
+    resourceFrame:SetPoint("TOP", playerFrame, "BOTTOM", rx, ry - 2)
+
+    -- Colour
+    local col
+    if cfg.isRunes then
+        col = RESOURCE_COLORS.runes
+    else
+        col = RESOURCE_COLORS[cfg.powerType] or {1, 1, 1}
+    end
+
+    for i = 1, maxPips do
+        local pip = resourcePips[i]
+        if pip then
+            pip:SetSize(pipW, pipH)
+            pip:ClearAllPoints()
+            pip:SetPoint("LEFT", resourceFrame, "LEFT", (i-1) * (pipW + pipGap), 0)
+            pip:SetStatusBarColor(col[1], col[2], col[3], 1)
+            pip:Show()
+        end
+    end
+
+    resourceFrame:Show()
+end
+
+local runeUpdateElapsed = 0
+local RUNE_UPDATE_RATE  = 0.05
+
+local function UpdateResourcePips()
+    if not resourceFrame or not resourceFrame:IsShown() then return end
+    local cls = resourceClass
+    local cfg = cls and CLASS_RESOURCES[cls]
+    if not cfg then return end
+
+    local maxPips = cfg.maxPips
+
+    if cfg.isRunes then
+        -- Death Knight runes: use GetRuneCooldown
+        for i = 1, 6 do
+            local pip = resourcePips[i]
+            if pip then
+                local start, duration, ready = GetRuneCooldown(i)
+                if ready then
+                    pip:SetValue(1)
+                    pip:SetAlpha(1)
+                else
+                    local now = GetTime()
+                    local elapsed = now - (start or now)
+                    local frac = duration and duration > 0 and (elapsed / duration) or 0
+                    pip:SetValue(math.max(0, math.min(1, frac)))
+                    pip:SetAlpha(0.4)
+                end
+            end
+        end
+    else
+        -- All other class resources
+        local cur = 0
+        pcall(function() cur = UnitPower("player", cfg.powerType) end)
+        local max = maxPips
+        pcall(function()
+            local m = UnitPowerMax("player", cfg.powerType)
+            if m and m > 0 then max = m end
+        end)
+        -- Clamp max to configured maxPips
+        max = math.min(max, maxPips)
+
+        -- Use safe comparison for secret numbers: pip is active if its index <= cur
+        -- We can't do `i <= cur` directly (secret number comparison error in 12.0+).
+        -- Use pcall per pip.
+        for i = 1, maxPips do
+            local pip = resourcePips[i]
+            if pip then
+                if i > max then
+                    pip:Hide()
+                else
+                    pip:Show()
+                    local active = false
+                    pcall(function() active = (cur >= i) end)
+                    pip:SetValue(active and 1 or 0)
+                    pip:SetAlpha(active and 1 or 0.35)
+                end
+            end
+        end
+    end
+end
+
+-- Hook OnUpdate on the event frame for rune smooth updates
+local resourceOnUpdateRegistered = false
+local function RegisterResourceOnUpdate(eventFrame)
+    if resourceOnUpdateRegistered then return end
+    resourceOnUpdateRegistered = true
+    eventFrame:HookScript("OnUpdate", function(self, elapsed)
+        if resourceClass == "DEATHKNIGHT" and resourceFrame and resourceFrame:IsShown() then
+            runeUpdateElapsed = runeUpdateElapsed + elapsed
+            if runeUpdateElapsed >= RUNE_UPDATE_RATE then
+                runeUpdateElapsed = 0
+                UpdateResourcePips()
+            end
+        end
+    end)
 end
 
 -- Update frame layout --------------------------------------------------------
@@ -590,9 +810,9 @@ function UnitFramesLite_UpdateFrame(unit)
             db.levelTextX or 0, db.levelTextY or 0, db.levelTextAlign   or "CENTER")
     end
 
-    -- Bar border (bar mode only)
+    -- Bar border: always shown in bar mode, hidden in sphere mode
     if frame.borderFrame then
-        if db.barBorderEnabled and not db.sphereMode then
+        if not db.sphereMode then
             local t = math.max(1, db.barBorderThickness or 1)
             local c = db.barBorderColor or {0, 0, 0, 1}
             frame.borderFrame:SetBackdrop({
@@ -609,6 +829,9 @@ function UnitFramesLite_UpdateFrame(unit)
     UnitFramesLite_UpdateVisibility(unit)
     UnitFramesLite_UpdateAlpha(unit)
     if frame.OnUFLUpdate then frame:OnUFLUpdate() end
+    if unit == "player" and UnitFramesLite_UpdateResourceLayout then
+        UnitFramesLite_UpdateResourceLayout()
+    end
 end
 
 function UnitFramesLite_SetPosition(unit, x, y)
@@ -618,6 +841,34 @@ function UnitFramesLite_SetPosition(unit, x, y)
 end
 
 function UnitFramesLite_GetDB(unit) return GetDB(unit) end
+
+-- Copy DB from src unit to dest unit, mirroring X positions if mirror=true
+function UnitFramesLite_CopyUnit(srcUnit, destUnit, mirror)
+    local src = GetDB(srcUnit)
+    UnitFramesLiteDB[destUnit] = UnitFramesLiteDB[destUnit] or {}
+    local dest = UnitFramesLiteDB[destUnit]
+    local ox, oy = dest.x, dest.y
+    -- Deep copy all settings
+    for k, v in pairs(DeepCopyAllDB(src)) do dest[k] = v end
+    -- Restore position (don't move the frame)
+    dest.x = ox or dest.x
+    dest.y = oy or dest.y
+    -- Mirror X text offsets if requested
+    if mirror then
+        dest.nameTextX  = -(dest.nameTextX  or 0)
+        dest.hpTextX    = -(dest.hpTextX    or 0)
+        dest.hpPctX     = -(dest.hpPctX     or 0)
+        dest.levelTextX = -(dest.levelTextX or 0)
+        -- Mirror name alignment: LEFT→RIGHT, RIGHT→LEFT
+        if dest.nameAlign == "LEFT" then dest.nameAlign = "RIGHT"
+        elseif dest.nameAlign == "RIGHT" then dest.nameAlign = "LEFT" end
+        if dest.hpTextAlign == "LEFT" then dest.hpTextAlign = "RIGHT"
+        elseif dest.hpTextAlign == "RIGHT" then dest.hpTextAlign = "LEFT" end
+        if dest.levelTextAlign == "LEFT" then dest.levelTextAlign = "RIGHT"
+        elseif dest.levelTextAlign == "RIGHT" then dest.levelTextAlign = "LEFT" end
+    end
+    UnitFramesLite_UpdateFrame(destUnit)
+end
 
 -- Profiles -------------------------------------------------------------------
 
@@ -705,19 +956,18 @@ function UnitFramesLite_ApplyBlizzardFrames()
     if not g then return end
     for key, frameNames in pairs(BLIZZ_FRAMES) do
         local hide = g[key]
-        for _, name in ipairs(frameNames) do
-            local f = _G[name]
-            if f then
-                if hide then
+        if hide then
+            for _, name in ipairs(frameNames) do
+                local f = _G[name]
+                if f then
                     f:UnregisterAllEvents()
                     f:Hide()
-                else
-                    f:Show()
-                    -- Re-register default events by reloading the frame's OnLoad script isn't
-                    -- reliable; instruct user that a /reload is needed to restore Blizzard frames.
                 end
             end
         end
+        -- When hide=false we do nothing: calling Show() on a Blizzard frame
+        -- that has been hidden mid-session triggers taint via UnitFrame update
+        -- callbacks. A /reload is required to restore hidden Blizzard frames.
     end
 end
 
@@ -1089,6 +1339,10 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
 eventFrame:RegisterEvent("UNIT_PET")
+eventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
+eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         UnitFramesLiteDB = UnitFramesLiteDB or {}
@@ -1120,6 +1374,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             UnitFramesLite_UpdateFrame(unit)
         end
         UnitFramesLite_ApplyBlizzardFrames()
+        SetupResourcePips()
+        RegisterResourceOnUpdate(eventFrame)
     elseif event == "PLAYER_TARGET_CHANGED" then
         UnitFramesLite_UpdateVisibility("target")
         UnitFramesLite_UpdateAlpha("player")
@@ -1130,6 +1386,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "UNIT_PET" then
         UnitFramesLite_UpdateVisibility("pet")
         UnitFramesLite_UpdateAlpha("pet")
+    elseif event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER" then
+        UpdateResourcePips()
+    elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" then
+        SetupResourcePips()
+        UnitFramesLite_UpdateResourceLayout()
+        UpdateResourcePips()
     elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then
         for unit in pairs(frames) do
             UnitFramesLite_UpdateAlpha(unit)

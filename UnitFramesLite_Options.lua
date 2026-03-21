@@ -310,13 +310,12 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         end)
 
     copyToBtn:SetScript("OnClick", function()
-        local src = UnitFramesLite_GetDB(unit)
-        UnitFramesLiteDB[copyTargetUnit] = UnitFramesLiteDB[copyTargetUnit] or {}
-        local dest = UnitFramesLiteDB[copyTargetUnit]
-        local ox, oy = dest.x, dest.y
-        for k, v in pairs(DeepCopyDB(src)) do dest[k] = v end
-        dest.x, dest.y = ox or dest.x, oy or dest.y
-        UnitFramesLite_UpdateFrame(copyTargetUnit)
+        -- Mirror X positions when copying player↔target
+        local mirror = (unit == "player" and copyTargetUnit == "target")
+                    or (unit == "target" and copyTargetUnit == "player")
+        if UnitFramesLite_CopyUnit then
+            UnitFramesLite_CopyUnit(unit, copyTargetUnit, mirror)
+        end
     end)
 
     -- Right column (x=350): Blizzard Unit Frames (player-only) ----------------
@@ -343,6 +342,17 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         local note = blizzGroup:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         note:SetPoint("BOTTOMLEFT", blizzGroup, "BOTTOMLEFT", 8, 6)
         note:SetText("|cffaaaaaa/reload to restore hidden Blizzard frames|r")
+
+        -- Resource pips settings
+        local resGroup = CreateGroupBox(content, "Class Resources", 350, -136, 260, 200)
+        local function resDB() return UnitFramesLite_GetDB("player") end
+        CreateCheckbox(resGroup, "Show class resource pips", 8, -24,
+            function() return resDB().showResources ~= false end,
+            function(v) resDB().showResources = v; if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end end)
+        local s2,b2,r2 = CreateNudgeSlider(resGroup,"Pip Width",6,40,1, 8,-56,100,"resourcePipWidth",resDB,function() if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end end)
+        local s3,b3,r3 = CreateNudgeSlider(resGroup,"Pip Height",3,20,1, 8,-96,100,"resourcePipHeight",resDB,function() if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end end)
+        local s4,b4,r4 = CreateNudgeSlider(resGroup,"Pip Gap",0,10,1, 8,-136,100,"resourcePipGap",resDB,function() if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end end)
+        local s5,b5,r5 = CreateNudgeSlider(resGroup,"X Offset",-300,300,1, 8,-176,100,"resourceX",resDB,function() if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end end)
     end
 end
 
