@@ -619,6 +619,108 @@ end
 
 function UnitFramesLite_GetDB(unit) return GetDB(unit) end
 
+-- Profiles -------------------------------------------------------------------
+
+-- Deep copy all keys (including nested tables of any depth)
+local function DeepCopyAllDB(src)
+    if type(src) ~= "table" then return src end
+    local t = {}
+    for k, v in pairs(src) do t[k] = DeepCopyAllDB(v) end
+    return t
+end
+
+local function GetProfiles()
+    UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
+    return UnitFramesLiteDB.profiles
+end
+
+-- Capture current per-unit settings into a snapshot table
+local function SnapshotUnits()
+    local snap = {}
+    for unit in pairs(defaults) do
+        snap[unit] = DeepCopyAllDB(UnitFramesLiteDB[unit] or {})
+    end
+    return snap
+end
+
+function UnitFramesLite_ProfileList()
+    local p = GetProfiles(); local names = {}
+    for name in pairs(p.list) do names[#names+1] = name end
+    table.sort(names); return names
+end
+
+function UnitFramesLite_ProfileCreate(name)
+    if not name or name == "" then return end
+    local p = GetProfiles()
+    p.list[name] = SnapshotUnits()
+    p.active = name
+end
+
+function UnitFramesLite_ProfileSetDefault(name)
+    local p = GetProfiles()
+    if not p.list[name] then return end
+    p.active = name
+    -- Apply the saved profile to the live DB
+    local snap = p.list[name]
+    for unit in pairs(defaults) do
+        if snap[unit] then
+            UnitFramesLiteDB[unit] = DeepCopyAllDB(snap[unit])
+            CopyDefaults(defaults[unit], UnitFramesLiteDB[unit])
+            UnitFramesLite_UpdateFrame(unit)
+        end
+    end
+end
+
+function UnitFramesLite_ProfileCopyFrom(name)
+    -- Same as SetDefault but without changing active profile name
+    local p = GetProfiles()
+    if not p.list[name] then return end
+    local snap = p.list[name]
+    for unit in pairs(defaults) do
+        if snap[unit] then
+            UnitFramesLiteDB[unit] = DeepCopyAllDB(snap[unit])
+            CopyDefaults(defaults[unit], UnitFramesLiteDB[unit])
+            UnitFramesLite_UpdateFrame(unit)
+        end
+    end
+end
+
+function UnitFramesLite_ProfileDelete(name)
+    local p = GetProfiles()
+    p.list[name] = nil
+    if p.active == name then p.active = "Default" end
+end
+
+-- Blizzard frame visibility --------------------------------------------------
+
+local BLIZZ_FRAMES = {
+    hideBlizzPlayer = {"PlayerFrame"},
+    hideBlizzTarget = {"TargetFrame"},
+    hideBlizzFocus  = {"FocusFrame"},
+    hideBlizzPet    = {"PetFrame"},
+}
+
+function UnitFramesLite_ApplyBlizzardFrames()
+    local g = UnitFramesLiteDB and UnitFramesLiteDB.global
+    if not g then return end
+    for key, frameNames in pairs(BLIZZ_FRAMES) do
+        local hide = g[key]
+        for _, name in ipairs(frameNames) do
+            local f = _G[name]
+            if f then
+                if hide then
+                    f:UnregisterAllEvents()
+                    f:Hide()
+                else
+                    f:Show()
+                    -- Re-register default events by reloading the frame's OnLoad script isn't
+                    -- reliable; instruct user that a /reload is needed to restore Blizzard frames.
+                end
+            end
+        end
+    end
+end
+
 -- Slash commands -------------------------------------------------------------
 
 SLASH_UNITFRAMESLITE1 = "/ufl"
@@ -990,6 +1092,15 @@ eventFrame:RegisterEvent("UNIT_PET")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         UnitFramesLiteDB = UnitFramesLiteDB or {}
+        -- Global (non-unit) settings
+        UnitFramesLiteDB.global = UnitFramesLiteDB.global or {
+            hideBlizzPlayer = false,
+            hideBlizzTarget = false,
+            hideBlizzFocus  = false,
+            hideBlizzPet    = false,
+        }
+        -- Profiles table: { active="Default", profiles={ Default={player={...}, target={...}, ...} } }
+        UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
         for unit, def in pairs(defaults) do
             UnitFramesLiteDB[unit] = CopyDefaults(def, UnitFramesLiteDB[unit] or {})
         end
@@ -1008,6 +1119,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         for unit in pairs(defaults) do
             UnitFramesLite_UpdateFrame(unit)
         end
+        UnitFramesLite_ApplyBlizzardFrames()
     elseif event == "PLAYER_TARGET_CHANGED" then
         UnitFramesLite_UpdateVisibility("target")
         UnitFramesLite_UpdateAlpha("player")
