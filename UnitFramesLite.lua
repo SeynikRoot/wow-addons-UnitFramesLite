@@ -47,6 +47,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         resourcePipWidth     = 18,
         resourcePipHeight    = 6,
         resourcePipGap       = 3,
+        resourcePipShape     = "Rectangle",  -- "Rectangle" | "Circle" | "Diamond"
         resourceX            = 0,
         resourceY            = 0,
         resourceAlpha        = 1.0,
@@ -417,6 +418,7 @@ end
 local resourceFrame = nil   -- created once on PLAYER_LOGIN
 local resourcePips  = {}
 local resourceClass = nil
+local UpdateResourcePips  -- forward declaration so SetupResourcePips can call it
 
 local function GetPlayerClass()
     local _, cls = UnitClass("player")
@@ -455,6 +457,14 @@ local function SetupResourcePips()
             bg:SetAllPoints()
             bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
             pip.bg = bg
+            -- Shape mask (applied/removed in UpdateResourceLayout)
+            local mask = pip:CreateMaskTexture()
+            mask:SetAllPoints()
+            pip.shapeMask = mask
+            -- Pre-create BG mask too
+            local bgMask = pip:CreateMaskTexture()
+            bgMask:SetAllPoints()
+            pip.bgMask = bgMask
             resourcePips[i] = pip
         end
     end
@@ -464,6 +474,8 @@ local function SetupResourcePips()
     end
 
     UnitFramesLite_UpdateResourceLayout()
+    -- Immediately populate pip values so colours show on first frame after login/reload
+    if UpdateResourcePips then UpdateResourcePips() end
 end
 
 function UnitFramesLite_UpdateResourceLayout()
@@ -497,6 +509,14 @@ function UnitFramesLite_UpdateResourceLayout()
         col = RESOURCE_COLORS[cfg.powerType] or {1, 1, 1}
     end
 
+    local shape = db.resourcePipShape or "Rectangle"
+    local maskTex
+    if shape == "Circle" then
+        maskTex = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    elseif shape == "Diamond" then
+        maskTex = "Interface\\MINIMAP\\UI-Minimap-Background"  -- square rotated via SetRotation below
+    end
+
     for i = 1, maxPips do
         local pip = resourcePips[i]
         if pip then
@@ -504,6 +524,27 @@ function UnitFramesLite_UpdateResourceLayout()
             pip:ClearAllPoints()
             pip:SetPoint("LEFT", resourceFrame, "LEFT", (i-1) * (pipW + pipGap), 0)
             pip:SetStatusBarColor(col[1], col[2], col[3], 1)
+
+            -- Apply shape mask to fill and background
+            local fillTex = pip:GetStatusBarTexture()
+            local mask    = pip.shapeMask
+            local bgMask  = pip.bgMask
+            if maskTex and fillTex and mask then
+                mask:SetTexture(maskTex)
+                mask:SetAllPoints(pip)
+                fillTex:AddMaskTexture(mask)
+            elseif fillTex and mask then
+                -- Rectangle: remove any mask
+                pcall(function() fillTex:RemoveMaskTexture(mask) end)
+            end
+            if maskTex and pip.bg and bgMask then
+                bgMask:SetTexture(maskTex)
+                bgMask:SetAllPoints(pip)
+                pip.bg:AddMaskTexture(bgMask)
+            elseif pip.bg and bgMask then
+                pcall(function() pip.bg:RemoveMaskTexture(bgMask) end)
+            end
+
             pip:Show()
         end
     end
@@ -514,8 +555,8 @@ end
 local runeUpdateElapsed = 0
 local RUNE_UPDATE_RATE  = 0.05
 
-local function UpdateResourcePips()
-    if not resourceFrame or not resourceFrame:IsShown() then return end
+UpdateResourcePips = function()
+    if not resourceFrame then return end
     local cls = resourceClass
     local cfg = cls and CLASS_RESOURCES[cls]
     if not cfg then return end
@@ -677,7 +718,6 @@ function UnitFramesLite_UpdateFrame(unit)
         if db.showOrbPower and frame.powerRingFrame then
             local thick    = math.max(4, db.orbPowerRingThickness or 8)
             local ringSz   = sz + thick * 2
-            local halfRing = ringSz / 2
             local prf      = frame.powerRingFrame
             prf:SetSize(ringSz, ringSz)
             prf:ClearAllPoints()
@@ -686,7 +726,6 @@ function UnitFramesLite_UpdateFrame(unit)
             local rc = db.orbPowerRingBgColor or {0, 0, 0, 0.9}
             frame.powerRingBg:SetColorTexture(rc[1], rc[2], rc[3], rc[4])
 
-            -- Re-apply mask after SetStatusBarTexture
             local function SetupRingBar(bar)
                 bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
                 local st = bar:GetStatusBarTexture()
@@ -694,23 +733,18 @@ function UnitFramesLite_UpdateFrame(unit)
             end
 
             local ccw = db.orbPowerRingCCW or false
-            -- Left half covers the left 50% of the ring frame (TOPLEFT → left-center).
-            -- Anchoring TOPLEFT at prf TOPLEFT ensures the bar spans the full left half
-            -- (top to bottom), not just the lower quarter (old "CENTER" bug).
-            -- CW: left fills top-down (9→12 then 6→9); CCW: left fills bottom-up.
+            local halfRing = ringSz / 2
             frame.powerRingFillL:ClearAllPoints()
             frame.powerRingFillL:SetPoint("TOPLEFT", prf, "TOPLEFT", 0, 0)
             frame.powerRingFillL:SetSize(halfRing, ringSz)
             frame.powerRingFillL:SetOrientation("VERTICAL")
-            frame.powerRingFillL:SetReverseFill(not ccw)  -- CW: top-down; CCW: bottom-up
+            frame.powerRingFillL:SetReverseFill(not ccw)
             SetupRingBar(frame.powerRingFillL)
-            -- Right half covers the right 50% of the ring frame (TOPRIGHT → right-center).
-            -- CW: right fills bottom-up (3→6 then 12→3); CCW: right fills top-down.
             frame.powerRingFillR:ClearAllPoints()
             frame.powerRingFillR:SetPoint("TOPRIGHT", prf, "TOPRIGHT", 0, 0)
             frame.powerRingFillR:SetSize(halfRing, ringSz)
             frame.powerRingFillR:SetOrientation("VERTICAL")
-            frame.powerRingFillR:SetReverseFill(ccw)      -- CW: bottom-up; CCW: top-down
+            frame.powerRingFillR:SetReverseFill(ccw)
             SetupRingBar(frame.powerRingFillR)
 
             ApplyPowerRingColor(frame, unit)
@@ -1284,14 +1318,18 @@ local function SetupFrame(displayFrame, unit)
     powerRingBg:AddMaskTexture(powerRingCircMask)
     displayFrame.powerRingCircMask = powerRingCircMask
 
-    -- Right half: fills the 3-o'clock side of the ring
+    -- Radial sweep via Cooldown frame. SetCooldown(start, duration) is a C-function
+    -- that accepts secret numbers directly as arguments — no Lua arithmetic needed.
+    -- We pass: start = GetTime() - power,  duration = maxPower
+    -- so elapsed/duration = power/maxPower = fill fraction.
+    -- Right half: fills the 3-o'clock side of the ring (CW: second 50%; CCW: first 50%)
     local prFillR = CreateFrame("StatusBar", nil, powerRingFrame)
     prFillR:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     displayFrame.powerRingFillR = prFillR
     local prStR = prFillR:GetStatusBarTexture()
     if prStR then prStR:AddMaskTexture(powerRingCircMask) end
 
-    -- Left half: fills the 9-o'clock side
+    -- Left half: fills the 9-o'clock side (CW: first 50%; CCW: second 50%)
     local prFillL = CreateFrame("StatusBar", nil, powerRingFrame)
     prFillL:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     displayFrame.powerRingFillL = prFillL
@@ -1375,21 +1413,16 @@ local function SetupFrame(displayFrame, unit)
         if displayFrame.orbFill then
             if db.sphereMode and db.orbGradientDir == "CENTRE"
                and displayFrame.orbFill2 and displayFrame.orbFill2:IsShown() then
-                -- CENTRE gradient: lower half covers 0–50% of health, upper 50–100%.
-                -- Arithmetic on secret health values must be pcall-guarded.
-                local lowerPct, upperPct = 0, 0
-                pcall(function()
-                    if maxhp > 0 then
-                        local pct = hp / maxhp
-                        lowerPct = math.min(1, pct * 2)
-                        upperPct = math.max(0, (pct - 0.5) * 2)
-                    end
-                end)
-                local dead = isDead and 0
-                displayFrame.orbFill:SetMinMaxValues(0, 1)
-                displayFrame.orbFill:SetValue(dead or lowerPct)
-                displayFrame.orbFill2:SetMinMaxValues(0, 1)
-                displayFrame.orbFill2:SetValue(dead or upperPct)
+                -- CENTRE gradient: lower half is 0→halfMax, upper half is halfMax→max.
+                -- Encode the split into SetMinMaxValues so WoW handles the secret-number
+                -- arithmetic internally — no Lua division of secret numbers needed.
+                local halfMax = 0
+                pcall(function() halfMax = maxhp / 2 end)
+                local v = isDead and 0 or hp
+                displayFrame.orbFill:SetMinMaxValues(0, halfMax)
+                displayFrame.orbFill:SetValue(v)
+                displayFrame.orbFill2:SetMinMaxValues(halfMax, maxhp)
+                displayFrame.orbFill2:SetValue(v)
             else
                 displayFrame.orbFill:SetMinMaxValues(0, maxhp)
                 displayFrame.orbFill:SetValue(isDead and 0 or hp)
@@ -1419,24 +1452,21 @@ local function SetupFrame(displayFrame, unit)
         -- SetMinMaxValues and SetValue accept secret numbers just like StatusBar
         -- hp/power bars do — no taint error.
         if displayFrame.powerRingFillR and displayFrame.powerRingFillL and db.showOrbPower then
-            local ccw    = db.orbPowerRingCCW or false
-            local fillR  = displayFrame.powerRingFillR
-            local fillL  = displayFrame.powerRingFillL
-            -- halfMax is a secret number computed inside pcall; 0 fallback if it fails.
+            local ccw   = db.orbPowerRingCCW or false
+            local fillR = displayFrame.powerRingFillR
+            local fillL = displayFrame.powerRingFillL
             local halfMax = 0
             pcall(function() halfMax = maxPower / 2 end)
             if not ccw then
-                -- CW: left fills first (9→12 then 6→9), right fills second (3→6 then 12→3)
                 fillL:SetMinMaxValues(0, halfMax)
-                fillL:SetValue(power)
+                fillL:SetValue(isDead and 0 or power)
                 fillR:SetMinMaxValues(halfMax, maxPower)
-                fillR:SetValue(power)
+                fillR:SetValue(isDead and 0 or power)
             else
-                -- CCW: right fills first (12→3 then 3→6), left fills second (6→9 then 9→12)
                 fillR:SetMinMaxValues(0, halfMax)
-                fillR:SetValue(power)
+                fillR:SetValue(isDead and 0 or power)
                 fillL:SetMinMaxValues(halfMax, maxPower)
-                fillL:SetValue(power)
+                fillL:SetValue(isDead and 0 or power)
             end
             ApplyPowerRingColor(displayFrame, unit)
         end

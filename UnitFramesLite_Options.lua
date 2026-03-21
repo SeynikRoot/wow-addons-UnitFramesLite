@@ -158,8 +158,15 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
                 UIDropDownMenu_AddButton(info, level)
             end
         end)
-        UIDropDownMenu_SetSelectedName(dd, getValue())
-        function dd:SetSelection(name) UIDropDownMenu_SetSelectedName(self, name) end
+        local initVal = getValue()
+        UIDropDownMenu_SetSelectedName(dd, initVal)
+        -- Belt-and-suspenders: also set the button text directly so it shows correctly
+        -- before the first OnShow/refresh fires (avoids "Custom" placeholder).
+        if dd.Text then dd.Text:SetText(initVal) end
+        function dd:SetSelection(name)
+            UIDropDownMenu_SetSelectedName(self, name)
+            if self.Text then self.Text:SetText(name) end
+        end
         return dd
     end
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -346,7 +353,7 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         note:SetText("|cffaaaaaa/reload to restore hidden Blizzard frames|r")
 
         -- Right column: Class Resources settings (controls both UFL pips and Blizzard bar)
-        local resGroup = CreateGroupBox(content, "Class Resources", 350, -8, 260, 510)
+        local resGroup = CreateGroupBox(content, "Class Resources", 350, -8, 260, 560)
         local function resDB() return UnitFramesLite_GetDB("player") end
         local function applyRes()
             if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
@@ -394,6 +401,10 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         local _,_,rPipGap = CreateNudgeSlider(resGroup,"Pip Gap",    0,10,1, 8,-382,80,"resourcePipGap",    resDB,applyRes)
         local _,_,rResX   = CreateNudgeSlider(resGroup,"X Offset",-300,300,1,8,-422,80,"resourceX",         resDB,applyRes)
         local _,_,rResY   = CreateNudgeSlider(resGroup,"Y Offset", -50, 50,1,8,-462,80,"resourceY",         resDB,applyRes)
+        CreateLabel(resGroup, "Pip Shape", 8, -508)
+        CreateDropdown(resGroup, 8, -526, 110, {"Rectangle","Circle","Diamond"},
+            function() return resDB().resourcePipShape or "Rectangle" end,
+            function(v) resDB().resourcePipShape = v; applyRes() end)
     end
 end
 
@@ -597,261 +608,314 @@ local function BuildTextContent(content, unit, getDB, panel)
     levelCtr:SetShown(LevelShown())
 end
 
--- Tab 3: Bar -----------------------------------------------------------------
+-- Tab 3: Appearance (Bar + Orb unified) -------------------------------------
 
-local function BuildBarContent(content, unit, getDB, panel)
+local function BuildAppearanceContent(content, unit, getDB, panel)
     local x = 16; local s, b, r
     local halfW = math.floor(UIParent:GetWidth()  / 2)
     local halfH = math.floor(UIParent:GetHeight() / 2)
     local gx = 8
+    local rx = 320   -- right column x
 
-    -- Position and size at the top (moved here from General tab) --------------
-    local posGroup = CreateGroupBox(content, "Position", x, -8, 300, 102)
-    s,b,r = CreateNudgeSlider(posGroup,"X Offset",-halfW,halfW,1, gx,-20,168,"x",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.xSlider,panel.xBox,panel.xRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(posGroup,"Y Offset",-halfH,halfH,1, gx,-58,168,"y",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.ySlider,panel.yBox,panel.yRefresh = s,b,r
+    -- ── Frame Style selector (top, full width) ──────────────────────────────
+    CreateLabel(content, "Frame Style", x, -8)
+    panel.frameStyleDD = CreateDropdown(content, x + 90, -6, 100, {"Bar", "Orb"},
+        function() return (getDB().sphereMode and "Orb") or "Bar" end,
+        function(v)
+            getDB().sphereMode = (v == "Orb")
+            UnitFramesLite_UpdateFrame(unit)
+            panel:UpdateAppearanceMode()
+        end)
 
-    local sizeGroup = CreateGroupBox(content, "Frame Size", x, -120, 300, 102)
-    s,b,r = CreateNudgeSlider(sizeGroup,"Width",60,500,1, gx,-20,168,"frameWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.widthSlider,panel.widthBox,panel.widthRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(sizeGroup,"Height",12,120,1, gx,-58,168,"frameHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.heightSlider,panel.heightBox,panel.heightRefresh = s,b,r
-
-    panel.reverseFillCheck = CreateCheckbox(content, "Reverse fill (HP/Power)", x, -234,
+    -- ── Shared: Reverse Fill (above Position) ───────────────────────────────
+    panel.reverseFillCheck = CreateCheckbox(content, "Reverse fill (HP/Power)", x, -40,
         function() return getDB().reverseFill or false end,
         function(v) getDB().reverseFill = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    -- Portrait group box -------------------------------------------------------
-    -- Height 260 when unclamped controls are shown; we fix at 260 and show/hide.
-    local portGroup = CreateGroupBox(content, "Portrait", x, -258, 300, 260)
-    local pgx = 8
+    -- ── Shared: Position ────────────────────────────────────────────────────
+    local posGroup = CreateGroupBox(content, "Position", x, -66, 290, 102)
+    s,b,r = CreateNudgeSlider(posGroup,"X Offset",-halfW,halfW,1, gx,-20,158,"x",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.xSlider,panel.xBox,panel.xRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(posGroup,"Y Offset",-halfH,halfH,1, gx,-58,158,"y",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.ySlider,panel.yBox,panel.yRefresh = s,b,r
 
-    -- Mode row
+    -- ── Bar-only: Frame Size (below Position, left column) ──────────────────
+    local sizeGroup = CreateGroupBox(content, "Frame Size", x, -178, 290, 102)
+    s,b,r = CreateNudgeSlider(sizeGroup,"Width",60,500,1, gx,-20,158,"frameWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.widthSlider,panel.widthBox,panel.widthRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(sizeGroup,"Height",12,120,1, gx,-58,158,"frameHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.heightSlider,panel.heightBox,panel.heightRefresh = s,b,r
+
+    -- ── Bar-only: Portrait (below Frame Size, left column) ──────────────────
+    local portGroup = CreateGroupBox(content, "Portrait", x, -290, 290, 260)
+    local pgx = 8
     CreateLabel(portGroup, "Mode", pgx, -20)
-    panel.portraitModeDD = CreateDropdown(portGroup, pgx+44, -18, 120, portraitModeOptions,
+    panel.portraitModeDD = CreateDropdown(portGroup, pgx+44, -18, 110, portraitModeOptions,
         function() return getDB().portraitMode or "None" end,
         function(v) getDB().portraitMode = v; UnitFramesLite_UpdateFrame(unit); panel:UpdatePortraitMode() end)
-
-    -- Side row
     CreateLabel(portGroup, "Side", pgx, -52)
-    panel.portraitSideDD = CreateDropdown(portGroup, pgx+44, -50, 100, portraitSideOptions,
+    panel.portraitSideDD = CreateDropdown(portGroup, pgx+44, -50, 90, portraitSideOptions,
         function() return getDB().portraitSide or "Left" end,
         function(v) getDB().portraitSide = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    -- Clamp checkbox — label includes unit name
-    local unitLabel = unit:sub(1,1):upper() .. unit:sub(2)  -- "Player", "Target" etc.
+    local unitLabel = unit:sub(1,1):upper() .. unit:sub(2)
     panel.portraitClampCheck = CreateCheckbox(portGroup, "Clamp to " .. unitLabel .. " frame", pgx, -84,
         function() return getDB().portraitClamp ~= false end,
         function(v) getDB().portraitClamp = v; UnitFramesLite_UpdateFrame(unit); panel:UpdatePortraitMode() end)
-
-    -- Unclamped size/position controls (shown when clamp is OFF)
     local unclampedGroup = CreateFrame("Frame", nil, portGroup)
     unclampedGroup:SetPoint("TOPLEFT", portGroup, "TOPLEFT", 0, -108)
-    unclampedGroup:SetSize(290, 148)
+    unclampedGroup:SetSize(280, 148)
     panel.portraitUnclampedGroup = unclampedGroup
-
-    s,b,r = CreateNudgeSlider(unclampedGroup,"Width",12,300,1, pgx,-4,140,"portraitW",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(unclampedGroup,"Width",12,300,1, pgx,-4,130,"portraitW",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.portraitWSlider,panel.portraitWBox,panel.portraitWRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(unclampedGroup,"Height",12,300,1, pgx,-42,140,"portraitH",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(unclampedGroup,"Height",12,300,1, pgx,-42,130,"portraitH",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.portraitHSlider,panel.portraitHBox,panel.portraitHRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(unclampedGroup,"X Offset",-500,500,1, pgx,-80,140,"portraitX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(unclampedGroup,"X Offset",-500,500,1, pgx,-80,130,"portraitX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.portraitXSlider,panel.portraitXBox,panel.portraitXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(unclampedGroup,"Y Offset",-500,500,1, pgx,-118,140,"portraitY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(unclampedGroup,"Y Offset",-500,500,1, pgx,-118,130,"portraitY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.portraitYSlider,panel.portraitYBox,panel.portraitYRefresh = s,b,r
 
-    -- legacy stub so panel:refresh() line "panel.portraitDD:SetSelection" doesn't error
+    -- legacy stub so panel:refresh() "panel.portraitDD:SetSelection" doesn't error
     panel.portraitDD = CreateDropdown(content, -9999, 0, 80, portraitOptions,
         function() return getDB().portrait or "Portrait Off" end,
         function(v) getDB().portrait = v end)
 
     panel.UpdatePortraitMode = function(self)
-        local isNone   = (getDB().portraitMode or "None") == "None"
+        local isNone    = (getDB().portraitMode or "None") == "None"
         local isClamped = getDB().portraitClamp ~= false
         self.portraitSideDD:SetShown(not isNone)
         self.portraitClampCheck:SetShown(not isNone)
         self.portraitUnclampedGroup:SetShown(not isNone and not isClamped)
     end
-    panel:UpdatePortraitMode()
 
-    -- Left column (x=16, y start -526) ----------------------------------------
-    CreateLabel(content, "Bar", x, -526)
-    local bgBtn = CreateColorSwatch(content, x, -546, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
+    -- Store bar-only group references for UpdateAppearanceMode
+    panel.appSizeGroup = sizeGroup
+    panel.appPortGroup = portGroup
+
+    -- ── BAR section — left column below Portrait ────────────────────────────
+    -- Uses sub-frames anchored to each other so sections collapse properly.
+    local barSection = CreateFrame("Frame", nil, content)
+    barSection:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -560)
+    barSection:SetSize(620, 400)
+    barSection:Hide()
+    panel.barSection = barSection
+
+    -- Helper: create a thin horizontal separator line inside barSection
+    local function BarSep(yOff)
+        local sep = barSection:CreateTexture(nil,"ARTWORK")
+        sep:SetColorTexture(0.3,0.3,0.3,0.8); sep:SetHeight(1)
+        sep:SetPoint("TOPLEFT",barSection,"TOPLEFT",x,yOff)
+        sep:SetPoint("TOPRIGHT",barSection,"TOPRIGHT",-x,yOff)
+        return sep
+    end
+
+    -- ── Bar: Background colour + power bar checkbox (always visible) ─────────
+    CreateLabel(barSection, "Bar", x, -8)
+    local bgBtn = CreateColorSwatch(barSection, x, -28, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = bgBtn
 
-    panel.showPowerCheck = CreateCheckbox(content, "Show power bar", x, -594,
+    panel.showPowerCheck = CreateCheckbox(barSection, "Show power bar", x, -76,
         function() return getDB().showPowerBar or false end,
         function(v) getDB().showPowerBar = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    s,b,r = CreateNudgeSlider(content,"HP Bar Height (0 = full frame height)",0,120,1, x,-628,200,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full height)",0,120,1, x,-110,185,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
 
-    CreateLabel(content, "Statusbar Texture (solid colour mode only)", x, -666)
-    panel.texDD = CreateDropdown(content, x, -684, 200, GetTextureList(),
+    CreateLabel(barSection, "Statusbar Texture (solid colour mode only)", x, -148)
+    panel.texDD = CreateDropdown(barSection, x, -166, 200, GetTextureList(),
         function() return getDB().statusbarTexture or "Blizzard" end,
         function(v) getDB().statusbarTexture = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    -- Right column (x=340, y start -8) ----------------------------------------
-    local rx = 340
-    CreateLabel(content, "Colour Mode", rx, -8)
-    panel.solidCheckbox = CreateCheckbox(content, "Use Solid Colour", rx, -26,
+    -- ── Bar: Colour Mode (right column, always visible) ──────────────────────
+    CreateLabel(barSection, "Colour Mode", rx, -8)
+    panel.solidCheckbox = CreateCheckbox(barSection, "Use Solid Colour", rx, -26,
         function() return getDB().useSolidColor or false end,
         function(v) getDB().useSolidColor = v; panel:UpdateColourMode(); UnitFramesLite_UpdateFrame(unit) end)
 
-    local solidBtn  = CreateColorSwatch(content, rx, -64, "Solid Colour",    getDB, "solidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+    local solidBtn  = CreateColorSwatch(barSection, rx, -64, "Solid Colour",          getDB, "solidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = solidBtn
-    local gradSBtn  = CreateColorSwatch(content, rx, -64, "Gradient Start Colour", getDB, "gradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    local gradSBtn  = CreateColorSwatch(barSection, rx, -64, "Gradient Start Colour", getDB, "gradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = gradSBtn
-    local gradEBtn  = CreateColorSwatch(content, rx, -94, "Gradient End Colour",   getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local gradEBtn  = CreateColorSwatch(barSection, rx, -94, "Gradient End Colour",   getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = gradEBtn
-    local gradDirLabel = CreateLabel(content, "Direction", rx, -126)
-    panel.dirDD = CreateDropdown(content, rx, -144, 120, dirOptions,
+    local gradDirLabel = CreateLabel(barSection, "Direction", rx, -126)
+    panel.dirDD = CreateDropdown(barSection, rx, -144, 120, dirOptions,
         function() return getDB().gradientDir or "HORIZONTAL" end,
         function(v) getDB().gradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     panel.solidGroup    = {solidBtn}
     panel.gradientGroup = {gradSBtn, gradEBtn, gradDirLabel, panel.dirDD}
 
-    -- Bar Border section: below both columns ----------------------------------
-    local sep = content:CreateTexture(nil,"ARTWORK"); sep:SetColorTexture(0.3,0.3,0.3,0.8); sep:SetHeight(1)
-    sep:SetPoint("TOPLEFT",content,"TOPLEFT",x,-716); sep:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-716)
-
-    CreateLabel(content, "Bar Border", x, -726)
-    panel.barBorderCheck = CreateCheckbox(content, "Enabled", x+84, -726,
+    -- ── Bar Border (collapsible sub-frame) ───────────────────────────────────
+    BarSep(-198)
+    CreateLabel(barSection, "Bar Border", x, -208)
+    -- Declare before checkbox so closures can capture the upvalue
+    local barBorderDetails
+    panel.barBorderCheck = CreateCheckbox(barSection, "Enabled", x+84, -208,
         function() return getDB().barBorderEnabled or false end,
-        function(v) getDB().barBorderEnabled = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(content,"Border Thickness",1,20,1, x,-754,160,"barBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+        function(v)
+            getDB().barBorderEnabled = v
+            barBorderDetails:SetShown(v)
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+    barBorderDetails = CreateFrame("Frame", nil, barSection)
+    barBorderDetails:SetPoint("TOPLEFT", barSection, "TOPLEFT", 0, -222)
+    barBorderDetails:SetSize(300, 80)
+    s,b,r = CreateNudgeSlider(barBorderDetails,"Border Thickness",1,20,1, x,-14,160,"barBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.borderThicknessSlider,panel.borderThicknessBox,panel.borderThicknessRefresh = s,b,r
-    local borderBtn = CreateColorSwatch(content, x, -792, "Border Colour", getDB, "barBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local borderBtn = CreateColorSwatch(barBorderDetails, x, -52, "Border Colour", getDB, "barBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = borderBtn
-end
+    barBorderDetails:SetShown(getDB().barBorderEnabled or false)
+    -- Override Refresh so panel:refresh() also syncs collapsible visibility
+    panel.barBorderCheck.Refresh = function(self)
+        local v = getDB().barBorderEnabled or false
+        self:SetChecked(v); barBorderDetails:SetShown(v)
+    end
 
--- Tab 4: Orb -----------------------------------------------------------------
+    -- ── ORB section — two columns side by side, starts at y=-66 ─────────────
+    -- Left column (ox=0): Diameter, Fill/Gradient dirs, Orb Colour, Inner Border
+    -- Right column (orx=160): Power Ring
+    local orbSection = CreateFrame("Frame", nil, content)
+    orbSection:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -66)
+    orbSection:SetSize(600, 680)
+    orbSection:Hide()
+    panel.orbSection = orbSection
 
-local function BuildOrbContent(content, unit, getDB, panel)
-    local x = 16; local s, b, r
-    local halfW = math.floor(UIParent:GetWidth()  / 2)
-    local halfH = math.floor(UIParent:GetHeight() / 2)
-    local gx = 8
+    local ox  = 0    -- left column x within orbSection
+    local orx = 230  -- right column x (past Diameter slider + editbox + gap + separator)
 
-    -- Position and size at the top (moved here from General tab) --------------
-    local posGroup = CreateGroupBox(content, "Position", x, -8, 300, 102)
-    s,b,r = CreateNudgeSlider(posGroup,"X Offset",-halfW,halfW,1, gx,-20,168,"x",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.xSlider,panel.xBox,panel.xRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(posGroup,"Y Offset",-halfH,halfH,1, gx,-58,168,"y",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.ySlider,panel.yBox,panel.yRefresh = s,b,r
+    -- Vertical separator between left and right columns
+    local orbVSep = orbSection:CreateTexture(nil,"ARTWORK")
+    orbVSep:SetColorTexture(0.3,0.3,0.3,0.8); orbVSep:SetWidth(1)
+    orbVSep:SetPoint("TOPLEFT",  orbSection, "TOPLEFT",  orx - 10, -4)
+    orbVSep:SetPoint("BOTTOMLEFT", orbSection, "BOTTOMLEFT", orx - 10, 0)
 
-    local sizeGroup = CreateGroupBox(content, "Frame Size", x, -120, 300, 102)
-    s,b,r = CreateNudgeSlider(sizeGroup,"Width",60,500,1, gx,-20,168,"frameWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.widthSlider,panel.widthBox,panel.widthRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(sizeGroup,"Height",12,120,1, gx,-58,168,"frameHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.heightSlider,panel.heightBox,panel.heightRefresh = s,b,r
-
-    panel.reverseFillCheck = CreateCheckbox(content, "Reverse fill (HP/Power)", x, -234,
-        function() return getDB().reverseFill or false end,
-        function(v) getDB().reverseFill = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    -- Portrait stub (not shown on Orb tab but referenced by panel:refresh)
-    panel.portraitDD = CreateDropdown(content, -9999, 0, 80, portraitOptions,
-        function() return getDB().portrait or "Portrait Off" end,
-        function(v) getDB().portrait = v end)
-
-    -- Orb / sphere controls ---------------------------------------------------
-    CreateLabel(content, "Orb / Sphere Mode", x, -262)
-    panel.sphereModeCheck = CreateCheckbox(content, "Enable sphere mode", x, -280,
-        function() return getDB().sphereMode or false end,
-        function(v) getDB().sphereMode = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    s,b,r = CreateNudgeSlider(content,"Sphere Diameter (px)",20,300,1, x,-312,180,"sphereSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    -- ── Orb: Diameter + directions (left column) ─────────────────────────────
+    -- sliderW=100 keeps the editbox right edge inside the left column (0+22+100+24+44 = 190)
+    s,b,r = CreateNudgeSlider(orbSection,"Orb Diameter (px)",20,300,1, ox,-8,100,"sphereSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.sphereSizeSlider,panel.sphereSizeBox,panel.sphereSizeRefresh = s,b,r
 
-    CreateLabel(content, "Fill Direction", x, -356)
-    panel.sphereFillDirDD = CreateDropdown(content, x, -374, 140, fillDirOptions,
+    CreateLabel(orbSection, "Health Fill Direction", ox, -52)
+    panel.sphereFillDirDD = CreateDropdown(orbSection, ox, -70, 110, fillDirOptions,
         function() return getDB().sphereFillDir or "VERTICAL" end,
         function(v) getDB().sphereFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(content, "Gradient Direction", x, -412)
-    panel.orbGradDirDD = CreateDropdown(content, x, -430, 140, {"VERTICAL","HORIZONTAL","CENTRE"},
+    CreateLabel(orbSection, "Gradient Direction", ox, -108)
+    panel.orbGradDirDD = CreateDropdown(orbSection, ox, -126, 110, {"VERTICAL","HORIZONTAL","CENTRE"},
         function() return getDB().orbGradientDir or "VERTICAL" end,
         function(v) getDB().orbGradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    -- Orb colour
-    local sep1 = content:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
-    sep1:SetPoint("TOPLEFT",content,"TOPLEFT",x,-456); sep1:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-456)
-
-    CreateLabel(content, "Orb Colour", x, -466)
-    panel.orbSolidCheck = CreateCheckbox(content, "Use Solid Colour", x, -484,
+    -- ── Orb Colour (left column, below dirs) ─────────────────────────────────
+    local orbColSep = orbSection:CreateTexture(nil,"ARTWORK"); orbColSep:SetColorTexture(0.3,0.3,0.3,0.8); orbColSep:SetHeight(1)
+    orbColSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",ox,-162); orbColSep:SetWidth(210)
+    CreateLabel(orbSection, "Orb Colour", ox, -172)
+    panel.orbSolidCheck = CreateCheckbox(orbSection, "Use Solid", ox, -190,
         function() return getDB().orbUseSolidColor or false end,
         function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
-
-    local orbSolidBtn  = CreateColorSwatch(content, x, -518, "Solid Colour",          getDB, "orbSolidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbSolidBtn = CreateColorSwatch(orbSection, ox, -224, "Solid",      getDB, "orbSolidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbSolidBtn
-
-    local orbGSBtn = CreateColorSwatch(content, x,     -518, "Gradient Start Colour", getDB, "orbGradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbGSBtn    = CreateColorSwatch(orbSection, ox, -224, "Grad Start", getDB, "orbGradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbGSBtn
-    local orbGEBtn = CreateColorSwatch(content, x,     -548, "Gradient End Colour",   getDB, "orbGradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbGEBtn    = CreateColorSwatch(orbSection, ox, -254, "Grad End",   getDB, "orbGradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbGEBtn
-
     panel.orbSolidGroup    = {orbSolidBtn}
     panel.orbGradientGroup = {orbGSBtn, orbGEBtn}
-
     panel.UpdateOrbColourMode = function(self)
         local isSolid = getDB().orbUseSolidColor
         for _, w in ipairs(self.orbSolidGroup    or {}) do w:SetShown(isSolid)     end
         for _, w in ipairs(self.orbGradientGroup or {}) do w:SetShown(not isSolid) end
     end
-    panel:UpdateOrbColourMode()
 
-    -- Inner border
-    local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
-    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-578); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-578)
-
-    CreateLabel(content, "Inner Border", x, -588)
-    panel.showOrbBorderCheck = CreateCheckbox(content, "Show border around health orb", x, -606,
+    -- ── Inner Border (right column top, collapsible) ──────────────────────────
+    local orbBorderSep = orbSection:CreateTexture(nil,"ARTWORK"); orbBorderSep:SetColorTexture(0.3,0.3,0.3,0.8); orbBorderSep:SetHeight(1)
+    orbBorderSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",orx,-8); orbBorderSep:SetWidth(140)
+    CreateLabel(orbSection, "Inner Border", orx, -18)
+    local orbBorderDetails  -- declared before checkbox so closure captures the upvalue
+    panel.showOrbBorderCheck = CreateCheckbox(orbSection, "Enabled", orx, -36,
         function() return getDB().showOrbBorder or false end,
-        function(v) getDB().showOrbBorder = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    local s2,b2,r2 = CreateNudgeSlider(content,"Border Thickness (px)",1,40,1, x,-642,160,"orbBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+        function(v)
+            getDB().showOrbBorder = v
+            orbBorderDetails:SetShown(v)
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+    orbBorderDetails = CreateFrame("Frame", nil, orbSection)
+    orbBorderDetails:SetPoint("TOPLEFT", orbSection, "TOPLEFT", orx, -56)
+    orbBorderDetails:SetSize(150, 80)
+    local s2,b2,r2 = CreateNudgeSlider(orbBorderDetails,"Thickness (px)",1,40,1, 0,-4,100,"orbBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbBorderThickSlider,panel.orbBorderThickBox,panel.orbBorderThickRefresh = s2,b2,r2
+    local orbBorderBtn = CreateColorSwatch(orbBorderDetails, 0, -46, "Border Colour", getDB, "orbBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = orbBorderBtn
+    orbBorderDetails:SetShown(getDB().showOrbBorder or false)
+    panel.showOrbBorderCheck.Refresh = function(self)
+        local v = getDB().showOrbBorder or false
+        self:SetChecked(v); orbBorderDetails:SetShown(v)
+    end
 
-    local borderBtn = CreateColorSwatch(content, x, -696, "Border Colour", getDB, "orbBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons+1] = borderBtn
-
-    -- Power ring
-    local sep3 = content:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
-    sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-726); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-726)
-
-    CreateLabel(content, "Power Ring", x, -736)
-    panel.showOrbPowerCheck = CreateCheckbox(content, "Show power ring around orb", x, -754,
+    -- ── Power Ring (right column below Inner Border, collapsible) ─────────────
+    local orbRingSep = orbSection:CreateTexture(nil,"ARTWORK"); orbRingSep:SetColorTexture(0.3,0.3,0.3,0.8); orbRingSep:SetHeight(1)
+    orbRingSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",orx,-152); orbRingSep:SetWidth(140)
+    CreateLabel(orbSection, "Power Ring", orx, -162)
+    local orbRingDetails  -- declared before checkbox so closure captures the upvalue
+    panel.showOrbPowerCheck = CreateCheckbox(orbSection, "Enabled", orx, -180,
         function() return getDB().showOrbPower or false end,
-        function(v) getDB().showOrbPower = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    local s,b,r = CreateNudgeSlider(content,"Ring Thickness (px)",4,40,1, x,-790,160,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s,b,r
-
-    local ringBgBtn = CreateColorSwatch(content, x, -832, "Ring Background Colour", getDB, "orbPowerRingBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+        function(v)
+            getDB().showOrbPower = v
+            orbRingDetails:SetShown(v)
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+    orbRingDetails = CreateFrame("Frame", nil, orbSection)
+    orbRingDetails:SetPoint("TOPLEFT", orbSection, "TOPLEFT", orx, -200)
+    orbRingDetails:SetSize(150, 200)
+    local s3,b3,r3 = CreateNudgeSlider(orbRingDetails,"Thickness (px)",4,40,1, 0,-4,100,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s3,b3,r3
+    local ringBgBtn = CreateColorSwatch(orbRingDetails, 0, -46, "BG Colour", getDB, "orbPowerRingBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringBgBtn
-
-    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -862,
+    panel.ringCCWCheck = CreateCheckbox(orbRingDetails, "Counter-clockwise", 0, -76,
         function() return getDB().orbPowerRingCCW or false end,
         function(v) getDB().orbPowerRingCCW = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -890,
+    panel.ringTypeColorCheck = CreateCheckbox(orbRingDetails, "Use power type colour", 0, -102,
         function() return getDB().orbPowerRingUseTypeColor ~= false end,
         function(v)
             getDB().orbPowerRingUseTypeColor = v
             panel:UpdateRingColourMode()
             UnitFramesLite_UpdateFrame(unit)
         end)
-
-    local ringColBtn = CreateColorSwatch(content, x, -920, "Ring Colour", getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local ringColBtn = CreateColorSwatch(orbRingDetails, 0, -136, "Ring Colour", getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringColBtn
     panel.ringColBtn = ringColBtn
-
     panel.UpdateRingColourMode = function(self)
         local useType = getDB().orbPowerRingUseTypeColor ~= false
         ringColBtn:SetShown(not useType)
     end
-    panel:UpdateRingColourMode()
+    orbRingDetails:SetShown(getDB().showOrbPower or false)
+    panel.showOrbPowerCheck.Refresh = function(self)
+        local v = getDB().showOrbPower or false
+        self:SetChecked(v); orbRingDetails:SetShown(v)
+    end
+
+    -- ── Hidden sphereMode stub (panel:refresh calls self.sphereModeCheck:Refresh()) ──
+    panel.sphereModeCheck = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+    panel.sphereModeCheck:SetPoint("TOPLEFT", content, "TOPLEFT", -9999, 0)
+    panel.sphereModeCheck:SetChecked(getDB().sphereMode or false)
+    panel.sphereModeCheck.Refresh = function(self) self:SetChecked(getDB().sphereMode or false) end
+
+    -- ── UpdateAppearanceMode ────────────────────────────────────────────────
+    panel.UpdateAppearanceMode = function(self)
+        local isOrb = getDB().sphereMode
+        barSection:SetShown(not isOrb)
+        orbSection:SetShown(isOrb)
+        -- Frame Size and Portrait are bar-only
+        sizeGroup:SetShown(not isOrb)
+        portGroup:SetShown(not isOrb)
+        if self.frameStyleDD then
+            self.frameStyleDD:SetSelection(isOrb and "Orb" or "Bar")
+        end
+        -- Sync sub-section visibility with DB when switching modes
+        if isOrb then
+            orbBorderDetails:SetShown(getDB().showOrbBorder or false)
+            orbRingDetails:SetShown(getDB().showOrbPower or false)
+        else
+            barBorderDetails:SetShown(getDB().barBorderEnabled or false)
+        end
+    end
 end
 
 -- Tab 5: Conditions (includes Alpha section) ---------------------------------
@@ -925,11 +989,12 @@ local function BuildUnitPanel(panel, unit, tabSync)
     end
     panel.UpdateOrbColourMode = function() end
     panel.UpdateRingColourMode = function() end
-    panel.UpdatePortraitMode = function() end  -- overwritten by BuildBarContent
+    panel.UpdatePortraitMode = function() end
+    panel.UpdateAppearanceMode = function() end  -- overwritten by BuildAppearanceContent
 
     -- Tab buttons are created externally (on the main frame header).
     -- We only create scroll frames + content here.
-    local tabNames        = {"General", "Text", "Bar", "Orb", "Conditions"}
+    local tabNames        = {"General", "Text", "Appearance", "Conditions"}
     local tabContents     = {}   -- scroll child frames (passed to Build* functions)
     local tabScrollFrames = {}   -- scroll frame wrappers (shown/hidden by SelectTab)
 
@@ -955,11 +1020,10 @@ local function BuildUnitPanel(panel, unit, tabSync)
     SelectTab(tabSync.current or 1)
     panel.SelectTab = SelectTab
 
-    BuildGeneralContent(tabContents[1],    unit, getDB, panel)
-    BuildTextContent(tabContents[2],       unit, getDB, panel)
-    BuildBarContent(tabContents[3],        unit, getDB, panel)
-    BuildOrbContent(tabContents[4],        unit, getDB, panel)
-    BuildConditionsContent(tabContents[5], unit, getDB, panel)
+    BuildGeneralContent(tabContents[1],       unit, getDB, panel)
+    BuildTextContent(tabContents[2],          unit, getDB, panel)
+    BuildAppearanceContent(tabContents[3],    unit, getDB, panel)
+    BuildConditionsContent(tabContents[4],    unit, getDB, panel)
 
     panel.refresh = function(self)
         local db = getDB()
@@ -997,12 +1061,14 @@ local function BuildUnitPanel(panel, unit, tabSync)
         if self.dirDD then self.dirDD:SetSelection(db.gradientDir or "HORIZONTAL") end
         self.hpBarHeightRefresh(); self.barBorderCheck:Refresh(); self.borderThicknessRefresh()
         self.sphereModeCheck:Refresh(); self.sphereSizeRefresh()
+        if self.frameStyleDD then self.frameStyleDD:SetSelection(db.sphereMode and "Orb" or "Bar") end
         self.sphereFillDirDD:SetSelection(db.sphereFillDir or "VERTICAL")
         self.orbGradDirDD:SetSelection(db.orbGradientDir or "VERTICAL")
         self.orbSolidCheck:Refresh()
         self.showOrbBorderCheck:Refresh(); self.orbBorderThickRefresh()
         self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
+        if self.UpdateAppearanceMode then self:UpdateAppearanceMode() end
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
         if self.refreshAlpha then self:refreshAlpha() end
         for _, btn in ipairs(self.swatchButtons) do btn:RefreshSwatch() end
@@ -1010,6 +1076,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self:UpdateOrbColourMode()
         self:UpdateRingColourMode()
         self:UpdatePortraitMode()
+        self:UpdateAppearanceMode()
     end
 
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -1030,12 +1097,30 @@ local function BuildUnitPanel(panel, unit, tabSync)
         StaticPopup_Show(key)
     end)
 
+    local undoBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    undoBtn:SetSize(80, 22); undoBtn:SetPoint("RIGHT", resetBtn, "LEFT", -6, 0)
+    undoBtn:SetText("Undo")
+    undoBtn:SetEnabled(false)
+    undoBtn:SetScript("OnClick", function()
+        if panel.undoSnapshot then
+            UnitFramesLiteDB[unit] = DeepCopyDB(panel.undoSnapshot)
+            UnitFramesLite_UpdateFrame(unit)
+            panel:refresh()
+            panel.undoSnapshot = nil
+            undoBtn:SetEnabled(false)
+        end
+    end)
+
     panel:SetScript("OnShow", function(self)
+        -- Fresh snapshot each time panel opens so undo goes back to this moment
+        panel.undoSnapshot = DeepCopyDB(getDB())
+        undoBtn:SetEnabled(true)
         self:refresh()
         SelectTab(tabSync.current or 1)
     end)
     panel:UpdateColourMode()
     panel:UpdatePortraitMode()
+    panel:UpdateAppearanceMode()
 end
 
 -- Main options frame ---------------------------------------------------------
@@ -1122,11 +1207,12 @@ function CreateOptionsPanel()
         end)
 
     -- Tab buttons on the main frame header, right of the unit dropdown
-    local tabNames = {"General", "Text", "Bar", "Orb", "Conditions"}
+    local tabNames = {"General", "Text", "Appearance", "Conditions"}
+    local tabWidths = {76, 60, 100, 90}
     local sharedTabBtns = {}
     for i, name in ipairs(tabNames) do
         local btn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
-        btn:SetSize(76, 22); btn:SetText(name)
+        btn:SetSize(tabWidths[i] or 76, 22); btn:SetText(name)
         if i == 1 then btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 210, -38)
         else            btn:SetPoint("LEFT", sharedTabBtns[i-1], "RIGHT", 2, 0) end
         sharedTabBtns[i] = btn
