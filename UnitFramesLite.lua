@@ -189,8 +189,7 @@ function UnitFramesLite_UpdateAlpha(unit)
         if frame.orbBg      then frame.orbBg:SetAlpha(alpha) end
     end
 
-    -- Apply to power ring as well
-    if frame.powerRingFrame  then frame.powerRingFrame:SetAlpha(alpha)  end
+    if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(alpha) end
     if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
 
     -- Set alpha on the overlay frame AND directly on each FontString.
@@ -352,8 +351,9 @@ local function ApplyPowerRingColor(frame, unit)
     else
         c = db.orbPowerRingColor or {0, 0.5, 1, 1}
     end
-    if frame.powerRingFillR then frame.powerRingFillR:SetStatusBarColor(c[1], c[2], c[3], 1) end
-    if frame.powerRingFillL then frame.powerRingFillL:SetStatusBarColor(c[1], c[2], c[3], 1) end
+    local fa = (db.orbPowerRingColor and db.orbPowerRingColor[4]) or 1
+    if frame.powerRingFillR then frame.powerRingFillR:SetStatusBarColor(c[1], c[2], c[3], fa) end
+    if frame.powerRingFillL then frame.powerRingFillL:SetStatusBarColor(c[1], c[2], c[3], fa) end
 end
 
 -- Update frame layout --------------------------------------------------------

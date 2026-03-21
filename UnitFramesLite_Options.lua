@@ -174,15 +174,37 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
     return btn
 end
 
-local function CreateColorSwatch(parent, x, y, getDB, key, callback)
-    local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    btn:SetSize(90, 22); btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y); btn:SetText("  Pick...")
-    local swatch = btn:CreateTexture(nil, "OVERLAY")
-    swatch:SetSize(12, 12); swatch:SetPoint("LEFT", btn, "LEFT", 6, 0)
+-- Inline colour swatch: a small clickable coloured square with a label to its right.
+-- Returns the swatch frame; call :RefreshSwatch() to sync the colour display.
+local function CreateColorSwatch(parent, x, y, label, getDB, key, callback)
+    -- Outer frame acts as the clickable button (20×20)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(20, 20)
+    btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+
+    -- Dark border background
+    local border = btn:CreateTexture(nil, "BACKGROUND")
+    border:SetAllPoints()
+    border:SetColorTexture(0.1, 0.1, 0.1, 1)
+
+    -- Colour fill (1px inset)
+    local fill = btn:CreateTexture(nil, "ARTWORK")
+    fill:SetPoint("TOPLEFT", btn, "TOPLEFT", 1, -1)
+    fill:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1, 1)
+    fill:SetColorTexture(1, 1, 1, 1)
+
+    -- Label to the right, parented to btn so it hides/shows with it
+    local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fs:SetPoint("LEFT", btn, "RIGHT", 6, 0)
+    fs:SetText(label)
+
     local function RefreshSwatch()
-        local c = getDB()[key] or {1,1,1,1}; swatch:SetColorTexture(c[1], c[2], c[3], 1)
+        local c = getDB()[key] or {1,1,1,1}
+        fill:SetColorTexture(c[1], c[2], c[3], 1)
     end
-    RefreshSwatch(); btn.RefreshSwatch = RefreshSwatch
+    RefreshSwatch()
+    btn.RefreshSwatch = RefreshSwatch
+
     btn:SetScript("OnClick", function()
         local db = getDB(); local r,g,b,a = unpack(db[key] or {1,1,1,1})
         if ColorPickerFrame.SetupColorPickerAndShow then
@@ -298,11 +320,11 @@ end
 
 local function BuildTextContent(content, unit, getDB, panel)
     local s, b, r
-    local COL_W = 163
+    local COL_W = 220
     local c1 = 6
-    local c2 = c1 + COL_W + 3
-    local c3 = c2 + COL_W + 3
-    local c4 = c3 + COL_W + 3
+    local c2 = c1 + COL_W + 6
+    local c3 = c2 + COL_W + 6
+    local c4 = c3 + COL_W + 6
 
     -- Global default font (fallback when per-section font is nil)
     CreateLabel(content, "Default Font", c1, -8)
@@ -310,16 +332,24 @@ local function BuildTextContent(content, unit, getDB, panel)
         function() return getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().font = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    -- Colour swatch helper (parent-aware)
-    local function ColSwatch(parent, x, y, colorKey)
-        local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-        btn:SetSize(72, 20)
+    -- Colour swatch helper (parent-aware, no label — used inside group boxes)
+    local function ColSwatch(parent, x, y, colorKey, labelText)
+        local btn = CreateFrame("Button", nil, parent)
+        btn:SetSize(20, 20)
         btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-        btn:SetText("  Col...")
-        local sw = btn:CreateTexture(nil, "OVERLAY")
-        sw:SetSize(10, 10); sw:SetPoint("LEFT", btn, "LEFT", 4, 0)
+        local border = btn:CreateTexture(nil, "BACKGROUND")
+        border:SetAllPoints(); border:SetColorTexture(0.1, 0.1, 0.1, 1)
+        local fill = btn:CreateTexture(nil, "ARTWORK")
+        fill:SetPoint("TOPLEFT", btn, "TOPLEFT", 1, -1)
+        fill:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1, 1)
+        fill:SetColorTexture(1, 1, 1, 1)
+        if labelText then
+            local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            fs:SetPoint("LEFT", btn, "RIGHT", 6, 0)
+            fs:SetText(labelText)
+        end
         local function Refresh()
-            local c = getDB()[colorKey] or {1,1,1,1}; sw:SetColorTexture(c[1],c[2],c[3],1)
+            local c = getDB()[colorKey] or {1,1,1,1}; fill:SetColorTexture(c[1],c[2],c[3],1)
         end
         Refresh(); btn.RefreshSwatch = Refresh
         btn:SetScript("OnClick", function()
@@ -348,10 +378,10 @@ local function BuildTextContent(content, unit, getDB, panel)
     --   y=-50: Colour swatch
     --   y=-76: Collapsible container (font/align/position controls)
     local GX      = 4    -- x padding inside group box
-    local CTR_TOP = -76  -- collapsible container top inside group box
+    local CTR_TOP = -96  -- collapsible container top inside group box
 
     -- ── Column 1: Name Text ──────────────────────────────────────────────────
-    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 340)
+    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 310)
     local nameCtr  -- forward declaration so checkbox closure can reference it
     local function NameShown() return getDB().showName ~= false end
     panel.showNameCheck = CreateCheckbox(nameBox, "Show", GX, -24, NameShown,
@@ -359,30 +389,30 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.showNameCheck.Refresh = function(self)
         self:SetChecked(NameShown()); nameCtr:SetShown(NameShown())
     end
-    ColSwatch(nameBox, GX, -50, "nameColor")
+    ColSwatch(nameBox, GX, -54, "nameColor", "Name Colour")
 
     nameCtr = CreateFrame("Frame", nil, nameBox)
     nameCtr:SetPoint("TOPLEFT", nameBox, "TOPLEFT", GX, CTR_TOP)
-    nameCtr:SetSize(COL_W - GX * 2, 270)
+    nameCtr:SetSize(COL_W - GX * 2, 220)
 
-    CreateLabel(nameCtr, "Font", 0, -8)
-    panel.nameFontDD = CreateDropdown(nameCtr, 16, -26, COL_W - 30, GetFontList(),
+    CreateLabel(nameCtr, "Font",  0, -10)
+    panel.nameFontDD = CreateDropdown(nameCtr, 44, -8, 120, GetFontList(),
         function() return getDB().nameFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().nameFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(nameCtr, "Align", 0, -68)
-    panel.nameAlignDD = CreateDropdown(nameCtr, 52, -66, 86, alignOptions,
+    CreateLabel(nameCtr, "Align", 0, -40)
+    panel.nameAlignDD = CreateDropdown(nameCtr, 44, -38, 100, alignOptions,
         function() return getDB().nameAlign or "LEFT" end,
         function(v) getDB().nameAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(nameCtr,"Size",6,36,1, 0,-104,60,"nameTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameCtr,"Size",6,36,1, 0,-70,60,"nameTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameFontSizeSlider, panel.nameFontSizeBox, panel.nameFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(nameCtr,"X Off",-500,500,1, 0,-144,60,"nameTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameCtr,"X Off",-500,500,1, 0,-110,60,"nameTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameXSlider, panel.nameXBox, panel.nameXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(nameCtr,"Y Off",-500,500,1, 0,-184,60,"nameTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameCtr,"Y Off",-500,500,1, 0,-150,60,"nameTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameYSlider, panel.nameYBox, panel.nameYRefresh = s,b,r
     nameCtr:SetShown(NameShown())
 
     -- ── Column 2: HP Text ────────────────────────────────────────────────────
-    local hpTextBox = CreateGroupBox(content, "HP Text", c2, -50, COL_W, 460)
+    local hpTextBox = CreateGroupBox(content, "HP Text", c2, -50, COL_W, 420)
     local hpTextCtr
     local function HPTextShown() return getDB().showHPText ~= false end
     panel.showHPTextCheck = CreateCheckbox(hpTextBox, "Show", GX, -24, HPTextShown,
@@ -390,40 +420,38 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.showHPTextCheck.Refresh = function(self)
         self:SetChecked(HPTextShown()); hpTextCtr:SetShown(HPTextShown())
     end
-    ColSwatch(hpTextBox, GX, -50, "hpTextColor")
+    ColSwatch(hpTextBox, GX, -54, "hpTextColor", "Text Colour")
 
     hpTextCtr = CreateFrame("Frame", nil, hpTextBox)
     hpTextCtr:SetPoint("TOPLEFT", hpTextBox, "TOPLEFT", GX, CTR_TOP)
-    hpTextCtr:SetSize(COL_W - GX * 2, 380)
+    hpTextCtr:SetSize(COL_W - GX * 2, 320)
 
-    CreateLabel(hpTextCtr, "Font", 0, -8)
-    panel.hpTextFontDD = CreateDropdown(hpTextCtr, 16, -26, COL_W - 30, GetFontList(),
+    CreateLabel(hpTextCtr, "Font",    0, -10)
+    panel.hpTextFontDD = CreateDropdown(hpTextCtr, 44, -8, 120, GetFontList(),
         function() return getDB().hpTextFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().hpTextFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(hpTextCtr, "Align", 0, -68)
-    panel.hpTextAlignDD = CreateDropdown(hpTextCtr, 52, -66, 86, alignOptions,
+    CreateLabel(hpTextCtr, "Align",   0, -40)
+    panel.hpTextAlignDD = CreateDropdown(hpTextCtr, 44, -38, 100, alignOptions,
         function() return getDB().hpTextAlign or "CENTER" end,
         function(v) getDB().hpTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(hpTextCtr,"Size",6,36,1, 0,-104,60,"hpTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextCtr,"Size",6,36,1, 0,-70,60,"hpTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpFontSizeSlider, panel.hpFontSizeBox, panel.hpFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpTextCtr,"X Off",-500,500,1, 0,-144,60,"hpTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextCtr,"X Off",-500,500,1, 0,-110,60,"hpTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpXSlider, panel.hpXBox, panel.hpXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpTextCtr,"Y Off",-500,500,1, 0,-184,60,"hpTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextCtr,"Y Off",-500,500,1, 0,-150,60,"hpTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpYSlider, panel.hpYBox, panel.hpYRefresh = s,b,r
-    -- Content: which HP values to show
-    CreateLabel(hpTextCtr, "Content", 0, -228)
-    panel.hpContentDD = CreateDropdown(hpTextCtr, 16, -246, COL_W - 30, hpContentOptions,
+    CreateLabel(hpTextCtr, "Content", 0, -190)
+    panel.hpContentDD = CreateDropdown(hpTextCtr, 60, -188, 100, hpContentOptions,
         function() return getDB().hpContent or "Cur / Max" end,
         function(v) getDB().hpContent = v; UnitFramesLite_UpdateFrame(unit) end)
-    -- Format: how to display the numbers (Full = raw, Short = ÷1000k)
-    CreateLabel(hpTextCtr, "Format", 0, -286)
-    panel.hpFormatDD = CreateDropdown(hpTextCtr, 16, -304, COL_W - 30, hpFormatOptions,
+    CreateLabel(hpTextCtr, "Format",  0, -220)
+    panel.hpFormatDD = CreateDropdown(hpTextCtr, 60, -218, 100, hpFormatOptions,
         function() return getDB().hpFormat or "Full" end,
         function(v) getDB().hpFormat = v; UnitFramesLite_UpdateFrame(unit) end)
     hpTextCtr:SetShown(HPTextShown())
 
     -- ── Column 3: HP Percent ─────────────────────────────────────────────────
-    local hpPctBox = CreateGroupBox(content, "HP Percent", c3, -50, COL_W, 380)
+    local hpPctBox = CreateGroupBox(content, "HP Percent", c3, -50, COL_W, 330)
     local hpPctCtr
     local function HPPctShown() return getDB().showHPPct or false end
     panel.showHPPctCheck = CreateCheckbox(hpPctBox, "Show", GX, -24, HPPctShown,
@@ -431,33 +459,33 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.showHPPctCheck.Refresh = function(self)
         self:SetChecked(HPPctShown()); hpPctCtr:SetShown(HPPctShown())
     end
-    ColSwatch(hpPctBox, GX, -50, "hpPctColor")
+    ColSwatch(hpPctBox, GX, -54, "hpPctColor", "Text Colour")
 
     hpPctCtr = CreateFrame("Frame", nil, hpPctBox)
     hpPctCtr:SetPoint("TOPLEFT", hpPctBox, "TOPLEFT", GX, CTR_TOP)
-    hpPctCtr:SetSize(COL_W - GX * 2, 290)
+    hpPctCtr:SetSize(COL_W - GX * 2, 230)
 
-    CreateLabel(hpPctCtr, "Font", 0, -8)
-    panel.hpPctFontDD = CreateDropdown(hpPctCtr, 16, -26, COL_W - 30, GetFontList(),
+    CreateLabel(hpPctCtr, "Font",  0, -10)
+    panel.hpPctFontDD = CreateDropdown(hpPctCtr, 44, -8, 120, GetFontList(),
         function() return getDB().hpPctFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().hpPctFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(hpPctCtr, "Align", 0, -68)
-    panel.hpPctAlignDD = CreateDropdown(hpPctCtr, 52, -66, 86, alignOptions,
+    CreateLabel(hpPctCtr, "Align", 0, -40)
+    panel.hpPctAlignDD = CreateDropdown(hpPctCtr, 44, -38, 100, alignOptions,
         function() return getDB().hpPctAlign or "CENTER" end,
         function(v) getDB().hpPctAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(hpPctCtr,"Size",6,36,1, 0,-104,60,"hpPctFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctCtr,"Size",6,36,1, 0,-70,60,"hpPctFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctFontSizeSlider, panel.hpPctFontSizeBox, panel.hpPctFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpPctCtr,"X Off",-500,500,1, 0,-144,60,"hpPctX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctCtr,"X Off",-500,500,1, 0,-110,60,"hpPctX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctXSlider, panel.hpPctXBox, panel.hpPctXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpPctCtr,"Y Off",-500,500,1, 0,-184,60,"hpPctY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctCtr,"Y Off",-500,500,1, 0,-150,60,"hpPctY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctYSlider, panel.hpPctYBox, panel.hpPctYRefresh = s,b,r
-    panel.hpPctSymbolCheck = CreateCheckbox(hpPctCtr, "Show %", 0, -228,
+    panel.hpPctSymbolCheck = CreateCheckbox(hpPctCtr, "Show %", 0, -190,
         function() return getDB().hpPctShowSymbol ~= false end,
         function(v) getDB().hpPctShowSymbol = v; UnitFramesLite_UpdateFrame(unit) end)
     hpPctCtr:SetShown(HPPctShown())
 
     -- ── Column 4: Level Text ─────────────────────────────────────────────────
-    local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 340)
+    local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 310)
     local levelCtr
     local function LevelShown() return getDB().showLevel ~= false end
     panel.showLevelCheck = CreateCheckbox(levelBox, "Show", GX, -24, LevelShown,
@@ -465,25 +493,25 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.showLevelCheck.Refresh = function(self)
         self:SetChecked(LevelShown()); levelCtr:SetShown(LevelShown())
     end
-    ColSwatch(levelBox, GX, -50, "levelColor")
+    ColSwatch(levelBox, GX, -54, "levelColor", "Text Colour")
 
     levelCtr = CreateFrame("Frame", nil, levelBox)
     levelCtr:SetPoint("TOPLEFT", levelBox, "TOPLEFT", GX, CTR_TOP)
-    levelCtr:SetSize(COL_W - GX * 2, 270)
+    levelCtr:SetSize(COL_W - GX * 2, 220)
 
-    CreateLabel(levelCtr, "Font", 0, -8)
-    panel.levelFontDD = CreateDropdown(levelCtr, 16, -26, COL_W - 30, GetFontList(),
+    CreateLabel(levelCtr, "Font",  0, -10)
+    panel.levelFontDD = CreateDropdown(levelCtr, 44, -8, 120, GetFontList(),
         function() return getDB().levelFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().levelFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(levelCtr, "Align", 0, -68)
-    panel.levelTextAlignDD = CreateDropdown(levelCtr, 52, -66, 86, alignOptions,
+    CreateLabel(levelCtr, "Align", 0, -40)
+    panel.levelTextAlignDD = CreateDropdown(levelCtr, 44, -38, 100, alignOptions,
         function() return getDB().levelTextAlign or "CENTER" end,
         function(v) getDB().levelTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(levelCtr,"Size",6,36,1, 0,-104,60,"levelTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelCtr,"Size",6,36,1, 0,-70,60,"levelTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelFontSizeSlider, panel.levelFontSizeBox, panel.levelFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(levelCtr,"X Off",-500,500,1, 0,-144,60,"levelTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelCtr,"X Off",-500,500,1, 0,-110,60,"levelTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelXSlider, panel.levelXBox, panel.levelXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(levelCtr,"Y Off",-500,500,1, 0,-184,60,"levelTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelCtr,"Y Off",-500,500,1, 0,-150,60,"levelTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelYSlider, panel.levelYBox, panel.levelYRefresh = s,b,r
     levelCtr:SetShown(LevelShown())
 end
@@ -494,8 +522,7 @@ local function BuildBarContent(content, unit, getDB, panel)
     local x = 16; local s, b, r
 
     CreateLabel(content, "Bar", x, -8)
-    CreateLabel(content, "Background Colour", x, -26)
-    local bgBtn = CreateColorSwatch(content, x, -44, getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
+    local bgBtn = CreateColorSwatch(content, x, -28, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = bgBtn
 
     panel.showPowerCheck = CreateCheckbox(content, "Show power bar", x, -76,
@@ -515,34 +542,30 @@ local function BuildBarContent(content, unit, getDB, panel)
         function() return getDB().useSolidColor or false end,
         function(v) getDB().useSolidColor = v; panel:UpdateColourMode(); UnitFramesLite_UpdateFrame(unit) end)
 
-    local solidLabel   = CreateLabel(content, "Solid Colour",    x, -260)
-    local solidBtn     = CreateColorSwatch(content, x,     -278, getDB, "solidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+    local solidBtn  = CreateColorSwatch(content, x, -260, "Solid Colour",    getDB, "solidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = solidBtn
-    local gradSLabel   = CreateLabel(content, "Gradient Start",  x, -260)
-    local gradSBtn     = CreateColorSwatch(content, x,     -278, getDB, "gradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    local gradSBtn  = CreateColorSwatch(content, x, -260, "Gradient Start Colour", getDB, "gradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = gradSBtn
-    local gradELabel   = CreateLabel(content, "Gradient End",    x, -316)
-    local gradEBtn     = CreateColorSwatch(content, x,     -334, getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local gradEBtn  = CreateColorSwatch(content, x, -290, "Gradient End Colour",   getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = gradEBtn
-    local gradDirLabel = CreateLabel(content, "Direction",       x, -372)
-    panel.dirDD = CreateDropdown(content, x, -390, 120, dirOptions,
+    local gradDirLabel = CreateLabel(content, "Direction", x, -322)
+    panel.dirDD = CreateDropdown(content, x, -340, 120, dirOptions,
         function() return getDB().gradientDir or "HORIZONTAL" end,
         function(v) getDB().gradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    panel.solidGroup    = {solidLabel, solidBtn}
-    panel.gradientGroup = {gradSLabel, gradSBtn, gradELabel, gradEBtn, gradDirLabel, panel.dirDD}
+    panel.solidGroup    = {solidBtn}
+    panel.gradientGroup = {gradSBtn, gradEBtn, gradDirLabel, panel.dirDD}
 
     local sep = content:CreateTexture(nil,"ARTWORK"); sep:SetColorTexture(0.3,0.3,0.3,0.8); sep:SetHeight(1)
-    sep:SetPoint("TOPLEFT",content,"TOPLEFT",x,-424); sep:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-424)
+    sep:SetPoint("TOPLEFT",content,"TOPLEFT",x,-370); sep:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-370)
 
-    CreateLabel(content, "Bar Border", x, -434)
-    panel.barBorderCheck = CreateCheckbox(content, "Enabled", x+84, -434,
+    CreateLabel(content, "Bar Border", x, -380)
+    panel.barBorderCheck = CreateCheckbox(content, "Enabled", x+84, -380,
         function() return getDB().barBorderEnabled or false end,
         function(v) getDB().barBorderEnabled = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(content,"Border Thickness",1,20,1, x,-462,160,"barBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(content,"Border Thickness",1,20,1, x,-408,160,"barBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.borderThicknessSlider,panel.borderThicknessBox,panel.borderThicknessRefresh = s,b,r
-    CreateLabel(content, "Border Colour", x, -500)
-    local borderBtn = CreateColorSwatch(content, x, -518, getDB, "barBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local borderBtn = CreateColorSwatch(content, x, -446, "Border Colour", getDB, "barBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = borderBtn
 end
 
@@ -563,35 +586,30 @@ local function BuildOrbContent(content, unit, getDB, panel)
     panel.sphereFillDirDD = CreateDropdown(content, x, -122, 140, fillDirOptions,
         function() return getDB().sphereFillDir or "VERTICAL" end,
         function(v) getDB().sphereFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(content, "VERTICAL=bottom-up  HORIZONTAL=left-right", x, -160)
-
-    CreateLabel(content, "Gradient Direction", x, -178)
-    panel.orbGradDirDD = CreateDropdown(content, x, -196, 140, {"VERTICAL","HORIZONTAL","CENTRE"},
+    CreateLabel(content, "Gradient Direction", x, -160)
+    panel.orbGradDirDD = CreateDropdown(content, x, -178, 140, {"VERTICAL","HORIZONTAL","CENTRE"},
         function() return getDB().orbGradientDir or "VERTICAL" end,
         function(v) getDB().orbGradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     -- Orb colour
     local sep1 = content:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
-    sep1:SetPoint("TOPLEFT",content,"TOPLEFT",x,-222); sep1:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-222)
+    sep1:SetPoint("TOPLEFT",content,"TOPLEFT",x,-204); sep1:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-204)
 
-    CreateLabel(content, "Orb Colour", x, -232)
-    panel.orbSolidCheck = CreateCheckbox(content, "Use Solid Colour", x, -250,
+    CreateLabel(content, "Orb Colour", x, -214)
+    panel.orbSolidCheck = CreateCheckbox(content, "Use Solid Colour", x, -232,
         function() return getDB().orbUseSolidColor or false end,
         function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
 
-    local orbSolidLbl  = CreateLabel(content, "Solid Colour",    x,     -284)
-    local orbSolidBtn  = CreateColorSwatch(content, x,     -302, getDB, "orbSolidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbSolidBtn  = CreateColorSwatch(content, x, -266, "Solid Colour",          getDB, "orbSolidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbSolidBtn
 
-    local orbGSLbl = CreateLabel(content, "Gradient Start",  x,     -284)
-    local orbGSBtn = CreateColorSwatch(content, x,     -302, getDB, "orbGradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbGSBtn = CreateColorSwatch(content, x,     -266, "Gradient Start Colour", getDB, "orbGradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbGSBtn
-    local orbGELbl = CreateLabel(content, "Gradient End",    x+110, -284)
-    local orbGEBtn = CreateColorSwatch(content, x+110, -302, getDB, "orbGradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbGEBtn = CreateColorSwatch(content, x,     -296, "Gradient End Colour",   getDB, "orbGradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbGEBtn
 
-    panel.orbSolidGroup    = {orbSolidLbl, orbSolidBtn}
-    panel.orbGradientGroup = {orbGSLbl, orbGSBtn, orbGELbl, orbGEBtn}
+    panel.orbSolidGroup    = {orbSolidBtn}
+    panel.orbGradientGroup = {orbGSBtn, orbGEBtn}
 
     panel.UpdateOrbColourMode = function(self)
         local isSolid = getDB().orbUseSolidColor
@@ -602,41 +620,39 @@ local function BuildOrbContent(content, unit, getDB, panel)
 
     -- Inner border
     local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
-    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-330); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-330)
+    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-326); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-326)
 
-    CreateLabel(content, "Inner Border", x, -340)
-    panel.showOrbBorderCheck = CreateCheckbox(content, "Show border around health orb", x, -358,
+    CreateLabel(content, "Inner Border", x, -336)
+    panel.showOrbBorderCheck = CreateCheckbox(content, "Show border around health orb", x, -354,
         function() return getDB().showOrbBorder or false end,
         function(v) getDB().showOrbBorder = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    local s2,b2,r2 = CreateNudgeSlider(content,"Border Thickness (px)",1,40,1, x,-394,160,"orbBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    local s2,b2,r2 = CreateNudgeSlider(content,"Border Thickness (px)",1,40,1, x,-390,160,"orbBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbBorderThickSlider,panel.orbBorderThickBox,panel.orbBorderThickRefresh = s2,b2,r2
 
-    CreateLabel(content, "Border Colour", x, -426)
-    local borderBtn = CreateColorSwatch(content, x + 220, -426, getDB, "orbBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local borderBtn = CreateColorSwatch(content, x, -444, "Border Colour", getDB, "orbBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = borderBtn
 
     -- Power ring
     local sep3 = content:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
-    sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-446); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-446)
+    sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-474); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-x,-474)
 
-    CreateLabel(content, "Power Ring", x, -456)
-    panel.showOrbPowerCheck = CreateCheckbox(content, "Show power ring around orb", x, -474,
+    CreateLabel(content, "Power Ring", x, -484)
+    panel.showOrbPowerCheck = CreateCheckbox(content, "Show power ring around orb", x, -502,
         function() return getDB().showOrbPower or false end,
         function(v) getDB().showOrbPower = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    local s,b,r = CreateNudgeSlider(content,"Ring Thickness (px)",4,40,1, x,-510,160,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    local s,b,r = CreateNudgeSlider(content,"Ring Thickness (px)",4,40,1, x,-538,160,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s,b,r
 
-    CreateLabel(content, "Ring Background Colour", x, -542)
-    local ringBgBtn = CreateColorSwatch(content, x + 220, -542, getDB, "orbPowerRingBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local ringBgBtn = CreateColorSwatch(content, x, -580, "Ring Background Colour", getDB, "orbPowerRingBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringBgBtn
 
-    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -598,
+    panel.ringCCWCheck = CreateCheckbox(content, "Counter-clockwise drain", x, -610,
         function() return getDB().orbPowerRingCCW or false end,
         function(v) getDB().orbPowerRingCCW = v; UnitFramesLite_UpdateFrame(unit) end)
 
-    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -626,
+    panel.ringTypeColorCheck = CreateCheckbox(content, "Use power type colour", x, -638,
         function() return getDB().orbPowerRingUseTypeColor ~= false end,
         function(v)
             getDB().orbPowerRingUseTypeColor = v
@@ -644,7 +660,7 @@ local function BuildOrbContent(content, unit, getDB, panel)
             UnitFramesLite_UpdateFrame(unit)
         end)
 
-    local ringColBtn = CreateColorSwatch(content, x + 220, -626, getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local ringColBtn = CreateColorSwatch(content, x, -668, "Ring Colour", getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringColBtn
     panel.ringColBtn = ringColBtn
 
