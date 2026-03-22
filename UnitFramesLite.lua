@@ -41,26 +41,23 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showLevel     = true,
         showPowerBar  = false,
         showPowerText = false,
-        showResources        = true,
-        useBlizzResource     = false,   -- true = control Blizzard class resource bar instead of UFL pips
-        hideBlizzResourceBar = false,   -- true = suppress Blizzard bar via alpha regardless of source
-        resourcePipWidth     = 18,
-        resourcePipHeight    = 6,
-        resourcePipGap       = 3,
-        resourcePipShape     = "Rectangle",  -- "Rectangle" | "Circle" | "Diamond"
-        resourceX            = 0,
-        resourceY            = 0,
-        resourceAlpha        = 1.0,
-        resourceUseCustomColor = false,
-        resourceUseSolidColor  = true,       -- true = solid, false = gradient
-        resourceGradPerPip     = true,       -- true = each pip gets internal gradient; false = each pip gets interpolated solid colour
-        resourceSolidColor     = {1, 1, 1, 1},
-        resourceGradStart      = {1, 1, 1, 1},
-        resourceGradEnd        = {0.3, 0.3, 1, 1},
-        resourceShowInCombat = false,   -- if true, only show in combat
-        resourceShowWithTarget = false, -- if true, also show when target exists
-        resourceCenterH      = false,  -- centre resource bar horizontally on screen
-        resourceCenterV      = false,  -- centre resource bar vertically on screen
+        showResources           = true,
+        resourcePipWidth        = 18,
+        resourcePipHeight       = 6,
+        resourcePipGap          = 3,
+        resourcePipShape        = "Rectangle",  -- "Rectangle" | "Circle" | "Diamond"
+        resourceX               = 0,
+        resourceY               = 0,
+        resourceAlpha           = 1.0,
+        resourceUseCustomColor  = false,
+        resourceColorMode       = "Solid",       -- "Solid" | "Gradient"
+        resourceUseSolidColor   = true,          -- kept for back-compat; derived from resourceColorMode
+        resourceGradPerPip      = true,
+        resourceSolidColor      = {1, 1, 1, 1},
+        resourceGradStart       = {1, 1, 1, 1},
+        resourceGradEnd         = {0.3, 0.3, 1, 1},
+        resourceShowOutCombat   = true,   -- show custom bar out of combat (always shown in combat)
+        resourceShowWithTarget  = false,  -- also show custom bar when target selected (any combat state)
         -- Buff display
         buffIconSize      = 24,
         buffPerRow        = 4,
@@ -268,6 +265,7 @@ function UnitFramesLite_UpdateAlpha(unit)
 
     if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(alpha) end
     if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
+    if frame.borderFrame     then frame.borderFrame:SetAlpha(alpha)     end
 
     -- Set alpha on the overlay frame AND directly on each FontString.
     -- The HIGH strata of textOverlay can cause alpha inheritance issues in WoW,
@@ -537,20 +535,27 @@ function UnitFramesLite_UpdateResourceLayout()
     local totalW  = maxPips * pipW + (maxPips - 1) * pipGap
     resourceFrame:SetSize(totalW, pipH)
 
-    -- Position: anchored to player frame, below it (or screen-centred)
+    -- Position: anchored to screen centre; x=0,y=0 places the bar at the centre of the screen.
+    -- Clamp so the frame stays fully within the screen bounds.
     resourceFrame:ClearAllPoints()
     local rx = db.resourceX or 0
     local ry = db.resourceY or 0
-    local anchorX = db.resourceCenterH and 0 or rx
-    local anchorY = db.resourceCenterV and 0 or ry
-    local anchorPoint  = db.resourceCenterV and "CENTER" or "TOP"
-    local anchorParent = (db.resourceCenterH or db.resourceCenterV) and UIParent or playerFrame
-    local anchorRelPoint = db.resourceCenterV and "CENTER" or "BOTTOM"
-    resourceFrame:SetPoint(anchorPoint, anchorParent, anchorRelPoint, anchorX, anchorY)
+    local screenW = UIParent:GetWidth()
+    local screenH = UIParent:GetHeight()
+    local halfFrameW = totalW / 2
+    local halfFrameH = pipH  / 2
+    local halfScreenW = screenW / 2
+    local halfScreenH = screenH / 2
+    rx = math.max(-(halfScreenW - halfFrameW), math.min(halfScreenW - halfFrameW, rx))
+    ry = math.max(-(halfScreenH - halfFrameH), math.min(halfScreenH - halfFrameH, ry))
+    resourceFrame:SetPoint("CENTER", UIParent, "CENTER", rx, ry)
 
     -- Colour
     local useCustom  = db.resourceUseCustomColor
-    local useSolid   = db.resourceUseSolidColor ~= false  -- default true
+    -- Support both old resourceUseSolidColor and new resourceColorMode
+    local colorMode = db.resourceColorMode or (db.resourceUseSolidColor ~= false and "Solid" or "Horizontal Gradient")
+    if colorMode == "Gradient" then colorMode = "Horizontal Gradient" end  -- migrate old value
+    local useSolid  = (colorMode == "Solid")
     local gradPerPip = db.resourceGradPerPip ~= false     -- default true
     local gs = db.resourceGradStart or {1, 1, 1, 1}
     local ge = db.resourceGradEnd   or {0.3, 0.3, 1, 1}
@@ -564,11 +569,28 @@ function UnitFramesLite_UpdateResourceLayout()
     end
 
     local shape = db.resourcePipShape or "Rectangle"
-    local maskTex
-    if shape == "Circle" then
-        maskTex = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-    elseif shape == "Diamond" then
-        maskTex = "Interface\\MINIMAP\\UI-Minimap-Background"  -- square rotated via SetRotation below
+
+    -- Helper: apply colour to a texture based on current colour settings.
+    -- Uses SetVertexColor (not SetColorTexture) so that the texture's shape/rotation is preserved.
+    local function ApplyColourToTex(tex, i)
+        if not tex then return end
+        if useCustom and not useSolid then
+            local gradDir = (colorMode == "Vertical Gradient") and "VERTICAL" or "HORIZONTAL"
+            if gradPerPip or colorMode == "Vertical Gradient" then
+                tex:SetGradient(gradDir,
+                    CreateColor(gs[1], gs[2], gs[3], gs[4] or 1),
+                    CreateColor(ge[1], ge[2], ge[3], ge[4] or 1))
+            else
+                local t = maxPips > 1 and (i - 1) / (maxPips - 1) or 0
+                local r = gs[1] + (ge[1] - gs[1]) * t
+                local g = gs[2] + (ge[2] - gs[2]) * t
+                local b = gs[3] + (ge[3] - gs[3]) * t
+                tex:SetVertexColor(r, g, b, 1)
+            end
+        else
+            local a = db.resourceAlpha or 1.0
+            tex:SetVertexColor(col[1], col[2], col[3], a)
+        end
     end
 
     for i = 1, maxPips do
@@ -578,49 +600,118 @@ function UnitFramesLite_UpdateResourceLayout()
             pip:ClearAllPoints()
             pip:SetPoint("LEFT", resourceFrame, "LEFT", (i-1) * (pipW + pipGap), 0)
 
-            -- Apply colour
-            local fillTex = pip:GetStatusBarTexture()
-            if useCustom and not useSolid then
-                if gradPerPip then
-                    -- Each pip renders a full gradient from gs→ge internally
-                    pip:SetStatusBarColor(1, 1, 1, 1)
-                    if fillTex then
-                        fillTex:SetGradient("HORIZONTAL",
-                            CreateColor(gs[1], gs[2], gs[3], gs[4] or 1),
-                            CreateColor(ge[1], ge[2], ge[3], ge[4] or 1))
+            -- ── Apply colour to StatusBar-based pips ──────────────────────────
+            local function ApplyStatusBarColour()
+                local fillTex = pip:GetStatusBarTexture()
+                if useCustom and not useSolid then
+                    local gradDir = (colorMode == "Vertical Gradient") and "VERTICAL" or "HORIZONTAL"
+                    if gradPerPip or colorMode == "Vertical Gradient" then
+                        pip:SetStatusBarColor(1, 1, 1, 1)
+                        if fillTex then
+                            fillTex:SetGradient(gradDir,
+                                CreateColor(gs[1], gs[2], gs[3], gs[4] or 1),
+                                CreateColor(ge[1], ge[2], ge[3], ge[4] or 1))
+                        end
+                    else
+                        local t = maxPips > 1 and (i - 1) / (maxPips - 1) or 0
+                        local r2 = gs[1] + (ge[1] - gs[1]) * t
+                        local g2 = gs[2] + (ge[2] - gs[2]) * t
+                        local b2 = gs[3] + (ge[3] - gs[3]) * t
+                        if fillTex then fillTex:SetGradient("HORIZONTAL", CreateColor(1,1,1,1), CreateColor(1,1,1,1)) end
+                        pip:SetStatusBarColor(r2, g2, b2, 1)
                     end
                 else
-                    -- Each pip gets an interpolated solid colour: pip 1 = gs, pip maxPips = ge
-                    local t = maxPips > 1 and (i - 1) / (maxPips - 1) or 0
-                    local r = gs[1] + (ge[1] - gs[1]) * t
-                    local g = gs[2] + (ge[2] - gs[2]) * t
-                    local b = gs[3] + (ge[3] - gs[3]) * t
                     if fillTex then fillTex:SetGradient("HORIZONTAL", CreateColor(1,1,1,1), CreateColor(1,1,1,1)) end
-                    pip:SetStatusBarColor(r, g, b, 1)
+                    local a = db.resourceAlpha or 1.0
+                    pip:SetStatusBarColor(col[1], col[2], col[3], a)
                 end
-            else
-                if fillTex then fillTex:SetGradient("HORIZONTAL", CreateColor(1,1,1,1), CreateColor(1,1,1,1)) end
-                pip:SetStatusBarColor(col[1], col[2], col[3], 1)
             end
 
-            -- Apply shape mask to fill and background
-            local fillTex = pip:GetStatusBarTexture()
-            local mask    = pip.shapeMask
-            local bgMask  = pip.bgMask
-            if maskTex and fillTex and mask then
-                mask:SetTexture(maskTex)
-                mask:SetAllPoints(pip)
-                fillTex:AddMaskTexture(mask)
-            elseif fillTex and mask then
-                -- Rectangle: remove any mask
-                pcall(function() fillTex:RemoveMaskTexture(mask) end)
+            -- Restore StatusBar visibility and remove shaped textures when switching to bar-based shapes
+            local function EnterStatusBarMode()
+                pip.isShapedPip = false
+                pip:SetAlpha(1)
+                -- Remove any masks from shaped textures before hiding them
+                pcall(function() if pip.shapeFill and pip.shapeMask then pip.shapeFill:RemoveMaskTexture(pip.shapeMask) end end)
+                pcall(function() if pip.shapeBg   and pip.bgMask    then pip.shapeBg:RemoveMaskTexture(pip.bgMask)     end end)
+                if pip.shapeFill then pip.shapeFill:Hide() end
+                if pip.shapeBg   then pip.shapeBg:Hide()   end
+                -- Remove any masks from pip.bg (applied by Circle mode) then restore it
+                pcall(function() if pip.bg and pip.bgMask then pip.bg:RemoveMaskTexture(pip.bgMask) end end)
+                if pip.bg then pip.bg:Show(); pip.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8) end
             end
-            if maskTex and pip.bg and bgMask then
-                bgMask:SetTexture(maskTex)
-                bgMask:SetAllPoints(pip)
-                pip.bg:AddMaskTexture(bgMask)
-            elseif pip.bg and bgMask then
-                pcall(function() pip.bg:RemoveMaskTexture(bgMask) end)
+
+            -- Set up shaped textures for non-StatusBar shapes (Diamond, Triangle, Arrow)
+            local function EnterShapedMode()
+                pip.isShapedPip = true
+                pip:SetAlpha(1)
+                local fillTex = pip:GetStatusBarTexture()
+                -- Remove masks from StatusBar fill and pip.bg
+                pcall(function() if fillTex and pip.shapeMask then fillTex:RemoveMaskTexture(pip.shapeMask) end end)
+                pcall(function() if pip.bg and pip.bgMask then pip.bg:RemoveMaskTexture(pip.bgMask) end end)
+                -- Remove circle masks from shaped textures if switching between shaped shapes (e.g. Circle->Diamond)
+                pcall(function() if pip.shapeFill and pip.shapeMask then pip.shapeFill:RemoveMaskTexture(pip.shapeMask) end end)
+                pcall(function() if pip.shapeBg   and pip.bgMask    then pip.shapeBg:RemoveMaskTexture(pip.bgMask)     end end)
+                pip:SetStatusBarColor(0, 0, 0, 0)
+                -- Hide the StatusBar bg rectangle — shaped pips draw their own bg via shapeBg texture
+                if pip.bg then pip.bg:Hide() end
+                if not pip.shapeFill then pip.shapeFill = pip:CreateTexture(nil, "ARTWORK") end
+                if not pip.shapeBg   then pip.shapeBg   = pip:CreateTexture(nil, "BACKGROUND") end
+            end
+
+            if shape == "Rectangle" then
+                EnterStatusBarMode()
+                ApplyStatusBarColour()
+                local fillTex = pip:GetStatusBarTexture()
+                pcall(function() if fillTex and pip.shapeMask then fillTex:RemoveMaskTexture(pip.shapeMask) end end)
+                pcall(function() if pip.bg and pip.bgMask then pip.bg:RemoveMaskTexture(pip.bgMask) end end)
+
+            elseif shape == "Circle" then
+                -- Use full-coverage textures masked to a circle so active/inactive
+                -- can be shown by alpha, not by StatusBar fill percentage.
+                EnterShapedMode()
+                local sf, sb = pip.shapeFill, pip.shapeBg
+                local circSize = math.min(pipW, pipH)
+                sf:SetTexture("Interface\\Buttons\\WHITE8X8")
+                sf:SetRotation(0)
+                sf:SetSize(circSize, circSize)
+                sf:ClearAllPoints(); sf:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                sb:SetTexture("Interface\\Buttons\\WHITE8X8")
+                sb:SetRotation(0)
+                sb:SetSize(circSize, circSize)
+                sb:ClearAllPoints(); sb:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                sb:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+                -- Apply circle mask to both fill and bg textures
+                if pip.shapeMask then
+                    pip.shapeMask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+                    pip.shapeMask:SetAllPoints(pip)
+                    pcall(function() sf:AddMaskTexture(pip.shapeMask) end)
+                end
+                if pip.bgMask then
+                    pip.bgMask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+                    pip.bgMask:SetAllPoints(pip)
+                    pcall(function() sb:AddMaskTexture(pip.bgMask) end)
+                end
+                ApplyColourToTex(sf, i); sf:Show(); sb:Show()
+
+            elseif shape == "Diamond" then
+                -- Rotate a square texture 45°. A square of side s has diagonal s*√2.
+                -- To fill the pip bounds (pipW × pipH), use s = min(pipW,pipH)/√2 so
+                -- the rotated corners touch the pip edges.
+                EnterShapedMode()
+                local s = math.min(pipW, pipH) / math.sqrt(2)
+                local sf, sb = pip.shapeFill, pip.shapeBg
+                sf:SetTexture("Interface\\Buttons\\WHITE8X8")
+                sf:SetRotation(math.pi / 4)
+                sf:SetSize(s, s)
+                sf:ClearAllPoints(); sf:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                sb:SetTexture("Interface\\Buttons\\WHITE8X8")
+                sb:SetRotation(math.pi / 4)
+                sb:SetSize(s, s)
+                sb:ClearAllPoints(); sb:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                sb:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+                ApplyColourToTex(sf, i); sf:Show(); sb:Show()
+
             end
 
             pip:Show()
@@ -648,14 +739,22 @@ UpdateResourcePips = function()
             if pip then
                 local start, duration, ready = GetRuneCooldown(i)
                 if ready then
-                    pip:SetValue(1)
-                    pip:SetAlpha(1)
+                    if pip.isShapedPip then
+                        if pip.shapeFill  then pip.shapeFill:SetAlpha(1)  end
+                        if pip.shapeFill2 then pip.shapeFill2:SetAlpha(1) end
+                    else
+                        pip:SetValue(1); pip:SetAlpha(1)
+                    end
                 else
                     local now = GetTime()
                     local elapsed = now - (start or now)
                     local frac = duration and duration > 0 and (elapsed / duration) or 0
-                    pip:SetValue(math.max(0, math.min(1, frac)))
-                    pip:SetAlpha(0.4)
+                    if pip.isShapedPip then
+                        if pip.shapeFill  then pip.shapeFill:SetAlpha(frac)  end
+                        if pip.shapeFill2 then pip.shapeFill2:SetAlpha(frac) end
+                    else
+                        pip:SetValue(math.max(0, math.min(1, frac))); pip:SetAlpha(0.4)
+                    end
                 end
             end
         end
@@ -683,8 +782,15 @@ UpdateResourcePips = function()
                     pip:Show()
                     local active = false
                     pcall(function() active = (cur >= i) end)
-                    pip:SetValue(active and 1 or 0)
-                    pip:SetAlpha(active and 1 or 0.35)
+                    if pip.isShapedPip then
+                        -- Shaped pip: show/hide fill textures; bg always visible at dim
+                        local a = active and 1 or 0
+                        if pip.shapeFill  then pip.shapeFill:SetAlpha(a)  end
+                        if pip.shapeFill2 then pip.shapeFill2:SetAlpha(a) end
+                    else
+                        pip:SetValue(active and 1 or 0)
+                        pip:SetAlpha(active and 1 or 0.35)
+                    end
                 end
             end
         end
@@ -1006,9 +1112,9 @@ function UnitFramesLite_UpdateFrame(unit)
         end
     end
 
-    -- Bar border: always shown in bar mode, hidden in sphere mode
+    -- Bar border: shown in bar mode only if barBorderEnabled, hidden in sphere mode
     if frame.borderFrame then
-        if not db.sphereMode then
+        if not db.sphereMode and db.barBorderEnabled ~= false then
             local t = math.max(1, db.barBorderThickness or 1)
             local c = db.barBorderColor or {0, 0, 0, 1}
             frame.borderFrame:SetBackdrop({
@@ -1145,89 +1251,39 @@ end
 
 -- Blizzard frame visibility --------------------------------------------------
 
--- Per-class Blizzard resource bar frame names
-local BLIZZ_RESOURCE_FRAME = {
-    ROGUE       = "RogueComboPointBarFrame",
-    DRUID       = "DruidComboPointBarFrame",
-    WARLOCK     = "WarlockPowerFrame",
-    MAGE        = "MageArcaneChargesFrame",
-    MONK        = "MonkHarmonyBarFrame",
-    PALADIN     = "PaladinPowerBarFrame",
-    DEATHKNIGHT = "RuneFrame",
-    EVOKER      = "EssencePlayerFrame",
-}
 
--- Returns the Blizzard resource frame for the player's class, or nil
-local function GetBlizzResourceFrame()
-    local cls = GetPlayerClass()
-    local name = cls and BLIZZ_RESOURCE_FRAME[cls]
-    return name and _G[name]
-end
-
--- Unified: applies show/hide/alpha/position to whichever resource bar is active.
--- Called on combat state changes, target changes, and when settings change.
+-- Controls visibility and alpha of the custom UFL resource bar only.
+-- The Blizzard resource bar is left completely untouched — use WoW Edit Mode for that.
 function UnitFramesLite_UpdateResourceVisibility()
     local db = GetDB("player")
-    local inCombat   = UnitAffectingCombat("player")
-    local hasTarget  = UnitExists("target")
+    local inCombat  = UnitAffectingCombat("player")
+    local hasTarget = UnitExists("target")
+    local alpha     = db.resourceAlpha or 1.0
 
-    -- Determine if we should show
+    -- Custom bar is always shown in combat.
+    -- "Show out of combat" controls out-of-combat visibility.
+    -- "Show when target selected" shows it whenever a target exists regardless of combat state.
+    local showOutCombat  = db.resourceShowOutCombat ~= false  -- default true
+    local showWithTarget = db.resourceShowWithTarget or false
+
     local shouldShow = true
     if db.showResources == false then
         shouldShow = false
-    elseif db.resourceShowInCombat and not db.resourceShowWithTarget then
-        -- in-combat only
-        shouldShow = inCombat
-    elseif db.resourceShowWithTarget and not db.resourceShowInCombat then
-        -- target-only
-        shouldShow = hasTarget
-    elseif db.resourceShowInCombat and db.resourceShowWithTarget then
-        -- either
-        shouldShow = inCombat or hasTarget
-    end
-    -- always-show if neither flag set
-
-    local alpha = db.resourceAlpha or 1.0
-
-    local bf = GetBlizzResourceFrame()
-
-    if db.useBlizzResource then
-        -- Show Blizzard bar, hide UFL pips
-        if bf then
-            bf:SetAlpha(shouldShow and alpha or 0)
-            -- Apply centering: move the Blizzard frame to screen centre if requested
-            -- (avoid taint: only reposition, never Show/Hide)
-            if not InCombatLockdown() then
-                local rx = db.resourceX or 0
-                local ry = db.resourceY or 0
-                bf:ClearAllPoints()
-                local bx = db.resourceCenterH and 0 or rx
-                local by = db.resourceCenterV and 0 or ry
-                local bPoint    = db.resourceCenterV and "CENTER" or "BOTTOM"
-                local bRelPoint = db.resourceCenterV and "CENTER" or "TOP"
-                bf:SetPoint(bPoint, UIParent, bRelPoint, bx, by)
-            end
-        end
-        if resourceFrame then resourceFrame:SetAlpha(0) end
+    elseif inCombat then
+        shouldShow = true
+    elseif showWithTarget and hasTarget then
+        shouldShow = true
     else
-        -- Show UFL pips, suppress Blizzard bar (via alpha)
-        if bf then
-            -- Suppress if user has ticked "hide Blizzard resource bar" OR we are using UFL pips
-            bf:SetAlpha(0)
-        end
-        if resourceFrame then
-            if shouldShow then
-                resourceFrame:SetAlpha(alpha)
-                UnitFramesLite_UpdateResourceLayout()
-            else
-                resourceFrame:SetAlpha(0)
-            end
-        end
+        shouldShow = showOutCombat
     end
 
-    -- Independent "just hide Blizzard resource bar" option (regardless of source)
-    if db.hideBlizzResourceBar and bf then
-        bf:SetAlpha(0)
+    if resourceFrame then
+        if shouldShow then
+            resourceFrame:SetAlpha(alpha)
+            UnitFramesLite_UpdateResourceLayout()
+        else
+            resourceFrame:SetAlpha(0)
+        end
     end
 end
 

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'D:/Games/World of Warcraft/_retail_/Interface/AddOns/' -name *.tga -o -name *.blp)"
+    ]
+  }
+}

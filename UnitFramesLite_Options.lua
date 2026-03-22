@@ -100,7 +100,7 @@ local function CreateNudgeSlider(parent, label, minV, maxV, step, x, y, sliderW,
         box:SetText(tostring(v))
     end
     Refresh()
-    return s, box, Refresh
+    return s, box, Refresh, lbl, minus, plus
 end
 
 local function CreateAlphaSliderRow(parent, label, x, y, dbKey, getDB, onChange)
@@ -355,88 +355,138 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         note:SetPoint("BOTTOMLEFT", blizzGroup, "BOTTOMLEFT", 8, 10)
         note:SetText("|cffaaaaaa/reload to restore hidden Blizzard frames|r")
 
-        -- Right column: Class Resources settings (controls both UFL pips and Blizzard bar)
-        local resGroup = CreateGroupBox(content, "Class Resources", 350, -8, 490, 500, "GameFontNormal")
+        -- Right column: Class Resources settings (custom UFL bar only)
+        local resGroup = CreateGroupBox(content, "Class Resources", 350, -8, 490, 400, "GameFontNormal")
         local function resDB() return UnitFramesLite_GetDB("player") end
         local function applyRes()
             if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
             if UnitFramesLite_UpdateResourceVisibility then UnitFramesLite_UpdateResourceVisibility() end
         end
 
-        local lx = 8    -- left column x
-        local rx = 250  -- right column x
+        local lx = 8   -- left column x
+        local rx = 250 -- right column x (pips panel)
 
-        -- LEFT: Source selection
-        CreateLabel(resGroup, "Source", lx, -18)
-        local hideBlizzCB      -- forward declaration
-        local pipsContainer    -- forward declaration
-        local pipColourContainer -- forward declaration
-        local UpdateBlizzMode  -- forward declaration (reassigned after containers exist)
-        local function CallUpdateBlizzMode() if UpdateBlizzMode then UpdateBlizzMode() end end
-        CreateCheckbox(resGroup, "Use Blizzard resource bar", lx, -34,
-            function() return resDB().useBlizzResource or false end,
-            function(v) resDB().useBlizzResource = v; CallUpdateBlizzMode(); applyRes() end)
-        hideBlizzCB = CreateCheckbox(resGroup, "Hide Blizzard resource bar", lx, -60,
-            function() return resDB().hideBlizzResourceBar or false end,
-            function(v) resDB().hideBlizzResourceBar = v; applyRes() end)
-
-        -- LEFT: Visibility
-        local sep1 = resGroup:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
-        sep1:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-84); sep1:SetSize(230,1)
-        CreateLabel(resGroup, "Visibility", lx, -94)
-        CreateCheckbox(resGroup, "Show resource bar", lx, -110,
+        -- ── Visibility ────────────────────────────────────────────────────────
+        CreateLabel(resGroup, "Visibility", lx, -18)
+        CreateCheckbox(resGroup, "Show resource bar", lx, -36,
             function() return resDB().showResources ~= false end,
             function(v) resDB().showResources = v; applyRes() end)
-        CreateCheckbox(resGroup, "Show in combat", lx, -136,
-            function() return resDB().resourceShowInCombat or false end,
-            function(v) resDB().resourceShowInCombat = v; applyRes() end)
-        CreateCheckbox(resGroup, "Also show with target selected", lx, -160,
-            function() return resDB().resourceShowWithTarget or false end,
-            function(v) resDB().resourceShowWithTarget = v; applyRes() end)
 
-        -- LEFT: Alpha
+        -- Forward-declare so showOutCombatCB's closure can reference both
+        local showWithTargetCB
+        local showWithTargetLabel
+
+        local function setShowWithTargetVisible(shown)
+            if showWithTargetCB    then showWithTargetCB:SetShown(shown) end
+            if showWithTargetLabel then showWithTargetLabel:SetShown(shown) end
+        end
+
+        -- When unticked, bar only shows in combat
+        local showOutCombatCB = CreateCheckbox(resGroup, "Show out of combat", lx, -62,
+            function() return resDB().resourceShowOutCombat ~= false end,
+            function(v)
+                resDB().resourceShowOutCombat = v
+                setShowWithTargetVisible(not v)
+                applyRes()
+            end)
+
+        -- Built manually so we can hide the label independently
+        do
+            local cb = CreateFrame("CheckButton", nil, resGroup, "UICheckButtonTemplate")
+            cb:SetSize(24, 24)
+            cb:SetPoint("TOPLEFT", resGroup, "TOPLEFT", lx, -88)
+            local fs = resGroup:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+            fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+            fs:SetText("Show when target selected")
+            cb:SetChecked(resDB().resourceShowWithTarget or false)
+            cb:SetScript("OnClick", function(self)
+                resDB().resourceShowWithTarget = self:GetChecked()
+                applyRes()
+            end)
+            cb.Refresh = function(self) self:SetChecked(resDB().resourceShowWithTarget or false) end
+            showWithTargetCB    = cb
+            showWithTargetLabel = fs
+        end
+
+        -- ── Alpha ─────────────────────────────────────────────────────────────
+        local sep1 = resGroup:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
+        sep1:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-112); sep1:SetSize(230,1)
+        local _,_,rAlpha = CreateNudgeSlider(resGroup,"Alpha",0,1,0.01, lx,-122,120,"resourceAlpha",resDB,applyRes)
+
+        -- ── Position ──────────────────────────────────────────────────────────
         local sep2 = resGroup:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
-        sep2:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-184); sep2:SetSize(230,1)
-        local _,_,rAlpha = CreateNudgeSlider(resGroup,"Alpha",0,1,0.01, lx,-194,120,"resourceAlpha",resDB,applyRes)
+        sep2:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-158); sep2:SetSize(230,1)
+        CreateLabel(resGroup, "Position", lx, -168)
+        local _,_,rResX = CreateNudgeSlider(resGroup,"X Offset",-1000,1000,1, lx,-188,120,"resourceX",resDB,applyRes)
+        local _,_,rResY = CreateNudgeSlider(resGroup,"Y Offset", -600, 600,1, lx,-228,120,"resourceY",resDB,applyRes)
 
-        -- LEFT: Position (shared — works for both Blizzard bar and UFL pips)
-        local sep3 = resGroup:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
-        sep3:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-230); sep3:SetSize(230,1)
-        CreateLabel(resGroup, "Position", lx, -240)
-        CreateCheckbox(resGroup, "Centre horizontally", lx, -256,
-            function() return resDB().resourceCenterH or false end,
-            function(v) resDB().resourceCenterH = v; applyRes() end)
-        CreateCheckbox(resGroup, "Centre vertically", lx, -280,
-            function() return resDB().resourceCenterV or false end,
-            function(v) resDB().resourceCenterV = v; applyRes() end)
-
-        -- RIGHT: UFL Pips Size, Position & Shape (hidden when using Blizzard bar)
-        pipsContainer = CreateFrame("Frame", nil, resGroup)
-        pipsContainer:SetPoint("TOPLEFT", resGroup, "TOPLEFT", rx-10, 0)
+        -- ── RIGHT: UFL Pips Size, Position & Shape ────────────────────────────
+        local pipsContainer = CreateFrame("Frame", nil, resGroup)
+        local pipColourContainer
+        pipsContainer:SetPoint("TOPLEFT",  resGroup, "TOPLEFT",  rx-10, 0)
         pipsContainer:SetPoint("BOTTOMRIGHT", resGroup, "BOTTOMRIGHT", 0, 0)
 
         local vsep = pipsContainer:CreateTexture(nil,"ARTWORK"); vsep:SetColorTexture(0.3,0.3,0.3,0.8); vsep:SetWidth(1)
-        vsep:SetPoint("TOPLEFT",  pipsContainer,"TOPLEFT",  0, -8)
-        vsep:SetPoint("BOTTOMLEFT",pipsContainer,"BOTTOMLEFT",0, 0)
+        vsep:SetPoint("TOPLEFT",   pipsContainer,"TOPLEFT",   0, -8)
+        vsep:SetPoint("BOTTOMLEFT",pipsContainer,"BOTTOMLEFT",0,  0)
 
-        -- nudge sliders need resGroup as parent for absolute y from top of resGroup
-        -- instead parent them to pipsContainer using relative coords from pipsContainer top
-        local px = 10  -- x inside pipsContainer (offset from rx-10)
+        local px = 10
+        local UpdatePipSizeControls  -- forward declaration
         CreateLabel(pipsContainer, "UFL Pips Size & Position", px, -18)
-        local _,_,rPipW   = CreateNudgeSlider(pipsContainer,"Pip Width",  6,50,1,  px,-38, 80,"resourcePipWidth",  resDB,applyRes)
-        local _,_,rPipH   = CreateNudgeSlider(pipsContainer,"Pip Height", 3,50,1,  px,-78, 80,"resourcePipHeight", resDB,applyRes)
-        local _,_,rPipGap = CreateNudgeSlider(pipsContainer,"Pip Gap",    0,10,1,  px,-118,80,"resourcePipGap",    resDB,applyRes)
-        local _,_,rResX   = CreateNudgeSlider(pipsContainer,"X Offset",-500,500,1, px,-158,80,"resourceX",         resDB,applyRes)
-        local _,_,rResY   = CreateNudgeSlider(pipsContainer,"Y Offset",-500,500,1, px,-198,80,"resourceY",         resDB,applyRes)
-        CreateLabel(pipsContainer, "Pip Shape", px, -244)
-        CreateDropdown(pipsContainer, px, -262, 110, {"Rectangle","Circle","Diamond"},
-            function() return resDB().resourcePipShape or "Rectangle" end,
-            function(v) resDB().resourcePipShape = v; applyRes() end)
 
-        -- Pip Colour section — inside a container so it hides cleanly with pips
+        -- Width+Height sliders (shown for Rectangle and Diamond)
+        local sliderW, sliderWBox, rPipW, sliderWLabel, sliderWMinus, sliderWPlus =
+            CreateNudgeSlider(pipsContainer,"Pip Width",  6,50,1, px,-38, 80,"resourcePipWidth",  resDB,applyRes)
+        local sliderH, sliderHBox, rPipH, sliderHLabel, sliderHMinus, sliderHPlus =
+            CreateNudgeSlider(pipsContainer,"Pip Height", 3,50,1, px,-78, 80,"resourcePipHeight", resDB,applyRes)
+
+        -- Size slider (shown for Circle — keeps width=height so circle stays round)
+        local sliderS, sliderSBox, _, sliderSLabel, sliderSMinus, sliderSPlus =
+            CreateNudgeSlider(pipsContainer,"Pip Size", 3,50,1, px,-38, 80,"resourcePipWidth", resDB,
+            function()
+                local db = resDB()
+                db.resourcePipHeight = db.resourcePipWidth
+                if rPipH then rPipH() end
+                applyRes()
+            end)
+
+        local _,_,rPipGap = CreateNudgeSlider(pipsContainer,"Pip Gap", 0,50,1, px,-118,80,"resourcePipGap", resDB,applyRes)
+        CreateLabel(pipsContainer, "Pip Shape", px, -158)
+        local shapeDD = CreateDropdown(pipsContainer, px, -176, 110, {"Rectangle","Circle","Diamond"},
+            function() return resDB().resourcePipShape or "Rectangle" end,
+            function(v)
+                resDB().resourcePipShape = v
+                if v == "Circle" then
+                    local db = resDB()
+                    db.resourcePipHeight = db.resourcePipWidth
+                    if rPipH then rPipH() end
+                end
+                UpdatePipSizeControls()
+                applyRes()
+            end)
+
+        -- Show/hide width+height vs size depending on shape
+        local function setWHShown(shown)
+            sliderWLabel:SetShown(shown); sliderW:SetShown(shown); sliderWBox:SetShown(shown)
+            sliderWMinus:SetShown(shown); sliderWPlus:SetShown(shown)
+            sliderHLabel:SetShown(shown); sliderH:SetShown(shown); sliderHBox:SetShown(shown)
+            sliderHMinus:SetShown(shown); sliderHPlus:SetShown(shown)
+        end
+        local function setSShown(shown)
+            sliderSLabel:SetShown(shown); sliderS:SetShown(shown); sliderSBox:SetShown(shown)
+            sliderSMinus:SetShown(shown); sliderSPlus:SetShown(shown)
+        end
+        UpdatePipSizeControls = function()
+            local isCircle = (resDB().resourcePipShape or "Rectangle") == "Circle"
+            setWHShown(not isCircle)
+            setSShown(isCircle)
+        end
+        UpdatePipSizeControls()
+
+        -- ── Pip Colour ────────────────────────────────────────────────────────
         pipColourContainer = CreateFrame("Frame", nil, resGroup)
-        pipColourContainer:SetPoint("TOPLEFT", resGroup, "TOPLEFT", 0, -300)
-        pipColourContainer:SetSize(490, 200)
+        pipColourContainer:SetPoint("TOPLEFT", resGroup, "TOPLEFT", 0, -275)
+        pipColourContainer:SetSize(490, 210)
 
         local sep4 = pipColourContainer:CreateTexture(nil,"ARTWORK"); sep4:SetColorTexture(0.3,0.3,0.3,0.8); sep4:SetHeight(1)
         sep4:SetPoint("TOPLEFT",pipColourContainer,"TOPLEFT",8,0); sep4:SetPoint("TOPRIGHT",pipColourContainer,"TOPRIGHT",-8,0)
@@ -445,62 +495,80 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         local colorDetails
         local useCustomCheck = CreateCheckbox(pipColourContainer, "Use Custom Colour", 8, -28,
             function() return resDB().resourceUseCustomColor or false end,
-            function(v)
-                resDB().resourceUseCustomColor = v
-                colorDetails:SetShown(v)
-                applyRes()
-            end)
+            function(v) resDB().resourceUseCustomColor = v; colorDetails:SetShown(v); applyRes() end)
 
         colorDetails = CreateFrame("Frame", nil, pipColourContainer)
-        colorDetails:SetPoint("TOPLEFT", pipColourContainer, "TOPLEFT", 0, -48)
-        colorDetails:SetSize(480, 130)
+        colorDetails:SetPoint("TOPLEFT", pipColourContainer, "TOPLEFT", 0, -52)
+        colorDetails:SetSize(480, 70)
 
-        -- Solid row: checkbox + swatch on same line
-        local solidCheck, gradCheck
-        solidCheck = CreateCheckbox(colorDetails, "Solid", 8, 0,
-            function() return resDB().resourceUseSolidColor ~= false end,
+        -- Colour mode dropdown: Solid / Horizontal Gradient / Vertical Gradient
+        -- Layout: [dropdown] [swatch(es)]   checkbox below
+        local COLOR_MODES = {"Solid", "Horizontal Gradient", "Vertical Gradient"}
+        local function getColorMode()
+            local m = resDB().resourceColorMode
+            if m == "Gradient" then m = "Horizontal Gradient" end  -- migrate old value
+            if m and m ~= "" then return m end
+            return (resDB().resourceUseSolidColor ~= false) and "Solid" or "Horizontal Gradient"
+        end
+
+        -- Dropdown at left (x=8), swatches inline to its right — moved up to y=-4 to close gap
+        local colorModeDD = CreateDropdown(colorDetails, 8, -4, 130, COLOR_MODES,
+            getColorMode,
             function(v)
-                resDB().resourceUseSolidColor = v
-                if v and gradCheck then gradCheck:SetChecked(false) end
+                resDB().resourceColorMode = v
+                resDB().resourceUseSolidColor = (v == "Solid")
+                colorDetails:UpdateColourMode()
                 applyRes()
             end)
-        CreateColorSwatch(colorDetails, 70, -2, "", resDB, "resourceSolidColor", applyRes)
 
-        -- Gradient rows: checkbox on its own line, then Start/End swatches below
-        gradCheck = CreateCheckbox(colorDetails, "Gradient", 8, -24,
-            function() return resDB().resourceUseSolidColor == false end,
-            function(v)
-                resDB().resourceUseSolidColor = not v
-                if v and solidCheck then solidCheck:SetChecked(false) end
+        -- Swatches at same row as dropdown (dd frame top=-4, visible button centre ≈ -14)
+        local solidSwatch     = CreateColorSwatch(colorDetails, 158, -10, "", resDB, "resourceSolidColor", applyRes)
+        local gradStartSwatch = CreateColorSwatch(colorDetails, 158, -10, "", resDB, "resourceGradStart",  applyRes)
+        local gradEndSwatch   = CreateColorSwatch(colorDetails, 186, -10, "", resDB, "resourceGradEnd",    applyRes)
+
+        -- "Colour each pip individually" checkbox — store label ref so both hide together
+        local gradPerPipCB, gradPerPipLabel
+        do
+            local cb = CreateFrame("CheckButton", nil, colorDetails, "UICheckButtonTemplate")
+            cb:SetSize(24, 24)
+            cb:SetPoint("TOPLEFT", colorDetails, "TOPLEFT", 8, -32)
+            local fs = colorDetails:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+            fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+            fs:SetText("Colour each pip individually")
+            cb:SetChecked(resDB().resourceGradPerPip ~= false)
+            cb:SetScript("OnClick", function(self)
+                resDB().resourceGradPerPip = self:GetChecked()
                 applyRes()
             end)
-        CreateLabel(colorDetails, "Start", 28, -46)
-        CreateColorSwatch(colorDetails, 56, -48, "", resDB, "resourceGradStart", applyRes)
-        CreateLabel(colorDetails, "End", 90, -46)
-        CreateColorSwatch(colorDetails, 114, -48, "", resDB, "resourceGradEnd", applyRes)
+            cb.Refresh = function(self) self:SetChecked(resDB().resourceGradPerPip ~= false) end
+            gradPerPipCB    = cb
+            gradPerPipLabel = fs
+        end
 
-        -- Per-pip vs whole-bar gradient mode
-        CreateCheckbox(colorDetails, "Colour each pip individually", 8, -72,
-            function() return resDB().resourceGradPerPip ~= false end,
-            function(v) resDB().resourceGradPerPip = v; applyRes() end)
+        colorDetails.UpdateColourMode = function(self)
+            local mode = getColorMode()
+            local isSolid    = (mode == "Solid")
+            local isVertical = (mode == "Vertical Gradient")
+            solidSwatch:SetShown(isSolid)
+            gradStartSwatch:SetShown(not isSolid)
+            gradEndSwatch:SetShown(not isSolid)
+            -- "Colour each pip individually" only meaningful for Horizontal Gradient
+            local showPerPip = not isSolid and not isVertical
+            gradPerPipCB:SetShown(showPerPip)
+            gradPerPipLabel:SetShown(showPerPip)
+            colorModeDD:SetSelection(mode)
+        end
 
         colorDetails:SetShown(resDB().resourceUseCustomColor or false)
+        colorDetails:UpdateColourMode()
 
         useCustomCheck.Refresh = function(self)
             local v = resDB().resourceUseCustomColor or false
             self:SetChecked(v); colorDetails:SetShown(v)
         end
 
-        -- Hide/show pips-only sections based on Blizzard bar mode
-        UpdateBlizzMode = function()
-            local isBlizz = resDB().useBlizzResource or false
-            pipsContainer:SetShown(not isBlizz)
-            pipColourContainer:SetShown(not isBlizz)
-            hideBlizzCB:SetShown(isBlizz)
-        end
-
-        -- Apply initial state
-        UpdateBlizzMode()
+        -- Apply initial visibility of "show when target" based on "show out of combat"
+        setShowWithTargetVisible(not (resDB().resourceShowOutCombat ~= false))
     end
 end
 
@@ -729,21 +797,22 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         function(v) getDB().reverseFill = v; UnitFramesLite_UpdateFrame(unit) end)
 
     -- ── Shared: Position ────────────────────────────────────────────────────
-    local posGroup = CreateGroupBox(content, "Position", x, -66, 290, 102)
+    local posGroup = CreateGroupBox(content, "Position", x, -66, 290, 102, "GameFontNormal")
     s,b,r = CreateNudgeSlider(posGroup,"X Offset",-halfW,halfW,1, gx,-20,158,"x",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.xSlider,panel.xBox,panel.xRefresh = s,b,r
     s,b,r = CreateNudgeSlider(posGroup,"Y Offset",-halfH,halfH,1, gx,-58,158,"y",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.ySlider,panel.yBox,panel.yRefresh = s,b,r
 
     -- ── Bar-only: Frame Size (below Position, left column) ──────────────────
-    local sizeGroup = CreateGroupBox(content, "Frame Size", x, -178, 290, 102)
+    local sizeGroup = CreateGroupBox(content, "Frame Size", x, -178, 290, 102, "GameFontNormal")
     s,b,r = CreateNudgeSlider(sizeGroup,"Width",60,500,1, gx,-20,158,"frameWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.widthSlider,panel.widthBox,panel.widthRefresh = s,b,r
     s,b,r = CreateNudgeSlider(sizeGroup,"Height",12,120,1, gx,-58,158,"frameHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.heightSlider,panel.heightBox,panel.heightRefresh = s,b,r
 
     -- ── Bar-only: Portrait (below Frame Size, left column) ──────────────────
-    local portGroup = CreateGroupBox(content, "Portrait", x, -290, 290, 260)
+    -- Height: Mode+Side row=44, Clamp checkbox=30, unclamped sliders=4×38=152, padding=14 → ~180
+    local portGroup = CreateGroupBox(content, "Portrait", x, -290, 290, 180, "GameFontNormal")
     local pgx = 8
     CreateLabel(portGroup, "Mode", pgx, -20)
     panel.portraitModeDD = CreateDropdown(portGroup, pgx+44, -18, 110, portraitModeOptions,
@@ -759,16 +828,13 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         function(v) getDB().portraitClamp = v; UnitFramesLite_UpdateFrame(unit); panel:UpdatePortraitMode() end)
     local unclampedGroup = CreateFrame("Frame", nil, portGroup)
     unclampedGroup:SetPoint("TOPLEFT", portGroup, "TOPLEFT", 0, -108)
-    unclampedGroup:SetSize(280, 148)
+    unclampedGroup:SetSize(280, 72)
     panel.portraitUnclampedGroup = unclampedGroup
     s,b,r = CreateNudgeSlider(unclampedGroup,"Width",12,300,1, pgx,-4,130,"portraitW",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.portraitWSlider,panel.portraitWBox,panel.portraitWRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(unclampedGroup,"Height",12,300,1, pgx,-42,130,"portraitH",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.portraitHSlider,panel.portraitHBox,panel.portraitHRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(unclampedGroup,"X Offset",-500,500,1, pgx,-80,130,"portraitX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(unclampedGroup,"X Offset",-500,500,1, pgx,-42,130,"portraitX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.portraitXSlider,panel.portraitXBox,panel.portraitXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(unclampedGroup,"Y Offset",-500,500,1, pgx,-118,130,"portraitY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.portraitYSlider,panel.portraitYBox,panel.portraitYRefresh = s,b,r
+    -- Height and Y Offset hidden (portrait is always clamped to frame height; Y rarely needed)
 
     -- legacy stub so panel:refresh() "panel.portraitDD:SetSelection" doesn't error
     panel.portraitDD = CreateDropdown(content, -9999, 0, 80, portraitOptions,
@@ -787,66 +853,71 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.appSizeGroup = sizeGroup
     panel.appPortGroup = portGroup
 
-    -- ── BAR section — left column below Portrait ────────────────────────────
-    -- Uses sub-frames anchored to each other so sections collapse properly.
-    local barSection = CreateFrame("Frame", nil, content)
-    barSection:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -560)
-    barSection:SetSize(620, 400)
+    -- ── BAR section — below Portrait (bar mode only, wrapped in a group box) ──
+    -- Portrait ends at y=-290-180=-470; add 10px gap → barSection at y=-480
+    local barSection = CreateGroupBox(content, "Bar", x, -480, 590, 380, "GameFontNormal")
     barSection:Hide()
     panel.barSection = barSection
 
-    -- Helper: create a thin horizontal separator line inside barSection
-    local function BarSep(yOff)
-        local sep = barSection:CreateTexture(nil,"ARTWORK")
-        sep:SetColorTexture(0.3,0.3,0.3,0.8); sep:SetHeight(1)
-        sep:SetPoint("TOPLEFT",barSection,"TOPLEFT",x,yOff)
-        sep:SetPoint("TOPRIGHT",barSection,"TOPRIGHT",-x,yOff)
-        return sep
-    end
+    local bx = 8   -- x inside barSection
 
-    -- ── Bar: Background colour + power bar checkbox (always visible) ─────────
-    CreateLabel(barSection, "Bar", x, -8)
-    local bgBtn = CreateColorSwatch(barSection, x, -28, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
+    -- ── Colour & Texture sub-group ────────────────────────────────────────────
+    local colGroup = CreateGroupBox(barSection, "Colour & Texture", bx, -16, 570, 200, "GameFontNormal")
+
+    -- Left side: Background colour, Solid colour checkbox, colour swatches, texture
+    CreateLabel(colGroup, "Background", bx, -20)
+    local bgBtn = CreateColorSwatch(colGroup, bx+80, -18, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = bgBtn
 
-    panel.showPowerCheck = CreateCheckbox(barSection, "Show power bar", x, -76,
-        function() return getDB().showPowerBar or false end,
-        function(v) getDB().showPowerBar = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full height)",0,120,1, x,-110,185,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
-
-    CreateLabel(barSection, "Statusbar Texture (solid colour mode only)", x, -148)
-    panel.texDD = CreateDropdown(barSection, x, -166, 200, GetTextureList(),
-        function() return getDB().statusbarTexture or "Blizzard" end,
-        function(v) getDB().statusbarTexture = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    -- ── Bar: Colour Mode (right column, always visible) ──────────────────────
-    CreateLabel(barSection, "Colour Mode", rx, -8)
-    panel.solidCheckbox = CreateCheckbox(barSection, "Use Solid Colour", rx, -26,
+    panel.solidCheckbox = CreateCheckbox(colGroup, "Use Solid Colour", bx, -46,
         function() return getDB().useSolidColor or false end,
         function(v) getDB().useSolidColor = v; panel:UpdateColourMode(); UnitFramesLite_UpdateFrame(unit) end)
 
-    local solidBtn  = CreateColorSwatch(barSection, rx, -64, "Solid Colour",          getDB, "solidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+    local solidBtn  = CreateColorSwatch(colGroup, bx, -80, "Solid Colour",          getDB, "solidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = solidBtn
-    local gradSBtn  = CreateColorSwatch(barSection, rx, -64, "Gradient Start Colour", getDB, "gradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    local gradSBtn  = CreateColorSwatch(colGroup, bx, -80, "Gradient Start",        getDB, "gradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = gradSBtn
-    local gradEBtn  = CreateColorSwatch(barSection, rx, -94, "Gradient End Colour",   getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local gradEBtn  = CreateColorSwatch(colGroup, bx, -110, "Gradient End",          getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = gradEBtn
-    local gradDirLabel = CreateLabel(barSection, "Direction", rx, -126)
-    panel.dirDD = CreateDropdown(barSection, rx, -144, 120, dirOptions,
+    local gradDirLabel = CreateLabel(colGroup, "Direction", bx, -142)
+    panel.dirDD = CreateDropdown(colGroup, bx, -160, 120, dirOptions,
         function() return getDB().gradientDir or "HORIZONTAL" end,
         function(v) getDB().gradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     panel.solidGroup    = {solidBtn}
     panel.gradientGroup = {gradSBtn, gradEBtn, gradDirLabel, panel.dirDD}
 
+    -- Texture (right side of colGroup, hidden when solid colour)
+    local texLabel = CreateLabel(colGroup, "Statusbar Texture", 300, -20)
+    panel.texLabel = texLabel
+    panel.texDD = CreateDropdown(colGroup, 300, -38, 200, GetTextureList(),
+        function() return getDB().statusbarTexture or "Blizzard" end,
+        function(v) getDB().statusbarTexture = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    -- UpdateColourMode also toggles texture visibility
+    panel.UpdateColourMode = function(self)
+        local isSolid = getDB().useSolidColor
+        for _, w in ipairs(self.solidGroup    or {}) do w:SetShown(isSolid)     end
+        for _, w in ipairs(self.gradientGroup or {}) do w:SetShown(not isSolid) end
+        if self.texLabel then self.texLabel:SetShown(not isSolid) end
+        if self.texDD    then self.texDD:SetShown(not isSolid)    end
+    end
+
+    -- ── General bar controls (below colour group) ─────────────────────────────
+    local genY = -226   -- below colGroup (colGroup top at -16, height 200 → bottom -216, +10 gap)
+
+    panel.showPowerCheck = CreateCheckbox(barSection, "Show power bar", bx, genY,
+        function() return getDB().showPowerBar or false end,
+        function(v) getDB().showPowerBar = v; UnitFramesLite_UpdateFrame(unit) end)
+
+    s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full height)",0,120,1, bx,genY-34,185,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
+
     -- ── Bar Border (collapsible sub-frame) ───────────────────────────────────
-    BarSep(-198)
-    CreateLabel(barSection, "Bar Border", x, -208)
-    -- Declare before checkbox so closures can capture the upvalue
+    local borderY = genY - 80
+    CreateLabel(barSection, "Bar Border", bx, borderY)
     local barBorderDetails
-    panel.barBorderCheck = CreateCheckbox(barSection, "Enabled", x+84, -208,
+    panel.barBorderCheck = CreateCheckbox(barSection, "Enabled", bx+80, borderY,
         function() return getDB().barBorderEnabled or false end,
         function(v)
             getDB().barBorderEnabled = v
@@ -854,14 +925,13 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
             UnitFramesLite_UpdateFrame(unit)
         end)
     barBorderDetails = CreateFrame("Frame", nil, barSection)
-    barBorderDetails:SetPoint("TOPLEFT", barSection, "TOPLEFT", 0, -222)
+    barBorderDetails:SetPoint("TOPLEFT", barSection, "TOPLEFT", 0, borderY - 14)
     barBorderDetails:SetSize(300, 80)
-    s,b,r = CreateNudgeSlider(barBorderDetails,"Border Thickness",1,20,1, x,-14,160,"barBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(barBorderDetails,"Border Thickness",1,20,1, bx,-14,160,"barBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.borderThicknessSlider,panel.borderThicknessBox,panel.borderThicknessRefresh = s,b,r
-    local borderBtn = CreateColorSwatch(barBorderDetails, x, -52, "Border Colour", getDB, "barBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local borderBtn = CreateColorSwatch(barBorderDetails, bx, -52, "Border Colour", getDB, "barBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = borderBtn
     barBorderDetails:SetShown(getDB().barBorderEnabled or false)
-    -- Override Refresh so panel:refresh() also syncs collapsible visibility
     panel.barBorderCheck.Refresh = function(self)
         local v = getDB().barBorderEnabled or false
         self:SetChecked(v); barBorderDetails:SetShown(v)
@@ -1421,16 +1491,19 @@ function CreateOptionsPanel()
     mainFrame:SetFrameStrata("HIGH"); mainFrame:SetMovable(true); mainFrame:EnableMouse(true)
     mainFrame:RegisterForDrag("LeftButton")
 
-    -- After any move or resize, convert the anchor to an absolute TOPLEFT point so that
-    -- subsequent StartSizing / StartMoving calls don't cause the frame to jump.
-    local function SaveFramePosition()
-        local x, y = mainFrame:GetLeft(), mainFrame:GetTop()
+    -- Convert frame anchor to absolute TOPLEFT so StartSizing/StartMoving don't jump.
+    -- GetLeft()/GetTop() return screen coords relative to UIParent BOTTOMLEFT, which is
+    -- exactly what SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y) expects.
+    local function PinToTopLeft()
+        local x = mainFrame:GetLeft()
+        local y = mainFrame:GetTop()
+        if not x or not y then return end
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
     end
 
-    mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
-    mainFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing(); SaveFramePosition() end)
+    mainFrame:SetScript("OnDragStart", function(self) PinToTopLeft(); self:StartMoving() end)
+    mainFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing(); PinToTopLeft() end)
     mainFrame:SetResizable(true)
     mainFrame:SetResizeBounds(500, 400, 1400, 900)
     mainFrame:EnableMouseWheel(true)
@@ -1686,8 +1759,8 @@ function CreateOptionsPanel()
     sizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     sizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
     sizeGrip:RegisterForDrag("LeftButton")
-    sizeGrip:SetScript("OnDragStart", function() SaveFramePosition(); mainFrame:StartSizing("BOTTOMRIGHT") end)
-    sizeGrip:SetScript("OnDragStop",  function() mainFrame:StopMovingOrSizing(); SaveFramePosition() end)
+    sizeGrip:SetScript("OnDragStart", function() PinToTopLeft(); mainFrame:StartSizing("BOTTOMRIGHT") end)
+    sizeGrip:SetScript("OnDragStop",  function() mainFrame:StopMovingOrSizing(); PinToTopLeft() end)
     sizeGrip:SetFrameLevel(sizeGrip:GetFrameLevel() + 10)
 end
 
