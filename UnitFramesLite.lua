@@ -310,31 +310,11 @@ end
 local function GetHPPercentText(isDead, showSymbol, unit)
     if isDead then return nil end
     local sym = (showSymbol ~= false) and "%" or ""
-    -- Every health API returns secret numbers in 12.x — arithmetic and comparison
-    -- all taint. string.format("%s") is the only safe extraction: it calls tostring
-    -- internally and returns a plain string for secret numbers.
-    -- We use string.find (returns plain number positions, never secret) to branch,
-    -- and string.sub/gsub to extract the percentage digits without comparison.
+    -- UnitHealthPercent returns a secret 0-1 value in 12.x; arithmetic is blocked.
+    -- Passing CurveConstants.ScaleTo100 causes the API to return a plain 0-100 integer.
     local ok, result = pcall(function()
-        local pct = UnitHealthPercent(unit)
-        -- %s on a secret number returns a plain string ("0.75", "1", "0", etc.)
-        local s = string.format("%s", pct)
-        -- Use string.find to check for a "." — returns plain numbers (positions) or nil.
-        local dot = string.find(s, ".", 1, true)
-        if not dot then
-            -- No decimal: "0" or "1" — use %d formatting on a known-plain string
-            -- to get "0" or "100" without any secret-number ops.
-            local n = string.find(s, "^1")  -- plain number result, safe
-            if n then return "100" .. sym end
-            return "0" .. sym
-        end
-        -- Has decimal: "0.75", "0.08", etc. Extract digits after the dot.
-        local frac = string.sub(s, dot + 1, dot + 2)  -- "75", "08"
-        -- Strip a leading zero via gsub pattern (no comparison)
-        frac = string.gsub(frac, "^0(%d)", "%1")       -- "08"->"8", "75"->"75"
-        -- Handle empty result from gsub (shouldn't happen but be safe)
-        frac = string.gsub(frac, "^$", "0")
-        return frac .. sym
+        local pct = UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100)
+        return string.format("%d", pct) .. sym
     end)
     return ok and result or nil
 end
@@ -1400,7 +1380,23 @@ SlashCmdList["UNITFRAMESLITE"] = function(msg)
         print("UnitFramesLite: settings reset to defaults.")
         return
     end
-    print("UnitFramesLite commands:  /ufl options  /ufl reset")
+    if cmd == "debug" then
+        local db = GetDB("player")
+        print("UFL debug: showHPPct=" .. tostring(db.showHPPct) .. " sphereMode=" .. tostring(db.sphereMode))
+        local ok, pct = pcall(UnitHealthPercent, "player", false, CurveConstants and CurveConstants.ScaleTo100)
+        print("UFL debug: UnitHealthPercent ok=" .. tostring(ok) .. " pct=" .. tostring(pct))
+        local pctStr = GetHPPercentText(false, true, "player")
+        print("UFL debug: GetHPPercentText=" .. tostring(pctStr))
+        local f = frames and frames["player"]
+        print("UFL debug: frames.player=" .. tostring(f ~= nil))
+        if f then
+            local hpPct = f.hpPctText
+            print("UFL debug: hpPctText exists=" .. tostring(hpPct ~= nil)
+                .. (hpPct and (" shown=" .. tostring(hpPct:IsShown()) .. " text=" .. tostring(hpPct:GetText())) or ""))
+        end
+        return
+    end
+    print("UnitFramesLite commands:  /ufl options  /ufl reset  /ufl debug")
 end
 
 -- Status flags ---------------------------------------------------------------

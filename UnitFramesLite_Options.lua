@@ -1053,6 +1053,17 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     local s4,b4,r4 = CreateNudgeSlider(orbSection,"Alpha",0,1,0.01, ox,-348,100,"orbBgAlpha",orbBgAlphaDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbBgAlphaRefresh = r4
 
+    -- ── Orb HP % display ─────────────────────────────────────────────────────
+    local orbHPPctSep = orbSection:CreateTexture(nil,"ARTWORK"); orbHPPctSep:SetColorTexture(0.3,0.3,0.3,0.8); orbHPPctSep:SetHeight(1)
+    orbHPPctSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",ox,-382); orbHPPctSep:SetWidth(210)
+    CreateLabel(orbSection, "HP Percentage", ox, -392)
+    panel.orbShowHPPctCheck = CreateCheckbox(orbSection, "Show HP %", ox, -410,
+        function() return getDB().showHPPct or false end,
+        function(v) getDB().showHPPct = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbShowHPPctCheck.Refresh = function(self)
+        self:SetChecked(getDB().showHPPct or false)
+    end
+
     -- ── Inner Border (right column top, collapsible) ──────────────────────────
     local orbBorderSep = orbSection:CreateTexture(nil,"ARTWORK"); orbBorderSep:SetColorTexture(0.3,0.3,0.3,0.8); orbBorderSep:SetHeight(1)
     orbBorderSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",orx,-8); orbBorderSep:SetWidth(140)
@@ -1427,6 +1438,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.orbSolidCheck:Refresh()
         self.showOrbBorderCheck:Refresh(); self.orbBorderThickRefresh()
         self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
+        if self.orbShowHPPctCheck then self.orbShowHPPctCheck:Refresh() end
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
         if self.UpdateAppearanceMode then self:UpdateAppearanceMode() end
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
