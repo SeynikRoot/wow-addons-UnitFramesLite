@@ -1053,17 +1053,6 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     local s4,b4,r4 = CreateNudgeSlider(orbSection,"Alpha",0,1,0.01, ox,-348,100,"orbBgAlpha",orbBgAlphaDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbBgAlphaRefresh = r4
 
-    -- ── Orb HP % display ─────────────────────────────────────────────────────
-    local orbHPPctSep = orbSection:CreateTexture(nil,"ARTWORK"); orbHPPctSep:SetColorTexture(0.3,0.3,0.3,0.8); orbHPPctSep:SetHeight(1)
-    orbHPPctSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",ox,-382); orbHPPctSep:SetWidth(210)
-    CreateLabel(orbSection, "HP Percentage", ox, -392)
-    panel.orbShowHPPctCheck = CreateCheckbox(orbSection, "Show HP %", ox, -410,
-        function() return getDB().showHPPct or false end,
-        function(v) getDB().showHPPct = v; UnitFramesLite_UpdateFrame(unit) end)
-    panel.orbShowHPPctCheck.Refresh = function(self)
-        self:SetChecked(getDB().showHPPct or false)
-    end
-
     -- ── Inner Border (right column top, collapsible) ──────────────────────────
     local orbBorderSep = orbSection:CreateTexture(nil,"ARTWORK"); orbBorderSep:SetColorTexture(0.3,0.3,0.3,0.8); orbBorderSep:SetHeight(1)
     orbBorderSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",orx,-8); orbBorderSep:SetWidth(140)
@@ -1438,7 +1427,6 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.orbSolidCheck:Refresh()
         self.showOrbBorderCheck:Refresh(); self.orbBorderThickRefresh()
         self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
-        if self.orbShowHPPctCheck then self.orbShowHPPctCheck:Refresh() end
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
         if self.UpdateAppearanceMode then self:UpdateAppearanceMode() end
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
@@ -1592,13 +1580,17 @@ function CreateOptionsPanel()
     mainFrame:RegisterForDrag("LeftButton")
 
     -- Convert frame anchor to absolute TOPLEFT so StartSizing/StartMoving don't jump.
-    -- GetLeft()/GetTop() return screen coords relative to UIParent BOTTOMLEFT, which is
-    -- exactly what SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y) expects.
+    -- GetLeft()/GetTop() return values in the frame's own coordinate space.
+    -- Multiply by effectiveScale to get screen pixels, then divide by UIParent's
+    -- effectiveScale to get UIParent-relative coordinates for SetPoint.
     local function PinToTopLeft()
-        local scale = mainFrame:GetEffectiveScale() / UIParent:GetEffectiveScale()
-        local x = mainFrame:GetLeft() * scale
-        local y = mainFrame:GetTop()  * scale
+        local frameScale  = mainFrame:GetEffectiveScale()
+        local parentScale = UIParent:GetEffectiveScale()
+        local x = mainFrame:GetLeft()
+        local y = mainFrame:GetTop()
         if not x or not y then return end
+        x = x * frameScale / parentScale
+        y = y * frameScale / parentScale
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
     end
@@ -1658,9 +1650,18 @@ function CreateOptionsPanel()
     end
     unitPanels["player"]:Show()
 
+    local classResourcesBtn  -- forward-declared; set after tab buttons are created
+
     local function SelectUnit(unit)
         profilesPanel:Hide()
         for _, p in pairs(unitPanels) do p:Hide() end
+        -- Class Resources tab is player-only: hide button for other units and
+        -- fall back to tab 1 if it was active
+        local isPlayer = (unit == "player")
+        if classResourcesBtn then classResourcesBtn:SetShown(isPlayer) end
+        if not isPlayer and tabSync.current == 6 then
+            tabSync.current = 1
+        end
         if unitPanels[unit] then
             unitPanels[unit]:Show()
             if unitPanels[unit].SelectTab then
@@ -1687,6 +1688,7 @@ function CreateOptionsPanel()
         if i == 1 then btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 210, -38)
         else            btn:SetPoint("LEFT", sharedTabBtns[i-1], "RIGHT", 2, 0) end
         sharedTabBtns[i] = btn
+        if i == 6 then classResourcesBtn = btn end
         btn:SetScript("OnClick", function()
             tabSync.current = i
             -- SelectUnit hides the profiles panel and shows the correct unit panel
