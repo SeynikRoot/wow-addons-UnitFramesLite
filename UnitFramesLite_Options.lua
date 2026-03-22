@@ -485,9 +485,11 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
     end
     UpdatePipSizeControls()
 
-    -- ── Pip Colour ────────────────────────────────────────────────────────────
+    -- ── Bottom section: Pip Colour (left) + Pip Border (right) side by side ──
     local sep3 = content:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
     sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-260); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-8,-260)
+
+    -- Left: Pip Colour ─────────────────────────────────────────────────────────
     CreateLabel(content, "Pip Colour", x, -270)
 
     local colorDetails
@@ -497,9 +499,8 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
 
     colorDetails = CreateFrame("Frame", nil, content)
     colorDetails:SetPoint("TOPLEFT", content, "TOPLEFT", x, -312)
-    colorDetails:SetSize(480, 70)
+    colorDetails:SetSize(240, 70)
 
-    -- Colour mode dropdown: Solid / Horizontal Gradient / Vertical Gradient
     local COLOR_MODES = {"Solid", "Horizontal Gradient", "Vertical Gradient"}
     local function getColorMode()
         local m = resDB().resourceColorMode
@@ -508,6 +509,8 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
         return (resDB().resourceUseSolidColor ~= false) and "Solid" or "Horizontal Gradient"
     end
 
+    -- Dropdown width=130; UIDropDownMenuTemplate rendered right edge ≈ x + 146 (130+32-16).
+    -- Swatches start at x+154 to give an 8px gap.
     local colorModeDD = CreateDropdown(colorDetails, 0, -4, 130, COLOR_MODES,
         getColorMode,
         function(v)
@@ -517,8 +520,8 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
             applyRes()
         end)
 
-    local solidSwatch     = CreateColorSwatch(colorDetails, 150, -10, "", resDB, "resourceSolidColor", applyRes)
-    local gradStartSwatch = CreateColorSwatch(colorDetails, 150, -10, "", resDB, "resourceGradStart",  applyRes)
+    local solidSwatch     = CreateColorSwatch(colorDetails, 154, -10, "", resDB, "resourceSolidColor", applyRes)
+    local gradStartSwatch = CreateColorSwatch(colorDetails, 154, -10, "", resDB, "resourceGradStart",  applyRes)
     local gradEndSwatch   = CreateColorSwatch(colorDetails, 178, -10, "", resDB, "resourceGradEnd",    applyRes)
 
     local gradPerPipCB, gradPerPipLabel
@@ -559,6 +562,56 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
         local v = resDB().resourceUseCustomColor or false
         self:SetChecked(v); colorDetails:SetShown(v)
     end
+
+    -- Right: Pip Border ────────────────────────────────────────────────────────
+    local bx = rx   -- right column, same x as Pip Size section above
+    CreateLabel(content, "Pip Border", bx, -270)
+
+    -- Thickness slider (hidden until Enabled is ticked)
+    local borderDetails = CreateFrame("Frame", nil, content)
+    borderDetails:SetPoint("TOPLEFT", content, "TOPLEFT", bx, -314)
+    borderDetails:SetSize(220, 36)
+    local _,_,rBorderThick = CreateNudgeSlider(borderDetails, "Thickness", 1, 10, 1, 0, -4, 100,
+        "resourcePipBorderThickness", resDB, applyRes)
+
+    -- "Enabled" checkbox with colour swatch inline to its right.
+    -- Checkbox (24px) + "Enabled" label (~50px) + gap → swatch label at bx+88, swatch at bx+128.
+    local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+    cb:SetSize(24, 24)
+    cb:SetPoint("TOPLEFT", content, "TOPLEFT", bx, -288)
+    local enabledLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    enabledLabel:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+    enabledLabel:SetText("Enabled")
+    cb:SetChecked(resDB().resourcePipBorderEnabled or false)
+    -- Colour label + swatch anchored to the checkbox so they share the same vertical centre.
+    -- "Enabled" label ends ~74px from cb's left; leave 10px gap before "Colour".
+    local colLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    colLabel:SetPoint("LEFT", cb, "RIGHT", 74, 0)
+    colLabel:SetText("Colour")
+    -- CreateColorSwatch anchors to parent via TOPLEFT; re-anchor immediately after creation.
+    local borderSwatch = CreateColorSwatch(content, 0, 0, "", resDB, "resourcePipBorderColor", applyRes)
+    borderSwatch:ClearAllPoints()
+    borderSwatch:SetPoint("LEFT", colLabel, "RIGHT", 6, 0)
+
+    local function SetBorderShown(v)
+        borderDetails:SetShown(v)
+        colLabel:SetShown(v)
+        borderSwatch:SetShown(v)
+    end
+
+    cb:SetScript("OnClick", function(self)
+        local v = self:GetChecked()
+        resDB().resourcePipBorderEnabled = v
+        SetBorderShown(v)
+        applyRes()
+    end)
+    cb.Refresh = function(self)
+        local v = resDB().resourcePipBorderEnabled or false
+        self:SetChecked(v)
+        SetBorderShown(v)
+    end
+
+    SetBorderShown(resDB().resourcePipBorderEnabled or false)
 
     -- Apply initial visibility of "show when target" based on "show out of combat"
     setShowWithTargetVisible(not (resDB().resourceShowOutCombat ~= false))
@@ -1415,6 +1468,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         { "showResources","resourceShowOutCombat","resourceShowWithTarget","resourceAlpha",
           "resourceX","resourceY",
           "resourcePipWidth","resourcePipHeight","resourcePipGap","resourcePipShape",
+          "resourcePipBorderEnabled","resourcePipBorderThickness","resourcePipBorderColor",
           "resourceUseCustomColor","resourceColorMode","resourceUseSolidColor",
           "resourceSolidColor","resourceGradStart","resourceGradEnd","resourceGradPerPip",
         },

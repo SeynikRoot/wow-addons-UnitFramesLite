@@ -46,6 +46,9 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         resourcePipHeight       = 6,
         resourcePipGap          = 3,
         resourcePipShape        = "Rectangle",  -- "Rectangle" | "Circle" | "Diamond"
+        resourcePipBorderEnabled   = false,
+        resourcePipBorderThickness = 1,
+        resourcePipBorderColor     = {0, 0, 0, 1},
         resourceX               = 0,
         resourceY               = 0,
         resourceAlpha           = 1.0,
@@ -490,6 +493,20 @@ local function SetupResourcePips()
     for i = 1, maxPips do
         if not resourcePips[i] then
             local pip = CreateFrame("StatusBar", nil, resourceFrame)
+
+            -- Border: a texture on pip at BACKGROUND sublevel -7.
+            -- pip.bg is at sublevel -8 (below border), StatusBar fill is above both.
+            -- Textures can be anchored/sized outside their parent frame's bounds.
+            local borderTex = pip:CreateTexture(nil, "BACKGROUND", nil, -7)
+            borderTex:SetAllPoints(pip)   -- default; resized in UpdateResourceLayout
+            borderTex:SetColorTexture(0, 0, 0, 1)
+            borderTex:Hide()
+            pip.borderTex = borderTex
+            -- Mask texture for Circle/Diamond shaped borders
+            local borderMask = pip:CreateMaskTexture()
+            borderMask:SetAllPoints(pip)
+            pip.borderMask = borderMask
+
             pip:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
             pip:SetMinMaxValues(0, 1)
             pip:SetValue(0)
@@ -505,12 +522,14 @@ local function SetupResourcePips()
             local bgMask = pip:CreateMaskTexture()
             bgMask:SetAllPoints()
             pip.bgMask = bgMask
+            pip.borderFrame = borderFrame
             resourcePips[i] = pip
         end
     end
     -- Hide unused pips
     for i = maxPips + 1, #resourcePips do
         resourcePips[i]:Hide()
+        if resourcePips[i].borderTex then resourcePips[i].borderTex:Hide() end
     end
 
     UnitFramesLite_UpdateResourceLayout()
@@ -657,6 +676,52 @@ function UnitFramesLite_UpdateResourceLayout()
                 if pip.bg then pip.bg:Hide() end
                 if not pip.shapeFill then pip.shapeFill = pip:CreateTexture(nil, "ARTWORK") end
                 if not pip.shapeBg   then pip.shapeBg   = pip:CreateTexture(nil, "BACKGROUND") end
+            end
+
+            -- ── Border ────────────────────────────────────────────────────────
+            -- pip.borderTex is at BACKGROUND sublevel -7 on the pip itself.
+            -- pip.bg  is at sublevel -8 (darkens background, below border tex).
+            -- StatusBar fill renders above all BACKGROUND sublevels.
+            local borderEnabled   = db.resourcePipBorderEnabled
+            local borderThickness = db.resourcePipBorderThickness or 1
+            local borderColor     = db.resourcePipBorderColor or {0, 0, 0, 1}
+            local bt = pip.borderTex
+            local bm = pip.borderMask
+            if bt then
+                pcall(function() bt:RemoveMaskTexture(bm) end)
+                if borderEnabled then
+                    local t  = borderThickness
+                    local bc = borderColor
+                    bt:SetTexture("Interface\\Buttons\\WHITE8X8")
+                    bt:SetVertexColor(bc[1], bc[2], bc[3], bc[4] or 1)
+                    if shape == "Circle" then
+                        local circSize = math.min(pipW, pipH) + t * 2
+                        bt:ClearAllPoints()
+                        bt:SetSize(circSize, circSize)
+                        bt:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                        bt:SetRotation(0)
+                        if bm then
+                            bm:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+                            bm:ClearAllPoints(); bm:SetSize(circSize, circSize)
+                            bm:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                            pcall(function() bt:AddMaskTexture(bm) end)
+                        end
+                    elseif shape == "Diamond" then
+                        local outerS = math.min(pipW, pipH) / math.sqrt(2) + t * math.sqrt(2)
+                        bt:ClearAllPoints()
+                        bt:SetSize(outerS, outerS)
+                        bt:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                        bt:SetRotation(math.pi / 4)
+                    else -- Rectangle
+                        bt:ClearAllPoints()
+                        bt:SetSize(pipW + t * 2, pipH + t * 2)
+                        bt:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                        bt:SetRotation(0)
+                    end
+                    bt:Show()
+                else
+                    bt:Hide()
+                end
             end
 
             if shape == "Rectangle" then

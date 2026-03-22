@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find 'D:/Games/World of Warcraft/_retail_/Interface/AddOns/' -name *.tga -o -name *.blp)"
+      "Bash(find 'D:/Games/World of Warcraft/_retail_/Interface/AddOns/' -name *.tga -o -name *.blp)",
+      "Bash(powershell -ExecutionPolicy Bypass -File .deploy-addon.ps1 -WoWPath \"D:\\\\Games\\\\World of Warcraft\" -GameType retail)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"c:/Repos/UnitFramesLite/deploy-addon.ps1\" -WoWPath \"D:\\\\Games\\\\World of Warcraft\" -GameType retail)",
+      "Read(//c/Users/gnawt/.claude/projects/c--Repos-UnitFramesLite/memory/**)"
     ]
   }
 }
