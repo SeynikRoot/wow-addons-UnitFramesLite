@@ -1,0 +1,11 @@
+## Interface: 120001, 120000
+## Title: UnitFramesLite
+## Notes: Lightweight modern player/target frames with in-game options
+## Author: Seynik Root
+## Version: 1.0
+## OptionalDeps: LibSharedMedia-3.0
+## SavedVariables: UnitFramesLiteDB
+
+UnitFramesLite.xml
+UnitFramesLite.lua
+UnitFramesLite_Options.lua

@@ -1,0 +1,70 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+
+    <!-- PLAYER FRAME
+         Plain Button avoids SecureUnitButtonTemplate taint.
+         hp and power are StatusBar child frames so WoW 12.0 secret health/power
+         values can be passed via SetMinMaxValues/SetValue without taint errors.
+         Text FontStrings are created dynamically in Lua (SetupFrame) in a child
+         Frame at a higher FrameLevel so they always render above the StatusBars. -->
+    <Button name="UFL_PlayerFrame" parent="UIParent" hidden="true">
+        <Size x="160" y="35"/>
+        <Anchors>
+            <Anchor point="CENTER" relativePoint="CENTER" x="-220" y="-160"/>
+        </Anchors>
+
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBG" parentKey="bg" setAllPoints="true">
+                    <Color r="0" g="0" b="0" a="0.35"/>
+                </Texture>
+            </Layer>
+        </Layers>
+
+        <Frames>
+            <StatusBar name="$parentHP" parentKey="hp">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativePoint="TOPLEFT"/>
+                </Anchors>
+                <Size x="160" y="35"/>
+            </StatusBar>
+            <StatusBar name="$parentPower" parentKey="power" hidden="true">
+                <Anchors>
+                    <Anchor point="BOTTOMLEFT" relativePoint="BOTTOMLEFT"/>
+                </Anchors>
+                <Size x="160" y="8"/>
+            </StatusBar>
+        </Frames>
+    </Button>
+
+    <!-- TARGET FRAME -->
+    <Button name="UFL_TargetFrame" parent="UIParent" hidden="true">
+        <Size x="160" y="35"/>
+        <Anchors>
+            <Anchor point="CENTER" relativePoint="CENTER" x="220" y="-160"/>
+        </Anchors>
+
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBG" parentKey="bg" setAllPoints="true">
+                    <Color r="0" g="0" b="0" a="0.35"/>
+                </Texture>
+            </Layer>
+        </Layers>
+
+        <Frames>
+            <StatusBar name="$parentHP" parentKey="hp">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativePoint="TOPLEFT"/>
+                </Anchors>
+                <Size x="160" y="35"/>
+            </StatusBar>
+            <StatusBar name="$parentPower" parentKey="power" hidden="true">
+                <Anchors>
+                    <Anchor point="BOTTOMLEFT" relativePoint="BOTTOMLEFT"/>
+                </Anchors>
+                <Size x="160" y="8"/>
+            </StatusBar>
+        </Frames>
+    </Button>
+
+</Ui>
