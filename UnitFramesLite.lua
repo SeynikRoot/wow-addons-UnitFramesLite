@@ -493,7 +493,7 @@ local function SetupResourcePips()
             pip:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
             pip:SetMinMaxValues(0, 1)
             pip:SetValue(0)
-            local bg = pip:CreateTexture(nil, "BACKGROUND")
+            local bg = pip:CreateTexture(nil, "BACKGROUND", nil, -8)
             bg:SetAllPoints()
             bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
             pip.bg = bg

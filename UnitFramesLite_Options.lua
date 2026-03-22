@@ -355,221 +355,213 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         note:SetPoint("BOTTOMLEFT", blizzGroup, "BOTTOMLEFT", 8, 10)
         note:SetText("|cffaaaaaa/reload to restore hidden Blizzard frames|r")
 
-        -- Right column: Class Resources settings (custom UFL bar only)
-        local resGroup = CreateGroupBox(content, "Class Resources", 350, -8, 490, 400, "GameFontNormal")
-        local function resDB() return UnitFramesLite_GetDB("player") end
-        local function applyRes()
-            if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
-            if UnitFramesLite_UpdateResourceVisibility then UnitFramesLite_UpdateResourceVisibility() end
-        end
+    end
+end
 
-        local lx = 8   -- left column x
-        local rx = 250 -- right column x (pips panel)
+-- Tab 6: Class Resources (player-only) ----------------------------------------
 
-        -- ── Visibility ────────────────────────────────────────────────────────
-        CreateLabel(resGroup, "Visibility", lx, -18)
-        CreateCheckbox(resGroup, "Show resource bar", lx, -36,
-            function() return resDB().showResources ~= false end,
-            function(v) resDB().showResources = v; applyRes() end)
+local function BuildClassResourcesContent(content, unit, getDB, panel)
+    if unit ~= "player" then return end
 
-        -- Forward-declare so showOutCombatCB's closure can reference both
-        local showWithTargetCB
-        local showWithTargetLabel
+    local function resDB() return UnitFramesLite_GetDB("player") end
+    local function applyRes()
+        if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
+        if UnitFramesLite_UpdateResourceVisibility then UnitFramesLite_UpdateResourceVisibility() end
+    end
 
-        local function setShowWithTargetVisible(shown)
-            if showWithTargetCB    then showWithTargetCB:SetShown(shown) end
-            if showWithTargetLabel then showWithTargetLabel:SetShown(shown) end
-        end
+    local x  = 16  -- left column x
+    local rx = 266 -- right column x (pips panel)
 
-        -- When unticked, bar only shows in combat
-        local showOutCombatCB = CreateCheckbox(resGroup, "Show out of combat", lx, -62,
-            function() return resDB().resourceShowOutCombat ~= false end,
-            function(v)
-                resDB().resourceShowOutCombat = v
-                setShowWithTargetVisible(not v)
-                applyRes()
-            end)
+    -- ── Visibility ────────────────────────────────────────────────────────────
+    CreateLabel(content, "Visibility", x, -8)
+    CreateCheckbox(content, "Show resource bar", x, -26,
+        function() return resDB().showResources ~= false end,
+        function(v) resDB().showResources = v; applyRes() end)
 
-        -- Built manually so we can hide the label independently
-        do
-            local cb = CreateFrame("CheckButton", nil, resGroup, "UICheckButtonTemplate")
-            cb:SetSize(24, 24)
-            cb:SetPoint("TOPLEFT", resGroup, "TOPLEFT", lx, -88)
-            local fs = resGroup:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-            fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-            fs:SetText("Show when target selected")
-            cb:SetChecked(resDB().resourceShowWithTarget or false)
-            cb:SetScript("OnClick", function(self)
-                resDB().resourceShowWithTarget = self:GetChecked()
-                applyRes()
-            end)
-            cb.Refresh = function(self) self:SetChecked(resDB().resourceShowWithTarget or false) end
-            showWithTargetCB    = cb
-            showWithTargetLabel = fs
-        end
+    -- Forward-declare so showOutCombatCB's closure can reference both
+    local showWithTargetCB
+    local showWithTargetLabel
 
-        -- ── Alpha ─────────────────────────────────────────────────────────────
-        local sep1 = resGroup:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
-        sep1:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-112); sep1:SetSize(230,1)
-        local _,_,rAlpha = CreateNudgeSlider(resGroup,"Alpha",0,1,0.01, lx,-122,120,"resourceAlpha",resDB,applyRes)
+    local function setShowWithTargetVisible(shown)
+        if showWithTargetCB    then showWithTargetCB:SetShown(shown) end
+        if showWithTargetLabel then showWithTargetLabel:SetShown(shown) end
+    end
 
-        -- ── Position ──────────────────────────────────────────────────────────
-        local sep2 = resGroup:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
-        sep2:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-158); sep2:SetSize(230,1)
-        CreateLabel(resGroup, "Position", lx, -168)
-        local _,_,rResX = CreateNudgeSlider(resGroup,"X Offset",-1000,1000,1, lx,-188,120,"resourceX",resDB,applyRes)
-        local _,_,rResY = CreateNudgeSlider(resGroup,"Y Offset", -600, 600,1, lx,-228,120,"resourceY",resDB,applyRes)
+    -- When unticked, bar only shows in combat
+    local showOutCombatCB = CreateCheckbox(content, "Show out of combat", x, -52,
+        function() return resDB().resourceShowOutCombat ~= false end,
+        function(v)
+            resDB().resourceShowOutCombat = v
+            setShowWithTargetVisible(not v)
+            applyRes()
+        end)
 
-        -- ── RIGHT: UFL Pips Size, Position & Shape ────────────────────────────
-        local pipsContainer = CreateFrame("Frame", nil, resGroup)
-        local pipColourContainer
-        pipsContainer:SetPoint("TOPLEFT",  resGroup, "TOPLEFT",  rx-10, 0)
-        pipsContainer:SetPoint("BOTTOMRIGHT", resGroup, "BOTTOMRIGHT", 0, 0)
+    -- Built manually so we can hide the label independently
+    do
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetSize(24, 24)
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", x, -78)
+        local fs = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        fs:SetText("Show when target selected")
+        cb:SetChecked(resDB().resourceShowWithTarget or false)
+        cb:SetScript("OnClick", function(self)
+            resDB().resourceShowWithTarget = self:GetChecked()
+            applyRes()
+        end)
+        cb.Refresh = function(self) self:SetChecked(resDB().resourceShowWithTarget or false) end
+        showWithTargetCB    = cb
+        showWithTargetLabel = fs
+    end
 
-        local vsep = pipsContainer:CreateTexture(nil,"ARTWORK"); vsep:SetColorTexture(0.3,0.3,0.3,0.8); vsep:SetWidth(1)
-        vsep:SetPoint("TOPLEFT",   pipsContainer,"TOPLEFT",   0, -8)
-        vsep:SetPoint("BOTTOMLEFT",pipsContainer,"BOTTOMLEFT",0,  0)
+    -- ── Alpha ─────────────────────────────────────────────────────────────────
+    local sep1 = content:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
+    sep1:SetPoint("TOPLEFT",content,"TOPLEFT",x,-104); sep1:SetSize(230,1)
+    local _,_,rAlpha = CreateNudgeSlider(content,"Alpha",0,1,0.01, x,-114,120,"resourceAlpha",resDB,applyRes)
 
-        local px = 10
-        local UpdatePipSizeControls  -- forward declaration
-        CreateLabel(pipsContainer, "UFL Pips Size & Position", px, -18)
+    -- ── Position ──────────────────────────────────────────────────────────────
+    local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
+    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-150); sep2:SetSize(230,1)
+    CreateLabel(content, "Position", x, -160)
+    local _,_,rResX = CreateNudgeSlider(content,"X Offset",-1000,1000,1, x,-180,120,"resourceX",resDB,applyRes)
+    local _,_,rResY = CreateNudgeSlider(content,"Y Offset", -600, 600,1, x,-220,120,"resourceY",resDB,applyRes)
 
-        -- Width+Height sliders (shown for Rectangle and Diamond)
-        local sliderW, sliderWBox, rPipW, sliderWLabel, sliderWMinus, sliderWPlus =
-            CreateNudgeSlider(pipsContainer,"Pip Width",  6,50,1, px,-38, 80,"resourcePipWidth",  resDB,applyRes)
-        local sliderH, sliderHBox, rPipH, sliderHLabel, sliderHMinus, sliderHPlus =
-            CreateNudgeSlider(pipsContainer,"Pip Height", 3,50,1, px,-78, 80,"resourcePipHeight", resDB,applyRes)
+    -- ── Vertical separator between left and right columns ─────────────────────
+    local vsep = content:CreateTexture(nil,"ARTWORK"); vsep:SetColorTexture(0.3,0.3,0.3,0.8); vsep:SetWidth(1)
+    vsep:SetPoint("TOPLEFT",  content,"TOPLEFT",  rx - 10, -8)
+    vsep:SetPoint("BOTTOMLEFT",content,"BOTTOMLEFT",rx - 10,  0)
 
-        -- Size slider (shown for Circle — keeps width=height so circle stays round)
-        local sliderS, sliderSBox, _, sliderSLabel, sliderSMinus, sliderSPlus =
-            CreateNudgeSlider(pipsContainer,"Pip Size", 3,50,1, px,-38, 80,"resourcePipWidth", resDB,
-            function()
+    -- ── RIGHT: UFL Pips Size, Position & Shape ────────────────────────────────
+    local px = rx
+    local UpdatePipSizeControls  -- forward declaration
+    CreateLabel(content, "UFL Pips Size & Position", px, -8)
+
+    -- Width+Height sliders (shown for Rectangle and Diamond)
+    local sliderW, sliderWBox, rPipW, sliderWLabel, sliderWMinus, sliderWPlus =
+        CreateNudgeSlider(content,"Pip Width",  6,50,1, px,-28, 80,"resourcePipWidth",  resDB,applyRes)
+    local sliderH, sliderHBox, rPipH, sliderHLabel, sliderHMinus, sliderHPlus =
+        CreateNudgeSlider(content,"Pip Height", 3,50,1, px,-68, 80,"resourcePipHeight", resDB,applyRes)
+
+    -- Size slider (shown for Circle — keeps width=height so circle stays round)
+    local sliderS, sliderSBox, _, sliderSLabel, sliderSMinus, sliderSPlus =
+        CreateNudgeSlider(content,"Pip Size", 3,50,1, px,-28, 80,"resourcePipWidth", resDB,
+        function()
+            local db = resDB()
+            db.resourcePipHeight = db.resourcePipWidth
+            if rPipH then rPipH() end
+            applyRes()
+        end)
+
+    local _,_,rPipGap = CreateNudgeSlider(content,"Pip Gap", 0,50,1, px,-108,80,"resourcePipGap", resDB,applyRes)
+    CreateLabel(content, "Pip Shape", px, -148)
+    local shapeDD = CreateDropdown(content, px, -166, 110, {"Rectangle","Circle","Diamond"},
+        function() return resDB().resourcePipShape or "Rectangle" end,
+        function(v)
+            resDB().resourcePipShape = v
+            if v == "Circle" then
                 local db = resDB()
                 db.resourcePipHeight = db.resourcePipWidth
                 if rPipH then rPipH() end
-                applyRes()
-            end)
+            end
+            UpdatePipSizeControls()
+            applyRes()
+        end)
 
-        local _,_,rPipGap = CreateNudgeSlider(pipsContainer,"Pip Gap", 0,50,1, px,-118,80,"resourcePipGap", resDB,applyRes)
-        CreateLabel(pipsContainer, "Pip Shape", px, -158)
-        local shapeDD = CreateDropdown(pipsContainer, px, -176, 110, {"Rectangle","Circle","Diamond"},
-            function() return resDB().resourcePipShape or "Rectangle" end,
-            function(v)
-                resDB().resourcePipShape = v
-                if v == "Circle" then
-                    local db = resDB()
-                    db.resourcePipHeight = db.resourcePipWidth
-                    if rPipH then rPipH() end
-                end
-                UpdatePipSizeControls()
-                applyRes()
-            end)
-
-        -- Show/hide width+height vs size depending on shape
-        local function setWHShown(shown)
-            sliderWLabel:SetShown(shown); sliderW:SetShown(shown); sliderWBox:SetShown(shown)
-            sliderWMinus:SetShown(shown); sliderWPlus:SetShown(shown)
-            sliderHLabel:SetShown(shown); sliderH:SetShown(shown); sliderHBox:SetShown(shown)
-            sliderHMinus:SetShown(shown); sliderHPlus:SetShown(shown)
-        end
-        local function setSShown(shown)
-            sliderSLabel:SetShown(shown); sliderS:SetShown(shown); sliderSBox:SetShown(shown)
-            sliderSMinus:SetShown(shown); sliderSPlus:SetShown(shown)
-        end
-        UpdatePipSizeControls = function()
-            local isCircle = (resDB().resourcePipShape or "Rectangle") == "Circle"
-            setWHShown(not isCircle)
-            setSShown(isCircle)
-        end
-        UpdatePipSizeControls()
-
-        -- ── Pip Colour ────────────────────────────────────────────────────────
-        pipColourContainer = CreateFrame("Frame", nil, resGroup)
-        pipColourContainer:SetPoint("TOPLEFT", resGroup, "TOPLEFT", 0, -275)
-        pipColourContainer:SetSize(490, 210)
-
-        local sep4 = pipColourContainer:CreateTexture(nil,"ARTWORK"); sep4:SetColorTexture(0.3,0.3,0.3,0.8); sep4:SetHeight(1)
-        sep4:SetPoint("TOPLEFT",pipColourContainer,"TOPLEFT",8,0); sep4:SetPoint("TOPRIGHT",pipColourContainer,"TOPRIGHT",-8,0)
-        CreateLabel(pipColourContainer, "Pip Colour", 8, -10)
-
-        local colorDetails
-        local useCustomCheck = CreateCheckbox(pipColourContainer, "Use Custom Colour", 8, -28,
-            function() return resDB().resourceUseCustomColor or false end,
-            function(v) resDB().resourceUseCustomColor = v; colorDetails:SetShown(v); applyRes() end)
-
-        colorDetails = CreateFrame("Frame", nil, pipColourContainer)
-        colorDetails:SetPoint("TOPLEFT", pipColourContainer, "TOPLEFT", 0, -52)
-        colorDetails:SetSize(480, 70)
-
-        -- Colour mode dropdown: Solid / Horizontal Gradient / Vertical Gradient
-        -- Layout: [dropdown] [swatch(es)]   checkbox below
-        local COLOR_MODES = {"Solid", "Horizontal Gradient", "Vertical Gradient"}
-        local function getColorMode()
-            local m = resDB().resourceColorMode
-            if m == "Gradient" then m = "Horizontal Gradient" end  -- migrate old value
-            if m and m ~= "" then return m end
-            return (resDB().resourceUseSolidColor ~= false) and "Solid" or "Horizontal Gradient"
-        end
-
-        -- Dropdown at left (x=8), swatches inline to its right — moved up to y=-4 to close gap
-        local colorModeDD = CreateDropdown(colorDetails, 8, -4, 130, COLOR_MODES,
-            getColorMode,
-            function(v)
-                resDB().resourceColorMode = v
-                resDB().resourceUseSolidColor = (v == "Solid")
-                colorDetails:UpdateColourMode()
-                applyRes()
-            end)
-
-        -- Swatches at same row as dropdown (dd frame top=-4, visible button centre ≈ -14)
-        local solidSwatch     = CreateColorSwatch(colorDetails, 158, -10, "", resDB, "resourceSolidColor", applyRes)
-        local gradStartSwatch = CreateColorSwatch(colorDetails, 158, -10, "", resDB, "resourceGradStart",  applyRes)
-        local gradEndSwatch   = CreateColorSwatch(colorDetails, 186, -10, "", resDB, "resourceGradEnd",    applyRes)
-
-        -- "Colour each pip individually" checkbox — store label ref so both hide together
-        local gradPerPipCB, gradPerPipLabel
-        do
-            local cb = CreateFrame("CheckButton", nil, colorDetails, "UICheckButtonTemplate")
-            cb:SetSize(24, 24)
-            cb:SetPoint("TOPLEFT", colorDetails, "TOPLEFT", 8, -32)
-            local fs = colorDetails:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-            fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-            fs:SetText("Colour each pip individually")
-            cb:SetChecked(resDB().resourceGradPerPip ~= false)
-            cb:SetScript("OnClick", function(self)
-                resDB().resourceGradPerPip = self:GetChecked()
-                applyRes()
-            end)
-            cb.Refresh = function(self) self:SetChecked(resDB().resourceGradPerPip ~= false) end
-            gradPerPipCB    = cb
-            gradPerPipLabel = fs
-        end
-
-        colorDetails.UpdateColourMode = function(self)
-            local mode = getColorMode()
-            local isSolid    = (mode == "Solid")
-            local isVertical = (mode == "Vertical Gradient")
-            solidSwatch:SetShown(isSolid)
-            gradStartSwatch:SetShown(not isSolid)
-            gradEndSwatch:SetShown(not isSolid)
-            -- "Colour each pip individually" only meaningful for Horizontal Gradient
-            local showPerPip = not isSolid and not isVertical
-            gradPerPipCB:SetShown(showPerPip)
-            gradPerPipLabel:SetShown(showPerPip)
-            colorModeDD:SetSelection(mode)
-        end
-
-        colorDetails:SetShown(resDB().resourceUseCustomColor or false)
-        colorDetails:UpdateColourMode()
-
-        useCustomCheck.Refresh = function(self)
-            local v = resDB().resourceUseCustomColor or false
-            self:SetChecked(v); colorDetails:SetShown(v)
-        end
-
-        -- Apply initial visibility of "show when target" based on "show out of combat"
-        setShowWithTargetVisible(not (resDB().resourceShowOutCombat ~= false))
+    -- Show/hide width+height vs size depending on shape
+    local function setWHShown(shown)
+        sliderWLabel:SetShown(shown); sliderW:SetShown(shown); sliderWBox:SetShown(shown)
+        sliderWMinus:SetShown(shown); sliderWPlus:SetShown(shown)
+        sliderHLabel:SetShown(shown); sliderH:SetShown(shown); sliderHBox:SetShown(shown)
+        sliderHMinus:SetShown(shown); sliderHPlus:SetShown(shown)
     end
+    local function setSShown(shown)
+        sliderSLabel:SetShown(shown); sliderS:SetShown(shown); sliderSBox:SetShown(shown)
+        sliderSMinus:SetShown(shown); sliderSPlus:SetShown(shown)
+    end
+    UpdatePipSizeControls = function()
+        local isCircle = (resDB().resourcePipShape or "Rectangle") == "Circle"
+        setWHShown(not isCircle)
+        setSShown(isCircle)
+    end
+    UpdatePipSizeControls()
+
+    -- ── Pip Colour ────────────────────────────────────────────────────────────
+    local sep3 = content:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
+    sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-260); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-8,-260)
+    CreateLabel(content, "Pip Colour", x, -270)
+
+    local colorDetails
+    local useCustomCheck = CreateCheckbox(content, "Use Custom Colour", x, -288,
+        function() return resDB().resourceUseCustomColor or false end,
+        function(v) resDB().resourceUseCustomColor = v; colorDetails:SetShown(v); applyRes() end)
+
+    colorDetails = CreateFrame("Frame", nil, content)
+    colorDetails:SetPoint("TOPLEFT", content, "TOPLEFT", x, -312)
+    colorDetails:SetSize(480, 70)
+
+    -- Colour mode dropdown: Solid / Horizontal Gradient / Vertical Gradient
+    local COLOR_MODES = {"Solid", "Horizontal Gradient", "Vertical Gradient"}
+    local function getColorMode()
+        local m = resDB().resourceColorMode
+        if m == "Gradient" then m = "Horizontal Gradient" end  -- migrate old value
+        if m and m ~= "" then return m end
+        return (resDB().resourceUseSolidColor ~= false) and "Solid" or "Horizontal Gradient"
+    end
+
+    local colorModeDD = CreateDropdown(colorDetails, 0, -4, 130, COLOR_MODES,
+        getColorMode,
+        function(v)
+            resDB().resourceColorMode = v
+            resDB().resourceUseSolidColor = (v == "Solid")
+            colorDetails:UpdateColourMode()
+            applyRes()
+        end)
+
+    local solidSwatch     = CreateColorSwatch(colorDetails, 150, -10, "", resDB, "resourceSolidColor", applyRes)
+    local gradStartSwatch = CreateColorSwatch(colorDetails, 150, -10, "", resDB, "resourceGradStart",  applyRes)
+    local gradEndSwatch   = CreateColorSwatch(colorDetails, 178, -10, "", resDB, "resourceGradEnd",    applyRes)
+
+    local gradPerPipCB, gradPerPipLabel
+    do
+        local cb = CreateFrame("CheckButton", nil, colorDetails, "UICheckButtonTemplate")
+        cb:SetSize(24, 24)
+        cb:SetPoint("TOPLEFT", colorDetails, "TOPLEFT", 0, -32)
+        local fs = colorDetails:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        fs:SetText("Colour each pip individually")
+        cb:SetChecked(resDB().resourceGradPerPip ~= false)
+        cb:SetScript("OnClick", function(self)
+            resDB().resourceGradPerPip = self:GetChecked()
+            applyRes()
+        end)
+        cb.Refresh = function(self) self:SetChecked(resDB().resourceGradPerPip ~= false) end
+        gradPerPipCB    = cb
+        gradPerPipLabel = fs
+    end
+
+    colorDetails.UpdateColourMode = function(self)
+        local mode = getColorMode()
+        local isSolid    = (mode == "Solid")
+        local isVertical = (mode == "Vertical Gradient")
+        solidSwatch:SetShown(isSolid)
+        gradStartSwatch:SetShown(not isSolid)
+        gradEndSwatch:SetShown(not isSolid)
+        local showPerPip = not isSolid and not isVertical
+        gradPerPipCB:SetShown(showPerPip)
+        gradPerPipLabel:SetShown(showPerPip)
+        colorModeDD:SetSelection(mode)
+    end
+
+    colorDetails:SetShown(resDB().resourceUseCustomColor or false)
+    colorDetails:UpdateColourMode()
+
+    useCustomCheck.Refresh = function(self)
+        local v = resDB().resourceUseCustomColor or false
+        self:SetChecked(v); colorDetails:SetShown(v)
+    end
+
+    -- Apply initial visibility of "show when target" based on "show out of combat"
+    setShowWithTargetVisible(not (resDB().resourceShowOutCombat ~= false))
 end
 
 -- Tab 2: Text ----------------------------------------------------------------
@@ -1289,7 +1281,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
 
     -- Tab buttons are created externally (on the main frame header).
     -- We only create scroll frames + content here.
-    local tabNames        = {"General", "Text", "Appearance", "Conditions", "Auras"}
+    local tabNames        = {"General", "Text", "Appearance", "Conditions", "Auras", "Class Resources"}
     local tabContents     = {}   -- scroll child frames (passed to Build* functions)
     local tabScrollFrames = {}   -- scroll frame wrappers (shown/hidden by SelectTab)
 
@@ -1315,11 +1307,12 @@ local function BuildUnitPanel(panel, unit, tabSync)
     SelectTab(tabSync.current or 1)
     panel.SelectTab = SelectTab
 
-    BuildGeneralContent(tabContents[1],       unit, getDB, panel)
-    BuildTextContent(tabContents[2],          unit, getDB, panel)
-    BuildAppearanceContent(tabContents[3],    unit, getDB, panel)
-    BuildConditionsContent(tabContents[4],    unit, getDB, panel)
-    BuildBuffsContent(tabContents[5],         unit, getDB, panel)
+    BuildGeneralContent(tabContents[1],          unit, getDB, panel)
+    BuildTextContent(tabContents[2],             unit, getDB, panel)
+    BuildAppearanceContent(tabContents[3],       unit, getDB, panel)
+    BuildConditionsContent(tabContents[4],       unit, getDB, panel)
+    BuildBuffsContent(tabContents[5],            unit, getDB, panel)
+    BuildClassResourcesContent(tabContents[6],   unit, getDB, panel)
 
     panel.refresh = function(self)
         local db = getDB()
@@ -1418,6 +1411,13 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "debuffXOffset","debuffYOffset","debuffAnchorToFrame","debuffShowDebuffs",
           "debuffPlayerOnly","debuffCurableOnly",
         },
+        -- 6: Class Resources
+        { "showResources","resourceShowOutCombat","resourceShowWithTarget","resourceAlpha",
+          "resourceX","resourceY",
+          "resourcePipWidth","resourcePipHeight","resourcePipGap","resourcePipShape",
+          "resourceUseCustomColor","resourceColorMode","resourceUseSolidColor",
+          "resourceSolidColor","resourceGradStart","resourceGradEnd","resourceGradPerPip",
+        },
     }
 
     local resetAllBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -1443,7 +1443,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
     resetTabBtn:SetText("Reset Tab")
     resetTabBtn:SetScript("OnClick", function()
         local tabIdx  = tabSync.current or 1
-        local tabName = ({"General","Text","Appearance","Conditions","Auras"})[tabIdx] or "Tab"
+        local tabName = ({"General","Text","Appearance","Conditions","Auras","Class Resources"})[tabIdx] or "Tab"
         local key = "UFL_RESET_TAB_" .. unit:upper() .. "_" .. tabIdx
         StaticPopupDialogs[key] = {
             text = "Reset " .. unit .. " " .. tabName .. " settings to defaults?",
@@ -1458,6 +1458,10 @@ local function BuildUnitPanel(panel, unit, tabSync)
                 UnitFramesLite_UpdateFrame(unit)
                 if tabIdx == 5 and UnitFramesLite_UpdateAuras then
                     UnitFramesLite_UpdateAuras(unit)
+                end
+                if tabIdx == 6 then
+                    if UnitFramesLite_UpdateResourceLayout    then UnitFramesLite_UpdateResourceLayout()    end
+                    if UnitFramesLite_UpdateResourceVisibility then UnitFramesLite_UpdateResourceVisibility() end
                 end
                 panel:refresh()
             end,
@@ -1589,8 +1593,8 @@ function CreateOptionsPanel()
         end)
 
     -- Tab buttons on the main frame header, right of the unit dropdown
-    local tabNames = {"General", "Text", "Appearance", "Conditions", "Auras"}
-    local tabWidths = {76, 60, 100, 90, 60}
+    local tabNames = {"General", "Text", "Appearance", "Conditions", "Auras", "Class Resources"}
+    local tabWidths = {76, 60, 100, 90, 60, 110}
     local sharedTabBtns = {}
     for i, name in ipairs(tabNames) do
         local btn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
