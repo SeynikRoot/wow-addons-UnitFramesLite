@@ -1145,6 +1145,13 @@ end
 
 function UnitFramesLite_GetDB(unit) return GetDB(unit) end
 
+local function DeepCopyAllDB(src)
+    if type(src) ~= "table" then return src end
+    local t = {}
+    for k, v in pairs(src) do t[k] = DeepCopyAllDB(v) end
+    return t
+end
+
 -- Copy DB from src unit to dest unit, mirroring X positions if mirror=true
 function UnitFramesLite_CopyUnit(srcUnit, destUnit, mirror)
     local src = GetDB(srcUnit)
@@ -1180,13 +1187,6 @@ end
 -- Profiles -------------------------------------------------------------------
 
 -- Deep copy all keys (including nested tables of any depth)
-local function DeepCopyAllDB(src)
-    if type(src) ~= "table" then return src end
-    local t = {}
-    for k, v in pairs(src) do t[k] = DeepCopyAllDB(v) end
-    return t
-end
-
 local function GetProfiles()
     UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
     return UnitFramesLiteDB.profiles

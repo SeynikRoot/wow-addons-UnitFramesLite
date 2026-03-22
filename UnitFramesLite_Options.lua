@@ -1200,39 +1200,46 @@ end
 -- Tab 6: Conditions (includes Alpha section) ---------------------------------
 
 local function BuildConditionsContent(content, unit, getDB, panel)
-    local x = 16
-    -- Left column: Load Conditions --------------------------------------------
-    CreateLabel(content, "Load Conditions", x, -8)
-    CreateLabel(content, "Show this frame only when checked conditions are met.\nIf none are checked, the frame is always shown.", x, -26)
+    -- ── Load Conditions group (left) ─────────────────────────────────────────
+    local condBox = CreateGroupBox(content, "Load Conditions", 8, -8, 330, 230)
+    local hint = condBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    hint:SetPoint("TOPLEFT", condBox, "TOPLEFT", 8, -18)
+    hint:SetText("Show frame only when checked conditions are met.\nIf none are ticked the frame is always shown.")
+    hint:SetTextColor(0.7, 0.7, 0.7)
+
     local condDefs = {
-        {"Mounted","loadMounted",1,1}, {"In vehicle","loadInVehicle",1,2},
-        {"Resting","loadResting",1,3}, {"Stealthed","loadStealthed",1,4},
-        {"In combat","loadInCombat",1,5},
-        {"Out of combat","loadOutOfCombat",2,1}, {"Solo","loadSolo",2,2},
-        {"In group","loadInGroup",2,3}, {"In instance","loadInInstance",2,4},
+        {"Mounted",       "loadMounted",      1, 1},
+        {"In vehicle",    "loadInVehicle",    1, 2},
+        {"Resting",       "loadResting",      1, 3},
+        {"Stealthed",     "loadStealthed",    1, 4},
+        {"In combat",     "loadInCombat",     1, 5},
+        {"Out of combat", "loadOutOfCombat",  2, 1},
+        {"Solo",          "loadSolo",         2, 2},
+        {"In group",      "loadInGroup",      2, 3},
+        {"In instance",   "loadInInstance",   2, 4},
     }
-    local colX = {x, x+200}; local startY = -72; local rowH = 32
+    local colX = {8, 168}; local startY = -58; local rowH = 28
     panel.conditionChecks = {}
     for _, def in ipairs(condDefs) do
         local label, key, col, row = def[1], def[2], def[3], def[4]
-        local cb = CreateCheckbox(content, label, colX[col], startY - (row-1)*rowH,
+        local cb = CreateCheckbox(condBox, label, colX[col], startY - (row-1)*rowH,
             function() return getDB()[key] or false end,
             function(v) getDB()[key] = v; UnitFramesLite_UpdateVisibility(unit) end)
         panel.conditionChecks[key] = cb
     end
 
-    -- Right column (x=340): Alpha section starting at y=-8 -------------------
-    local ax = 340
-    local ay = -8
-    CreateLabel(content, "Alpha", ax, ay)
-    panel.syncAlphaCheck = CreateCheckbox(content, "Sync both", ax+220, ay,
-        function() return getDB().syncAlpha or false end,
-        function(v) getDB().syncAlpha = v; UnitFramesLite_UpdateAlpha(unit) end)
-    panel.keepTextVisCheck = CreateCheckbox(content, "Keep text + portrait visible", ax, ay-28,
+    -- ── Visibility Alpha group (right top) ───────────────────────────────────
+    local alphaBox = CreateGroupBox(content, "Visibility Alpha", 346, -8, 310, 230)
+    local gx = 8
+
+    panel.keepTextVisCheck = CreateCheckbox(alphaBox, "Keep text + portrait visible", gx, -18,
         function() return getDB().keepTextVisible or false end,
         function(v) getDB().keepTextVisible = v; UnitFramesLite_UpdateAlpha(unit) end)
-    CreateLabel(content, "Alpha sliders affect", ax, ay-60)
-    panel.alphaAffectsDD = CreateDropdown(content, ax+150, ay-78, 120, alphaAffectsOptions,
+
+    local affLbl = alphaBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    affLbl:SetPoint("TOPLEFT", alphaBox, "TOPLEFT", gx, -46)
+    affLbl:SetText("Sliders affect")
+    panel.alphaAffectsDD = CreateDropdown(alphaBox, gx+90, -64, 120, alphaAffectsOptions,
         function() return getDB().alphaAffects or "Everything" end,
         function(v) getDB().alphaAffects = v; UnitFramesLite_UpdateAlpha(unit) end)
 
@@ -1241,16 +1248,20 @@ local function BuildConditionsContent(content, unit, getDB, panel)
         UnitFramesLite_UpdateAlpha(unit)
         if unit == "player" then UnitFramesLite_UpdateAlpha("target") end
     end
-    local _,_,rCombat    = CreateAlphaSliderRow(content,"Alpha in combat", ax,ay-120,"alphaCombat",   getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
-    local _,_,rOutCombat = CreateAlphaSliderRow(content, outLabel,         ax,ay-170,"alphaOutCombat",getDB,onOutCombatChange)
+    local _,_,rCombat    = CreateNudgeSlider(alphaBox, "Alpha in combat",  0,1,0.01, gx,-100,140,"alphaCombat",    getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
+    local _,_,rOutCombat = CreateNudgeSlider(alphaBox, outLabel,           0,1,0.01, gx,-142,140,"alphaOutCombat", getDB, onOutCombatChange)
 
-    local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
-    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",ax,ay-296); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-16,ay-296)
-    CreateLabel(content, "Fade Conditions", ax, ay-306)
-    panel.fadeNoTargetCheck = CreateCheckbox(content, "Fade when no target selected", ax, ay-324,
+    panel.syncAlphaCheck = CreateCheckbox(alphaBox, "Sync in/out alpha", gx, -196,
+        function() return getDB().syncAlpha or false end,
+        function(v) getDB().syncAlpha = v; UnitFramesLite_UpdateAlpha(unit) end)
+
+    -- ── Fade Conditions group (right bottom) ─────────────────────────────────
+    local fadeBox = CreateGroupBox(content, "Fade Conditions", 346, -246, 310, 100)
+
+    panel.fadeNoTargetCheck = CreateCheckbox(fadeBox, "Fade when no target selected", gx, -18,
         function() return getDB().fadeNoTarget or false end,
         function(v) getDB().fadeNoTarget = v; UnitFramesLite_UpdateAlpha(unit) end)
-    local _,_,rFade = CreateAlphaSliderRow(content,"Fade alpha",ax,ay-360,"fadeNoTargetAlpha",getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
+    local _,_,rFade = CreateNudgeSlider(fadeBox, "Fade alpha", 0,1,0.01, gx,-46,140,"fadeNoTargetAlpha", getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
 
     panel.refreshAlpha = function()
         rCombat(); rOutCombat(); rFade()
@@ -1495,8 +1506,9 @@ function CreateOptionsPanel()
     -- GetLeft()/GetTop() return screen coords relative to UIParent BOTTOMLEFT, which is
     -- exactly what SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y) expects.
     local function PinToTopLeft()
-        local x = mainFrame:GetLeft()
-        local y = mainFrame:GetTop()
+        local scale = mainFrame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        local x = mainFrame:GetLeft() * scale
+        local y = mainFrame:GetTop()  * scale
         if not x or not y then return end
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
@@ -1610,9 +1622,9 @@ function CreateOptionsPanel()
         return names
     end
 
-    local px, py = 24, -20
+    local px, py = 16, -16
 
-    -- Current profile display
+    -- Active profile label
     local curLbl = profilesPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     curLbl:SetPoint("TOPLEFT", profilesPanel, "TOPLEFT", px, py)
     curLbl:SetText("Active profile: |cffffd700Default|r")
@@ -1623,37 +1635,56 @@ function CreateOptionsPanel()
         curLbl:SetText("Active profile: |cffffd700" .. active .. "|r")
     end
 
-    -- ── Create New Profile ──────────────────────────────────────────────────
-    local createBox = CreateGroupBox(profilesPanel, "Create New Profile", px, py - 30, 300, 66)
-    local nameEdit = CreateFrame("EditBox", nil, createBox, "InputBoxTemplate")
-    nameEdit:SetSize(160, 20); nameEdit:SetPoint("TOPLEFT", createBox, "TOPLEFT", 8, -24)
+    -- ── Left column: Create + Select ─────────────────────────────────────────
+    local leftBox = CreateGroupBox(profilesPanel, "Profiles", px, py - 30, 280, 300)
+
+    -- Create new
+    local newLbl = leftBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    newLbl:SetPoint("TOPLEFT", leftBox, "TOPLEFT", 10, -18)
+    newLbl:SetText("New profile name:")
+    local nameEdit = CreateFrame("EditBox", nil, leftBox, "InputBoxTemplate")
+    nameEdit:SetSize(170, 20); nameEdit:SetPoint("TOPLEFT", leftBox, "TOPLEFT", 10, -36)
     nameEdit:SetAutoFocus(false); nameEdit:SetMaxLetters(40)
-    local createBtn = CreateFrame("Button", nil, createBox, "UIPanelButtonTemplate")
-    createBtn:SetSize(100, 22); createBtn:SetPoint("LEFT", nameEdit, "RIGHT", 6, 0)
-    createBtn:SetText("Create & Save")
+    local createBtn = CreateFrame("Button", nil, leftBox, "UIPanelButtonTemplate")
+    createBtn:SetSize(80, 22); createBtn:SetPoint("LEFT", nameEdit, "RIGHT", 4, 0)
+    createBtn:SetText("Create")
     createBtn:SetScript("OnClick", function()
         local name = nameEdit:GetText():match("^%s*(.-)%s*$")
         if name == "" then return end
-        if UnitFramesLite_ProfileCreate then UnitFramesLite_ProfileCreate(name) end
-        nameEdit:SetText("")
-        RefreshProfilePanel()
+        StaticPopupDialogs["UFL_CREATE_PROFILE"] = {
+            text = "Create profile \"" .. name .. "\" and save current settings to it?",
+            button1 = "Yes", button2 = "Cancel",
+            OnAccept = function()
+                if UnitFramesLite_ProfileCreate then UnitFramesLite_ProfileCreate(name) end
+                nameEdit:SetText("")
+                RefreshProfilePanel()
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true,
+        }
+        StaticPopup_Show("UFL_CREATE_PROFILE")
     end)
 
-    -- ── Profile Selector (shared dropdown) ──────────────────────────────────
-    local selGroup = CreateGroupBox(profilesPanel, "Select Profile", px, py - 116, 300, 200)
-    local selectedProfile = nil
+    -- Divider
+    local divTex = leftBox:CreateTexture(nil, "ARTWORK")
+    divTex:SetColorTexture(0.3, 0.3, 0.3, 0.8); divTex:SetHeight(1)
+    divTex:SetPoint("TOPLEFT", leftBox, "TOPLEFT", 8, -68)
+    divTex:SetPoint("TOPRIGHT", leftBox, "TOPRIGHT", -8, -68)
 
-    -- We need a mutable dropdown; rebuild its items on refresh
+    -- Select existing
+    local selLbl = leftBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    selLbl:SetPoint("TOPLEFT", leftBox, "TOPLEFT", 10, -78)
+    selLbl:SetText("Select profile:")
+
+    local selectedProfile = nil
     local selDD
     local function GetSelDropdownValue() return selectedProfile or "(none)" end
     local function SetSelDropdownValue(v)
         selectedProfile = (v ~= "(none)") and v or nil
     end
-    selDD = CreateDropdown(selGroup, 8, -24, 240, GetProfileList(), GetSelDropdownValue, SetSelDropdownValue)
+    selDD = CreateDropdown(leftBox, 10, -96, 220, GetProfileList(), GetSelDropdownValue, SetSelDropdownValue)
 
     local function RefreshSelDD()
         local list = GetProfileList()
-        -- Validate selectedProfile is still in the list
         local found = false
         for _, n in ipairs(list) do if n == selectedProfile then found = true; break end end
         if not found then selectedProfile = (list[1] ~= "(none)") and list[1] or nil end
@@ -1672,60 +1703,76 @@ function CreateOptionsPanel()
         end
     end
 
-    -- Set Default button
-    local setDefBtn = CreateFrame("Button", nil, selGroup, "UIPanelButtonTemplate")
-    setDefBtn:SetSize(130, 22); setDefBtn:SetPoint("TOPLEFT", selGroup, "TOPLEFT", 8, -60)
-    setDefBtn:SetText("Load Profile")
-    setDefBtn:SetScript("OnClick", function()
+    -- ── Right column: Actions ─────────────────────────────────────────────────
+    local actBox = CreateGroupBox(profilesPanel, "Actions", px + 296, py - 30, 330, 300)
+    local bx, by = 10, -18
+    local bW, bH = 120, 24
+    local rowGap = 52
+
+    local function MakeActionBtn(label, desc, offsetY, onClick)
+        local btn = CreateFrame("Button", nil, actBox, "UIPanelButtonTemplate")
+        btn:SetSize(bW, bH); btn:SetPoint("TOPLEFT", actBox, "TOPLEFT", bx, offsetY)
+        btn:SetText(label)
+        btn:SetScript("OnClick", onClick)
+        local note = actBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        note:SetPoint("TOPLEFT", btn, "TOPRIGHT", 8, -4)
+        note:SetWidth(180); note:SetJustifyH("LEFT")
+        note:SetText("|cffaaaaaa" .. desc .. "|r")
+        return btn
+    end
+
+    MakeActionBtn("Load Profile", "Switch to the selected profile and apply its settings.", by, function()
         if not selectedProfile then return end
-        if UnitFramesLite_ProfileSetDefault then UnitFramesLite_ProfileSetDefault(selectedProfile) end
-        RefreshProfilePanel()
-        -- Refresh all unit panels
-        for _, p in pairs(unitPanels) do if p.refresh then p:refresh() end end
+        local name = selectedProfile
+        StaticPopupDialogs["UFL_LOAD_PROFILE"] = {
+            text = "Load profile \"" .. name .. "\"?\nThis will apply its settings and make it the active profile.",
+            button1 = "Yes", button2 = "Cancel",
+            OnAccept = function()
+                if UnitFramesLite_ProfileSetDefault then UnitFramesLite_ProfileSetDefault(name) end
+                RefreshProfilePanel()
+                for _, p in pairs(unitPanels) do if p.refresh then p:refresh() end end
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true,
+        }
+        StaticPopup_Show("UFL_LOAD_PROFILE")
     end)
 
-    local setDefNote = selGroup:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    setDefNote:SetPoint("LEFT", setDefBtn, "RIGHT", 6, 0)
-    setDefNote:SetText("|cffaaaaaaLoads settings from the selected profile|r")
-
-    -- Copy From button (loads but keeps active profile unchanged)
-    local copyFBtn = CreateFrame("Button", nil, selGroup, "UIPanelButtonTemplate")
-    copyFBtn:SetSize(130, 22); copyFBtn:SetPoint("TOPLEFT", selGroup, "TOPLEFT", 8, -90)
-    copyFBtn:SetText("Copy From")
-    copyFBtn:SetScript("OnClick", function()
+    MakeActionBtn("Copy From", "Apply settings from the selected profile without changing the active profile.", by - rowGap, function()
         if not selectedProfile then return end
-        if UnitFramesLite_ProfileCopyFrom then UnitFramesLite_ProfileCopyFrom(selectedProfile) end
-        for _, p in pairs(unitPanels) do if p.refresh then p:refresh() end end
+        local name = selectedProfile
+        StaticPopupDialogs["UFL_COPY_PROFILE"] = {
+            text = "Copy settings from \"" .. name .. "\"?\nYour active profile will remain unchanged.",
+            button1 = "Yes", button2 = "Cancel",
+            OnAccept = function()
+                if UnitFramesLite_ProfileCopyFrom then UnitFramesLite_ProfileCopyFrom(name) end
+                for _, p in pairs(unitPanels) do if p.refresh then p:refresh() end end
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true,
+        }
+        StaticPopup_Show("UFL_COPY_PROFILE")
     end)
 
-    local copyFNote = selGroup:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    copyFNote:SetPoint("LEFT", copyFBtn, "RIGHT", 6, 0)
-    copyFNote:SetText("|cffaaaaaaApply settings without changing active profile|r")
-
-    -- Save to Profile button (overwrites the selected profile with current settings)
-    local saveBtn = CreateFrame("Button", nil, selGroup, "UIPanelButtonTemplate")
-    saveBtn:SetSize(130, 22); saveBtn:SetPoint("TOPLEFT", selGroup, "TOPLEFT", 8, -120)
-    saveBtn:SetText("Save to Profile")
-    saveBtn:SetScript("OnClick", function()
+    MakeActionBtn("Save to Profile", "Overwrite the selected profile with your current settings.", by - rowGap * 2, function()
         if not selectedProfile then return end
-        if UnitFramesLite_ProfileCreate then UnitFramesLite_ProfileCreate(selectedProfile) end
-        RefreshProfilePanel()
+        local name = selectedProfile
+        StaticPopupDialogs["UFL_SAVE_PROFILE"] = {
+            text = "Overwrite profile \"" .. name .. "\" with current settings?",
+            button1 = "Yes", button2 = "Cancel",
+            OnAccept = function()
+                if UnitFramesLite_ProfileCreate then UnitFramesLite_ProfileCreate(name) end
+                RefreshProfilePanel()
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true,
+        }
+        StaticPopup_Show("UFL_SAVE_PROFILE")
     end)
 
-    local saveBtnNote = selGroup:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    saveBtnNote:SetPoint("LEFT", saveBtn, "RIGHT", 6, 0)
-    saveBtnNote:SetText("|cffaaaaaaOverwrite selected profile with current settings|r")
-
-    -- Delete button
-    local delBtn = CreateFrame("Button", nil, selGroup, "UIPanelButtonTemplate")
-    delBtn:SetSize(130, 22); delBtn:SetPoint("TOPLEFT", selGroup, "TOPLEFT", 8, -150)
-    delBtn:SetText("Delete Profile")
-    delBtn:SetScript("OnClick", function()
+    MakeActionBtn("Delete Profile", "Permanently remove the selected profile.", by - rowGap * 3, function()
         if not selectedProfile then return end
         local name = selectedProfile
         StaticPopupDialogs["UFL_DEL_PROFILE"] = {
-            text = "Delete profile \"" .. name .. "\"?",
-            button1 = YES, button2 = NO,
+            text = "Permanently delete profile \"" .. name .. "\"?",
+            button1 = "Yes", button2 = "Cancel",
             OnAccept = function()
                 if UnitFramesLite_ProfileDelete then UnitFramesLite_ProfileDelete(name) end
                 selectedProfile = nil
@@ -1760,7 +1807,7 @@ function CreateOptionsPanel()
     sizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
     sizeGrip:RegisterForDrag("LeftButton")
     sizeGrip:SetScript("OnDragStart", function() PinToTopLeft(); mainFrame:StartSizing("BOTTOMRIGHT") end)
-    sizeGrip:SetScript("OnDragStop",  function() mainFrame:StopMovingOrSizing(); PinToTopLeft() end)
+    sizeGrip:SetScript("OnDragStop",  function() mainFrame:StopMovingOrSizing() end)
     sizeGrip:SetFrameLevel(sizeGrip:GetFrameLevel() + 10)
 end
 
