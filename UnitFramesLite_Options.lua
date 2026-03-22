@@ -1035,6 +1035,24 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         for _, w in ipairs(self.orbGradientGroup or {}) do w:SetShown(not isSolid) end
     end
 
+    -- ── Orb Background (left column, below Orb Colour) ───────────────────────
+    -- Orb Colour ends at y=-254 (last swatch row) + gap
+    local orbBgSep = orbSection:CreateTexture(nil,"ARTWORK"); orbBgSep:SetColorTexture(0.3,0.3,0.3,0.8); orbBgSep:SetHeight(1)
+    orbBgSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",ox,-280); orbBgSep:SetWidth(210)
+    CreateLabel(orbSection, "Orb Background", ox, -290)
+    local orbBgBtn = CreateColorSwatch(orbSection, ox, -310, "Colour", getDB, "orbBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = orbBgBtn
+    -- Alpha nudge slider — reads/writes orbBgColor[4] via a wrapper getDB
+    local function orbBgAlphaDB()
+        local db = getDB()
+        return setmetatable({}, {
+            __index    = function(_, k) if k == "orbBgAlpha" then return (db.orbBgColor or {})[4] or 0.9 end end,
+            __newindex = function(_, k, v) if k == "orbBgAlpha" then if not db.orbBgColor then db.orbBgColor = {0,0,0,0.9} end; db.orbBgColor[4] = v end end,
+        })
+    end
+    local s4,b4,r4 = CreateNudgeSlider(orbSection,"Alpha",0,1,0.01, ox,-348,100,"orbBgAlpha",orbBgAlphaDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbBgAlphaRefresh = r4
+
     -- ── Inner Border (right column top, collapsible) ──────────────────────────
     local orbBorderSep = orbSection:CreateTexture(nil,"ARTWORK"); orbBorderSep:SetColorTexture(0.3,0.3,0.3,0.8); orbBorderSep:SetHeight(1)
     orbBorderSep:SetPoint("TOPLEFT",orbSection,"TOPLEFT",orx,-8); orbBorderSep:SetWidth(140)
@@ -1446,6 +1464,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         { "useSolidColor","solidColor","gradientStart","gradientEnd","gradientDir",
           "statusbarTexture","barBG",
           "sphereMode","sphereSize","sphereFillDir","orbGradientDir",
+          "orbBgColor",
           "orbGradStart","orbGradEnd","orbSolidColor","orbUseSolidColor",
           "showOrbBorder","orbBorderThickness","orbBorderColor",
           "showOrbPower","orbPowerRingThickness","orbPowerRingCCW",

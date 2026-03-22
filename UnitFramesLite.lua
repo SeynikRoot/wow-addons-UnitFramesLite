@@ -110,6 +110,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
+        orbBgColor        = {0, 0, 0, 0.9},
         sphereMode        = false,
         sphereSize        = 80,
         sphereFillDir     = "VERTICAL",
@@ -913,8 +914,8 @@ function UnitFramesLite_UpdateFrame(unit)
         orbFrame:Show()
 
         -- Background circle
-        local bc = db.barBG or {0, 0, 0, 0.9}
-        frame.orbBg:SetColorTexture(bc[1], bc[2], bc[3], math.max(0.7, bc[4]))
+        local bc = db.orbBgColor or {0, 0, 0, 0.9}
+        frame.orbBg:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
 
         -- Fill bars
         -- When Gradient Direction is CENTRE the orb is split into lower and upper
