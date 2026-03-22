@@ -51,8 +51,38 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         resourceX            = 0,
         resourceY            = 0,
         resourceAlpha        = 1.0,
+        resourceUseCustomColor = false,
+        resourceUseSolidColor  = true,       -- true = solid, false = gradient
+        resourceGradPerPip     = true,       -- true = each pip gets internal gradient; false = each pip gets interpolated solid colour
+        resourceSolidColor     = {1, 1, 1, 1},
+        resourceGradStart      = {1, 1, 1, 1},
+        resourceGradEnd        = {0.3, 0.3, 1, 1},
         resourceShowInCombat = false,   -- if true, only show in combat
         resourceShowWithTarget = false, -- if true, also show when target exists
+        resourceCenterH      = false,  -- centre resource bar horizontally on screen
+        resourceCenterV      = false,  -- centre resource bar vertically on screen
+        -- Buff display
+        buffIconSize      = 24,
+        buffPerRow        = 4,
+        buffMaxShown      = 8,
+        buffGrowX         = "RIGHT",   -- overridden per-unit below
+        buffGrowY         = "DOWN",
+        buffXOffset       = 0,
+        buffYOffset       = -15,
+        buffAnchorToFrame = true,
+        buffShowBuffs     = true,
+        -- Debuff display
+        debuffIconSize    = 24,
+        debuffPerRow      = 4,
+        debuffMaxShown    = 8,
+        debuffGrowX       = "LEFT",    -- overridden per-unit below
+        debuffGrowY       = "UP",
+        debuffXOffset     = 0,
+        debuffYOffset     = 0,
+        debuffAnchorToFrame = true,
+        debuffShowDebuffs = true,
+        debuffPlayerOnly  = false,
+        debuffCurableOnly = false,
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -133,6 +163,14 @@ local defaults = {
         {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1}),
 }
 
+-- Apply per-unit aura direction defaults
+defaults.player.buffGrowX   = "LEFT"
+defaults.player.debuffGrowX = "LEFT"
+defaults.target.buffGrowX   = "RIGHT"
+defaults.target.buffXOffset  = 45
+defaults.target.debuffXOffset = 45
+defaults.target.debuffGrowX = "RIGHT"
+
 local frames = {}
 
 local function CopyDefaults(src, dest)
@@ -193,7 +231,11 @@ function UnitFramesLite_UpdateAlpha(unit)
 
     local alphaDB = (unit == "target" and db.syncAlpha) and GetDB("player") or db
     local inCombat = UnitAffectingCombat("player")
-    local alpha = inCombat and (alphaDB.alphaCombat or 1) or (alphaDB.alphaOutCombat or 1)
+    -- Out-of-combat alpha for the target is always driven by the player's setting
+    local outCombatAlpha = (unit == "target")
+        and (GetDB("player").alphaOutCombat or 1)
+        or  (alphaDB.alphaOutCombat or 1)
+    local alpha = inCombat and (alphaDB.alphaCombat or 1) or outCombatAlpha
 
     if unit == "player" and db.fadeNoTarget and not UnitExists("target") then
         alpha = db.fadeNoTargetAlpha or 0.4
@@ -495,15 +537,27 @@ function UnitFramesLite_UpdateResourceLayout()
     local totalW  = maxPips * pipW + (maxPips - 1) * pipGap
     resourceFrame:SetSize(totalW, pipH)
 
-    -- Position: anchored to player frame, below it
+    -- Position: anchored to player frame, below it (or screen-centred)
     resourceFrame:ClearAllPoints()
     local rx = db.resourceX or 0
     local ry = db.resourceY or 0
-    resourceFrame:SetPoint("TOP", playerFrame, "BOTTOM", rx, ry - 2)
+    local anchorX = db.resourceCenterH and 0 or rx
+    local anchorY = db.resourceCenterV and 0 or ry
+    local anchorPoint  = db.resourceCenterV and "CENTER" or "TOP"
+    local anchorParent = (db.resourceCenterH or db.resourceCenterV) and UIParent or playerFrame
+    local anchorRelPoint = db.resourceCenterV and "CENTER" or "BOTTOM"
+    resourceFrame:SetPoint(anchorPoint, anchorParent, anchorRelPoint, anchorX, anchorY)
 
     -- Colour
-    local col
-    if cfg.isRunes then
+    local useCustom  = db.resourceUseCustomColor
+    local useSolid   = db.resourceUseSolidColor ~= false  -- default true
+    local gradPerPip = db.resourceGradPerPip ~= false     -- default true
+    local gs = db.resourceGradStart or {1, 1, 1, 1}
+    local ge = db.resourceGradEnd   or {0.3, 0.3, 1, 1}
+    local col  -- fallback solid (class colour or custom solid)
+    if useCustom then
+        col = db.resourceSolidColor or {1, 1, 1, 1}
+    elseif cfg.isRunes then
         col = RESOURCE_COLORS.runes
     else
         col = RESOURCE_COLORS[cfg.powerType] or {1, 1, 1}
@@ -523,7 +577,31 @@ function UnitFramesLite_UpdateResourceLayout()
             pip:SetSize(pipW, pipH)
             pip:ClearAllPoints()
             pip:SetPoint("LEFT", resourceFrame, "LEFT", (i-1) * (pipW + pipGap), 0)
-            pip:SetStatusBarColor(col[1], col[2], col[3], 1)
+
+            -- Apply colour
+            local fillTex = pip:GetStatusBarTexture()
+            if useCustom and not useSolid then
+                if gradPerPip then
+                    -- Each pip renders a full gradient from gs→ge internally
+                    pip:SetStatusBarColor(1, 1, 1, 1)
+                    if fillTex then
+                        fillTex:SetGradient("HORIZONTAL",
+                            CreateColor(gs[1], gs[2], gs[3], gs[4] or 1),
+                            CreateColor(ge[1], ge[2], ge[3], ge[4] or 1))
+                    end
+                else
+                    -- Each pip gets an interpolated solid colour: pip 1 = gs, pip maxPips = ge
+                    local t = maxPips > 1 and (i - 1) / (maxPips - 1) or 0
+                    local r = gs[1] + (ge[1] - gs[1]) * t
+                    local g = gs[2] + (ge[2] - gs[2]) * t
+                    local b = gs[3] + (ge[3] - gs[3]) * t
+                    if fillTex then fillTex:SetGradient("HORIZONTAL", CreateColor(1,1,1,1), CreateColor(1,1,1,1)) end
+                    pip:SetStatusBarColor(r, g, b, 1)
+                end
+            else
+                if fillTex then fillTex:SetGradient("HORIZONTAL", CreateColor(1,1,1,1), CreateColor(1,1,1,1)) end
+                pip:SetStatusBarColor(col[1], col[2], col[3], 1)
+            end
 
             -- Apply shape mask to fill and background
             local fillTex = pip:GetStatusBarTexture()
@@ -1117,7 +1195,18 @@ function UnitFramesLite_UpdateResourceVisibility()
         -- Show Blizzard bar, hide UFL pips
         if bf then
             bf:SetAlpha(shouldShow and alpha or 0)
-            -- Don't call Show/Hide on Blizzard frames — use alpha only to avoid taint
+            -- Apply centering: move the Blizzard frame to screen centre if requested
+            -- (avoid taint: only reposition, never Show/Hide)
+            if not InCombatLockdown() then
+                local rx = db.resourceX or 0
+                local ry = db.resourceY or 0
+                bf:ClearAllPoints()
+                local bx = db.resourceCenterH and 0 or rx
+                local by = db.resourceCenterV and 0 or ry
+                local bPoint    = db.resourceCenterV and "CENTER" or "BOTTOM"
+                local bRelPoint = db.resourceCenterV and "CENTER" or "TOP"
+                bf:SetPoint(bPoint, UIParent, bRelPoint, bx, by)
+            end
         end
         if resourceFrame then resourceFrame:SetAlpha(0) end
     else
@@ -1549,6 +1638,273 @@ local function SetupFrame(displayFrame, unit)
     displayFrame.OnUFLUpdate = Update
 end
 
+-- Aura display --------------------------------------------------------------
+-- Separate containers for buffs and debuffs per unit.
+-- Layout and filtering are recomputed on every UNIT_AURA event.
+
+-- auraFrames[unit] = { buff = {container, pool={}}, debuff = {container, pool={}} }
+local auraFrames = {}
+
+local DISPEL_TYPES = { Magic=true, Curse=true, Disease=true, Poison=true }
+
+local function GetAuraData(unit)
+    if auraFrames[unit] then return auraFrames[unit] end
+    local function makeSlot(suffix)
+        local c = CreateFrame("Frame", "UFL_Auras_" .. unit .. "_" .. suffix, UIParent)
+        c:SetSize(1, 1); c:Hide()
+        return { container = c, pool = {} }
+    end
+    auraFrames[unit] = { buff = makeSlot("buff"), debuff = makeSlot("debuff") }
+    return auraFrames[unit]
+end
+
+-- Keep old name for event-init call compatibility
+local function GetAuraContainer(unit) return GetAuraData(unit) end
+
+local function GetOrCreateIcon(pool, idx, container)
+    if pool[idx] then return pool[idx] end
+    local btn = CreateFrame("Button", nil, container)
+    btn:SetSize(24, 24)
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    btn.icon = icon
+    local border = btn:CreateTexture(nil, "BACKGROUND")
+    border:SetAllPoints()
+    border:SetColorTexture(0, 0, 0, 1)
+    local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
+    cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetHideCountdownNumbers(false)
+    btn.cd = cd
+    local stack = btn:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    stack:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 2, 0)
+    btn.stack = stack
+    local debuffBorder = btn:CreateTexture(nil, "OVERLAY")
+    debuffBorder:SetTexture("Interface\\Buttons\\UI-Debuff-Overlays")
+    debuffBorder:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+    debuffBorder:SetAllPoints(); debuffBorder:Hide()
+    btn.debuffBorder = debuffBorder
+    pool[idx] = btn
+    return btn
+end
+
+local DEBUFF_COLORS = {
+    Magic   = {0.2, 0.6, 1},
+    Curse   = {0.6, 0,   1},
+    Disease = {0.6, 0.4, 0},
+    Poison  = {0,   0.6, 0},
+}
+
+-- Returns how far above/below the frame centre the outermost visual edge extends.
+-- In orb mode this is the orb radius + power ring thickness (if shown).
+-- In bar mode it's just half the frame height.
+local function GetFrameVerticalExtent(frame, db)
+    if db.sphereMode then
+        local sz    = math.max(20, db.sphereSize or 80)
+        local extra = 0
+        if db.showOrbPower then
+            extra = math.max(4, db.orbPowerRingThickness or 8)
+        end
+        return sz / 2 + extra
+    else
+        return (db.frameHeight or 35) / 2
+    end
+end
+
+-- Lay out one aura strip (buffs or debuffs) given collected aura list + config.
+local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShown,
+                                growX, growY, xOffset, yOffset, anchorToFrame, extraVertPad)
+    local container = slot.container
+    local pool      = slot.pool
+    local gap       = 2
+
+    -- Clamp to maxShown
+    local count = math.min(#auras, maxShown)
+
+    if count == 0 then
+        container:Hide()
+        for i = 1, #pool do pool[i]:Hide() end
+        return
+    end
+
+    local cols  = math.max(1, perRow)
+    local rows  = math.ceil(count / cols)
+    local totalW = cols * (iconSize + gap) - gap
+    local totalH = rows * (iconSize + gap) - gap
+
+    -- For debuffs growing UP: container TOPLEFT is the top-left of the bottom row.
+    -- Icon[1] should be centred on the orb, so shift container left by half its width
+    -- minus half an icon (so icon[1] centre = frame centre).
+    -- growX=LEFT: icon[1] is placed at container RIGHT edge going left →
+    --   icon[1] right edge = container TOPLEFT.x + totalW - 0 = container right.
+    --   icon[1] centre.x   = container right - iconSize/2
+    --   we want icon[1] centre.x = frame centre.x → xOffset = -(totalW - iconSize/2)
+    -- growX=RIGHT: icon[1] left = 0 → centre = iconSize/2 → xOffset = -iconSize/2
+    -- This is automatically handled by the container anchor xOffset: caller passes 0 for centred.
+
+    container:SetSize(math.max(1, totalW), math.max(1, totalH))
+    container:ClearAllPoints()
+
+    if anchorToFrame and frame then
+        -- Vertical padding: account for orb/ring extending beyond the frame rect
+        local vertExtent = GetFrameVerticalExtent(frame, db)
+        local frameH     = (db.frameHeight or 35)
+        local pad        = math.max(0, vertExtent - frameH / 2) + extraVertPad + 2
+
+        -- Natural horizontal base for icon[1]:
+        --   Orb mode  → icon[1] centred on orb centre → baseX = 0
+        --   Bar mode  → icon[1] at the near edge of the health bar:
+        --               growX=LEFT  → start at right edge → baseX = +frameWidth/2
+        --               growX=RIGHT → start at left edge  → baseX = -frameWidth/2
+        local baseX
+        if db.sphereMode then
+            baseX = 0
+        else
+            local halfW = (db.frameWidth or 160) / 2
+            baseX = (growX == "LEFT") and halfW or -halfW
+        end
+
+        -- cxOffset positions the container so icon[1]'s centre lands at baseX + xOffset.
+        -- icon[1] centre within container:
+        --   growX=LEFT  → icon[1] is the rightmost icon in row 1 → its centre x = totalW - iconSize/2
+        --   growX=RIGHT → icon[1] is the leftmost icon           → its centre x = iconSize/2
+        -- container TOPLEFT.x = frame_centre.x + (baseX + xOffset) - icon1_centre_in_container
+        local icon1CentreInContainer = (growX == "LEFT") and (totalW - iconSize / 2) or (iconSize / 2)
+        local cxOffset = baseX + xOffset - icon1CentreInContainer
+
+        if growY == "UP" then
+            container:SetPoint("BOTTOM", frame, "TOP", cxOffset, pad + yOffset)
+        else
+            container:SetPoint("TOP", frame, "BOTTOM", cxOffset, -pad + yOffset)
+        end
+    else
+        container:SetPoint("CENTER", UIParent, "CENTER", xOffset, yOffset)
+    end
+
+    -- Place icons
+    for i = 1, count do
+        local aura = auras[i]
+        local btn  = GetOrCreateIcon(pool, i, container)
+        btn:SetSize(iconSize, iconSize)
+        local col  = (i - 1) % cols
+        local row  = math.floor((i - 1) / cols)
+        local xStep  = (growX == "RIGHT") and  (iconSize + gap) or -(iconSize + gap)
+        local yStep  = (growY == "DOWN")  and -(iconSize + gap) or  (iconSize + gap)
+        -- startX/startY: position of icon[1] within the container
+        local startX = (growX == "RIGHT") and 0 or (totalW - iconSize)
+        local startY = (growY == "DOWN")  and 0 or -(totalH - iconSize)
+        btn:ClearAllPoints()
+        btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + col * xStep, startY + row * yStep)
+
+        btn.icon:SetTexture(aura.icon)
+        btn.stack:SetText((aura.applications and aura.applications > 1) and aura.applications or "")
+        if aura.duration and aura.duration > 0 and aura.expirationTime then
+            btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
+        else
+            btn.cd:SetCooldown(0, 0)
+        end
+        if aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] then
+            local dc = DEBUFF_COLORS[aura.dispelName]
+            btn.debuffBorder:SetVertexColor(dc[1], dc[2], dc[3])
+            btn.debuffBorder:Show()
+        else
+            btn.debuffBorder:Hide()
+        end
+        btn:Show()
+    end
+
+    -- Hide unused pool slots
+    for i = count + 1, #pool do pool[i]:Hide() end
+    container:Show()
+end
+
+function UnitFramesLite_UpdateAuras(unit)
+    local data = GetAuraData(unit)
+
+    local frame = frames[unit]
+    if not frame or not frame:IsShown() then
+        data.buff.container:Hide()
+        data.debuff.container:Hide()
+        return
+    end
+
+    local db = GetDB(unit)
+
+    -- Collect buffs
+    local buffs = {}
+    if db.buffShowBuffs ~= false and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        local i = 1
+        while true do
+            local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
+            if not aura then break end
+            buffs[#buffs + 1] = aura
+            i = i + 1
+        end
+    end
+
+    -- Collect debuffs
+    local debuffs = {}
+    if db.debuffShowDebuffs ~= false and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        local i = 1
+        while true do
+            local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL")
+            if not aura then break end
+            if db.debuffPlayerOnly and not aura.isFromPlayerOrPlayerPet then
+                -- skip
+            elseif db.debuffCurableOnly and not (aura.dispelName and DISPEL_TYPES[aura.dispelName]) then
+                -- skip
+            else
+                debuffs[#debuffs + 1] = aura
+            end
+            i = i + 1
+        end
+    end
+
+    -- Layout buffs (below frame)
+    if db.buffShowBuffs ~= false and #buffs > 0 then
+        LayoutAuraStrip(data.buff, buffs, frame, db,
+            db.buffIconSize  or 24,
+            db.buffPerRow    or 4,
+            db.buffMaxShown  or 8,
+            db.buffGrowX     or "RIGHT",
+            db.buffGrowY     or "DOWN",
+            db.buffXOffset   or 0,
+            db.buffYOffset   or 0,
+            db.buffAnchorToFrame ~= false,
+            0)
+    else
+        data.buff.container:Hide()
+        for i = 1, #data.buff.pool do data.buff.pool[i]:Hide() end
+    end
+
+    -- Layout debuffs (above frame)
+    if db.debuffShowDebuffs ~= false and #debuffs > 0 then
+        LayoutAuraStrip(data.debuff, debuffs, frame, db,
+            db.debuffIconSize  or 24,
+            db.debuffPerRow    or 4,
+            db.debuffMaxShown  or 8,
+            db.debuffGrowX     or "LEFT",
+            db.debuffGrowY     or "UP",
+            db.debuffXOffset   or 0,
+            db.debuffYOffset   or 0,
+            db.debuffAnchorToFrame ~= false,
+            0)
+    else
+        data.debuff.container:Hide()
+        for i = 1, #data.debuff.pool do data.debuff.pool[i]:Hide() end
+    end
+end
+
+function UnitFramesLite_UpdateAllAuras()
+    for unit in pairs(frames) do
+        UnitFramesLite_UpdateAuras(unit)
+    end
+end
+
+function UnitFramesLite_PositionAuraFrame(unit)
+    -- Called after the unit frame moves/resizes so auras re-anchor correctly
+    UnitFramesLite_UpdateAuras(unit)
+end
+
 -- Addon lifecycle ------------------------------------------------------------
 
 local eventFrame = CreateFrame("Frame")
@@ -1568,6 +1924,10 @@ eventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
 eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+eventFrame:RegisterUnitEvent("UNIT_AURA", "player")
+eventFrame:RegisterUnitEvent("UNIT_AURA", "target")
+eventFrame:RegisterUnitEvent("UNIT_AURA", "focus")
+eventFrame:RegisterUnitEvent("UNIT_AURA", "pet")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         UnitFramesLiteDB = UnitFramesLiteDB or {}
@@ -1582,6 +1942,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
         for unit, def in pairs(defaults) do
             UnitFramesLiteDB[unit] = CopyDefaults(def, UnitFramesLiteDB[unit] or {})
+        end
+        -- Migrate: buffYOffset was previously defaulted to 0; new default is -15
+        for _, unit in ipairs({"player", "target"}) do
+            local udb = UnitFramesLiteDB[unit]
+            if udb and udb.buffYOffset == 0 then udb.buffYOffset = -15 end
+        end
+        -- Migrate: target buff/debuff X offset was previously 0; new default is 45
+        local tudb = UnitFramesLiteDB["target"]
+        if tudb then
+            if tudb.buffXOffset  == 0 then tudb.buffXOffset  = 45 end
+            if tudb.debuffXOffset == 0 then tudb.debuffXOffset = 45 end
         end
         local ok, err = pcall(CreateOptionsPanel)
         if not ok then
@@ -1602,11 +1973,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         SetupResourcePips()
         RegisterResourceOnUpdate(eventFrame)
         UnitFramesLite_UpdateResourceVisibility()
+        -- Initialise aura containers for all units
+        for unit in pairs(defaults) do GetAuraContainer(unit) end
+        UnitFramesLite_UpdateAllAuras()
+    elseif event == "UNIT_AURA" then
+        UnitFramesLite_UpdateAuras(arg1)
     elseif event == "PLAYER_TARGET_CHANGED" then
         UnitFramesLite_UpdateVisibility("target")
         UnitFramesLite_UpdateAlpha("player")
         UnitFramesLite_UpdateAlpha("target")
         UnitFramesLite_UpdateResourceVisibility()
+        UnitFramesLite_UpdateAuras("target")
     elseif event == "PLAYER_FOCUS_CHANGED" then
         UnitFramesLite_UpdateVisibility("focus")
         UnitFramesLite_UpdateAlpha("focus")
@@ -1628,6 +2005,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         UnitFramesLite_UpdateResourceVisibility()
     else
         for unit in pairs(frames) do UnitFramesLite_UpdateVisibility(unit) end
+        UnitFramesLite_UpdateAllAuras()
     end
 end)
 

@@ -31,7 +31,7 @@ local function CreateCheckbox(parent, label, x, y, getValue, setValue)
     return cb
 end
 
-local function CreateGroupBox(parent, label, x, y, w, h)
+local function CreateGroupBox(parent, label, x, y, w, h, titleFont)
     local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     f:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     f:SetSize(w, h)
@@ -44,7 +44,7 @@ local function CreateGroupBox(parent, label, x, y, w, h)
     f:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
     f:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
     if label and label ~= "" then
-        local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local lbl = f:CreateFontString(nil, "OVERLAY", titleFont or "GameFontNormalSmall")
         lbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -5)
         lbl:SetText(label)
     end
@@ -104,23 +104,26 @@ local function CreateNudgeSlider(parent, label, minV, maxV, step, x, y, sliderW,
 end
 
 local function CreateAlphaSliderRow(parent, label, x, y, dbKey, getDB, onChange)
+    -- Layout (all on one line):
+    --   [label]  [-][  box  ][+]  [====slider====]
     local lbl = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    lbl:SetPoint("TOP", parent, "TOPLEFT", x + 130, y)
+    lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     lbl:SetText(label)
 
-    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 20)
-    slider:SetWidth(260); slider:SetMinMaxValues(0, 1); slider:SetValueStep(0.01)
-    slider:SetObeyStepOnDrag(true)
-    slider.Text:SetText(""); slider.Low:SetText("0"); slider.High:SetText("1")
+    local minus = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    minus:SetSize(22, 22); minus:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 18); minus:SetText("-")
 
     local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-    box:SetSize(45, 20); box:SetPoint("TOP", slider, "BOTTOM", 0, -4); box:SetAutoFocus(false)
+    box:SetSize(45, 20); box:SetPoint("LEFT", minus, "RIGHT", 2, 0); box:SetAutoFocus(false)
 
-    local minus = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    minus:SetSize(22, 22); minus:SetPoint("RIGHT", box, "LEFT", -2, 0); minus:SetText("-")
     local plus = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     plus:SetSize(22, 22); plus:SetPoint("LEFT", box, "RIGHT", 2, 0); plus:SetText("+")
+
+    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    slider:SetPoint("LEFT", plus, "RIGHT", 8, 0)
+    slider:SetWidth(120); slider:SetMinMaxValues(0, 1); slider:SetValueStep(0.01)
+    slider:SetObeyStepOnDrag(true)
+    slider.Text:SetText(""); slider.Low:SetText("0"); slider.High:SetText("1")
 
     local function SetVal(v)
         v = math.max(0, math.min(1, math.floor(v * 100 + 0.5) / 100))
@@ -353,58 +356,151 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         note:SetText("|cffaaaaaa/reload to restore hidden Blizzard frames|r")
 
         -- Right column: Class Resources settings (controls both UFL pips and Blizzard bar)
-        local resGroup = CreateGroupBox(content, "Class Resources", 350, -8, 260, 560)
+        local resGroup = CreateGroupBox(content, "Class Resources", 350, -8, 490, 500, "GameFontNormal")
         local function resDB() return UnitFramesLite_GetDB("player") end
         local function applyRes()
             if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
             if UnitFramesLite_UpdateResourceVisibility then UnitFramesLite_UpdateResourceVisibility() end
         end
 
-        -- Source selection
-        CreateLabel(resGroup, "Source", 8, -18)
-        CreateCheckbox(resGroup, "Use Blizzard resource bar", 8, -34,
-            function() return resDB().useBlizzResource or false end,
-            function(v) resDB().useBlizzResource = v; applyRes() end)
-        CreateCheckbox(resGroup, "Hide Blizzard resource bar", 8, -60,
-            function() return resDB().hideBlizzResourceBar or false end,
-            function(v)
-                resDB().hideBlizzResourceBar = v
-                applyRes()
-            end)
+        local lx = 8    -- left column x
+        local rx = 250  -- right column x
 
-        -- Show/hide overall
+        -- LEFT: Source selection
+        CreateLabel(resGroup, "Source", lx, -18)
+        local hideBlizzCB      -- forward declaration
+        local pipsContainer    -- forward declaration
+        local pipColourContainer -- forward declaration
+        local UpdateBlizzMode  -- forward declaration (reassigned after containers exist)
+        local function CallUpdateBlizzMode() if UpdateBlizzMode then UpdateBlizzMode() end end
+        CreateCheckbox(resGroup, "Use Blizzard resource bar", lx, -34,
+            function() return resDB().useBlizzResource or false end,
+            function(v) resDB().useBlizzResource = v; CallUpdateBlizzMode(); applyRes() end)
+        hideBlizzCB = CreateCheckbox(resGroup, "Hide Blizzard resource bar", lx, -60,
+            function() return resDB().hideBlizzResourceBar or false end,
+            function(v) resDB().hideBlizzResourceBar = v; applyRes() end)
+
+        -- LEFT: Visibility
         local sep1 = resGroup:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
-        sep1:SetPoint("TOPLEFT",resGroup,"TOPLEFT",8,-84); sep1:SetPoint("TOPRIGHT",resGroup,"TOPRIGHT",-8,-84)
-        CreateLabel(resGroup, "Visibility", 8, -94)
-        CreateCheckbox(resGroup, "Show resource bar", 8, -110,
+        sep1:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-84); sep1:SetSize(230,1)
+        CreateLabel(resGroup, "Visibility", lx, -94)
+        CreateCheckbox(resGroup, "Show resource bar", lx, -110,
             function() return resDB().showResources ~= false end,
             function(v) resDB().showResources = v; applyRes() end)
-        CreateCheckbox(resGroup, "Show in combat", 8, -136,
+        CreateCheckbox(resGroup, "Show in combat", lx, -136,
             function() return resDB().resourceShowInCombat or false end,
             function(v) resDB().resourceShowInCombat = v; applyRes() end)
-        CreateCheckbox(resGroup, "Also show with target selected", 8, -160,
+        CreateCheckbox(resGroup, "Also show with target selected", lx, -160,
             function() return resDB().resourceShowWithTarget or false end,
             function(v) resDB().resourceShowWithTarget = v; applyRes() end)
 
-        -- Alpha
+        -- LEFT: Alpha
         local sep2 = resGroup:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
-        sep2:SetPoint("TOPLEFT",resGroup,"TOPLEFT",8,-184); sep2:SetPoint("TOPRIGHT",resGroup,"TOPRIGHT",-8,-184)
-        CreateLabel(resGroup, "Alpha", 8, -194)
-        local _,_,rAlpha = CreateAlphaSliderRow(resGroup,"",8,-214,"resourceAlpha",resDB,applyRes)
+        sep2:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-184); sep2:SetSize(230,1)
+        local _,_,rAlpha = CreateNudgeSlider(resGroup,"Alpha",0,1,0.01, lx,-194,120,"resourceAlpha",resDB,applyRes)
 
-        -- Position and size (UFL pips only)
+        -- LEFT: Position (shared — works for both Blizzard bar and UFL pips)
         local sep3 = resGroup:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
-        sep3:SetPoint("TOPLEFT",resGroup,"TOPLEFT",8,-270); sep3:SetPoint("TOPRIGHT",resGroup,"TOPRIGHT",-8,-270)
-        CreateLabel(resGroup, "UFL Pips Position & Size", 8, -280)
-        local _,_,rPipW   = CreateNudgeSlider(resGroup,"Pip Width",  6,40,1, 8,-302,80,"resourcePipWidth",  resDB,applyRes)
-        local _,_,rPipH   = CreateNudgeSlider(resGroup,"Pip Height", 3,20,1, 8,-342,80,"resourcePipHeight", resDB,applyRes)
-        local _,_,rPipGap = CreateNudgeSlider(resGroup,"Pip Gap",    0,10,1, 8,-382,80,"resourcePipGap",    resDB,applyRes)
-        local _,_,rResX   = CreateNudgeSlider(resGroup,"X Offset",-300,300,1,8,-422,80,"resourceX",         resDB,applyRes)
-        local _,_,rResY   = CreateNudgeSlider(resGroup,"Y Offset", -50, 50,1,8,-462,80,"resourceY",         resDB,applyRes)
-        CreateLabel(resGroup, "Pip Shape", 8, -508)
-        CreateDropdown(resGroup, 8, -526, 110, {"Rectangle","Circle","Diamond"},
+        sep3:SetPoint("TOPLEFT",resGroup,"TOPLEFT",lx,-230); sep3:SetSize(230,1)
+        CreateLabel(resGroup, "Position", lx, -240)
+        CreateCheckbox(resGroup, "Centre horizontally", lx, -256,
+            function() return resDB().resourceCenterH or false end,
+            function(v) resDB().resourceCenterH = v; applyRes() end)
+        CreateCheckbox(resGroup, "Centre vertically", lx, -280,
+            function() return resDB().resourceCenterV or false end,
+            function(v) resDB().resourceCenterV = v; applyRes() end)
+
+        -- RIGHT: UFL Pips Size, Position & Shape (hidden when using Blizzard bar)
+        pipsContainer = CreateFrame("Frame", nil, resGroup)
+        pipsContainer:SetPoint("TOPLEFT", resGroup, "TOPLEFT", rx-10, 0)
+        pipsContainer:SetPoint("BOTTOMRIGHT", resGroup, "BOTTOMRIGHT", 0, 0)
+
+        local vsep = pipsContainer:CreateTexture(nil,"ARTWORK"); vsep:SetColorTexture(0.3,0.3,0.3,0.8); vsep:SetWidth(1)
+        vsep:SetPoint("TOPLEFT",  pipsContainer,"TOPLEFT",  0, -8)
+        vsep:SetPoint("BOTTOMLEFT",pipsContainer,"BOTTOMLEFT",0, 0)
+
+        -- nudge sliders need resGroup as parent for absolute y from top of resGroup
+        -- instead parent them to pipsContainer using relative coords from pipsContainer top
+        local px = 10  -- x inside pipsContainer (offset from rx-10)
+        CreateLabel(pipsContainer, "UFL Pips Size & Position", px, -18)
+        local _,_,rPipW   = CreateNudgeSlider(pipsContainer,"Pip Width",  6,50,1,  px,-38, 80,"resourcePipWidth",  resDB,applyRes)
+        local _,_,rPipH   = CreateNudgeSlider(pipsContainer,"Pip Height", 3,50,1,  px,-78, 80,"resourcePipHeight", resDB,applyRes)
+        local _,_,rPipGap = CreateNudgeSlider(pipsContainer,"Pip Gap",    0,10,1,  px,-118,80,"resourcePipGap",    resDB,applyRes)
+        local _,_,rResX   = CreateNudgeSlider(pipsContainer,"X Offset",-500,500,1, px,-158,80,"resourceX",         resDB,applyRes)
+        local _,_,rResY   = CreateNudgeSlider(pipsContainer,"Y Offset",-500,500,1, px,-198,80,"resourceY",         resDB,applyRes)
+        CreateLabel(pipsContainer, "Pip Shape", px, -244)
+        CreateDropdown(pipsContainer, px, -262, 110, {"Rectangle","Circle","Diamond"},
             function() return resDB().resourcePipShape or "Rectangle" end,
             function(v) resDB().resourcePipShape = v; applyRes() end)
+
+        -- Pip Colour section — inside a container so it hides cleanly with pips
+        pipColourContainer = CreateFrame("Frame", nil, resGroup)
+        pipColourContainer:SetPoint("TOPLEFT", resGroup, "TOPLEFT", 0, -300)
+        pipColourContainer:SetSize(490, 200)
+
+        local sep4 = pipColourContainer:CreateTexture(nil,"ARTWORK"); sep4:SetColorTexture(0.3,0.3,0.3,0.8); sep4:SetHeight(1)
+        sep4:SetPoint("TOPLEFT",pipColourContainer,"TOPLEFT",8,0); sep4:SetPoint("TOPRIGHT",pipColourContainer,"TOPRIGHT",-8,0)
+        CreateLabel(pipColourContainer, "Pip Colour", 8, -10)
+
+        local colorDetails
+        local useCustomCheck = CreateCheckbox(pipColourContainer, "Use Custom Colour", 8, -28,
+            function() return resDB().resourceUseCustomColor or false end,
+            function(v)
+                resDB().resourceUseCustomColor = v
+                colorDetails:SetShown(v)
+                applyRes()
+            end)
+
+        colorDetails = CreateFrame("Frame", nil, pipColourContainer)
+        colorDetails:SetPoint("TOPLEFT", pipColourContainer, "TOPLEFT", 0, -48)
+        colorDetails:SetSize(480, 130)
+
+        -- Solid row: checkbox + swatch on same line
+        local solidCheck, gradCheck
+        solidCheck = CreateCheckbox(colorDetails, "Solid", 8, 0,
+            function() return resDB().resourceUseSolidColor ~= false end,
+            function(v)
+                resDB().resourceUseSolidColor = v
+                if v and gradCheck then gradCheck:SetChecked(false) end
+                applyRes()
+            end)
+        CreateColorSwatch(colorDetails, 70, -2, "", resDB, "resourceSolidColor", applyRes)
+
+        -- Gradient rows: checkbox on its own line, then Start/End swatches below
+        gradCheck = CreateCheckbox(colorDetails, "Gradient", 8, -24,
+            function() return resDB().resourceUseSolidColor == false end,
+            function(v)
+                resDB().resourceUseSolidColor = not v
+                if v and solidCheck then solidCheck:SetChecked(false) end
+                applyRes()
+            end)
+        CreateLabel(colorDetails, "Start", 28, -46)
+        CreateColorSwatch(colorDetails, 56, -48, "", resDB, "resourceGradStart", applyRes)
+        CreateLabel(colorDetails, "End", 90, -46)
+        CreateColorSwatch(colorDetails, 114, -48, "", resDB, "resourceGradEnd", applyRes)
+
+        -- Per-pip vs whole-bar gradient mode
+        CreateCheckbox(colorDetails, "Colour each pip individually", 8, -72,
+            function() return resDB().resourceGradPerPip ~= false end,
+            function(v) resDB().resourceGradPerPip = v; applyRes() end)
+
+        colorDetails:SetShown(resDB().resourceUseCustomColor or false)
+
+        useCustomCheck.Refresh = function(self)
+            local v = resDB().resourceUseCustomColor or false
+            self:SetChecked(v); colorDetails:SetShown(v)
+        end
+
+        -- Hide/show pips-only sections based on Blizzard bar mode
+        UpdateBlizzMode = function()
+            local isBlizz = resDB().useBlizzResource or false
+            pipsContainer:SetShown(not isBlizz)
+            pipColourContainer:SetShown(not isBlizz)
+            hideBlizzCB:SetShown(isBlizz)
+        end
+
+        -- Apply initial state
+        UpdateBlizzMode()
     end
 end
 
@@ -918,7 +1014,120 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     end
 end
 
--- Tab 5: Conditions (includes Alpha section) ---------------------------------
+-- Tab 5: Buffs / Debuffs ------------------------------------------------------
+
+local function BuildBuffsContent(content, unit, getDB, panel)
+    local function applyAuras() UnitFramesLite_UpdateAuras(unit) end
+    local db = getDB
+
+    -- Two equal-width columns side by side.
+    -- Content width ≈ 620px; each column 300px wide with 8px gap between.
+    local GRP_W      = 295
+    local GRP_H_BUFF = 390    -- buffs: no filter checkboxes
+    local GRP_H_DEB  = 440    -- debuffs: two extra filter checkboxes
+    local SW         = 140   -- slider width inside group box (fits in GRP_W with all chrome)
+    local refreshFns = {}
+
+    local function BuildSection(prefix, isDebuff, ox, oy)
+        local title  = isDebuff and "Debuffs" or "Buffs"
+        local grpH   = isDebuff and GRP_H_DEB or GRP_H_BUFF
+        local grp    = CreateGroupBox(content, title, ox, oy, GRP_W, grpH)
+        local gx    = 8
+        local gy    = -24
+        local refreshList = {}
+
+        local function gdb(k)   return db()[prefix .. k] end
+        local function sdb(k,v) db()[prefix .. k] = v; applyAuras() end
+
+        -- Row 1: Icon Size
+        local _,_,rIconSize = CreateNudgeSlider(grp, "Icon Size", 12, 64, 1,
+            gx, gy, SW, prefix.."IconSize", db, applyAuras)
+        refreshList[#refreshList+1] = rIconSize
+        gy = gy - 38
+
+        -- Row 2: Per Row
+        local _,_,rPerRow = CreateNudgeSlider(grp, "Per Row", 1, 16, 1,
+            gx, gy, SW, prefix.."PerRow", db, applyAuras)
+        refreshList[#refreshList+1] = rPerRow
+        gy = gy - 38
+
+        -- Row 3: Max Shown
+        local _,_,rMaxShown = CreateNudgeSlider(grp, "Max Shown", 1, 64, 1,
+            gx, gy, SW, prefix.."MaxShown", db, applyAuras)
+        refreshList[#refreshList+1] = rMaxShown
+        gy = gy - 40
+
+        -- Row 4: Grow X dropdown
+        CreateLabel(grp, "Grow X", gx, gy)
+        local growXDD = CreateDropdown(grp, gx + 60, gy - 18, 100, {"RIGHT","LEFT"},
+            function() return gdb("GrowX") or (isDebuff and "LEFT" or "RIGHT") end,
+            function(v) sdb("GrowX", v) end)
+        gy = gy - 44
+
+        -- Row 5: Grow Y dropdown
+        CreateLabel(grp, "Grow Y", gx, gy)
+        local growYDD = CreateDropdown(grp, gx + 60, gy - 18, 100, {"DOWN","UP"},
+            function() return gdb("GrowY") or (isDebuff and "UP" or "DOWN") end,
+            function(v) sdb("GrowY", v) end)
+        gy = gy - 44
+
+        -- Row 6: X Offset
+        local _,_,rXOfs = CreateNudgeSlider(grp, "X Offset", -500, 500, 1,
+            gx, gy, SW, prefix.."XOffset", db, applyAuras)
+        refreshList[#refreshList+1] = rXOfs
+        gy = gy - 38
+
+        -- Row 7: Y Offset
+        local _,_,rYOfs = CreateNudgeSlider(grp, "Y Offset", -500, 500, 1,
+            gx, gy, SW, prefix.."YOffset", db, applyAuras)
+        refreshList[#refreshList+1] = rYOfs
+        gy = gy - 32
+
+        -- Row 8: Anchor checkbox
+        local anchorCB = CreateCheckbox(grp, "Anchor to unit frame", gx, gy,
+            function() return db()[prefix.."AnchorToFrame"] ~= false end,
+            function(v) db()[prefix.."AnchorToFrame"] = v; applyAuras() end)
+        gy = gy - 26
+
+        -- Row 9: Show checkbox
+        local showKey = isDebuff and "debuffShowDebuffs" or "buffShowBuffs"
+        local showLabel = isDebuff and "Show Debuffs" or "Show Buffs"
+        local showCB = CreateCheckbox(grp, showLabel, gx, gy,
+            function() return db()[showKey] ~= false end,
+            function(v) db()[showKey] = v; applyAuras() end)
+
+        -- Debuff-only filter checkboxes
+        local playerOnlyCB, curableOnlyCB
+        if isDebuff then
+            gy = gy - 26
+            playerOnlyCB = CreateCheckbox(grp, "Only cast by player", gx, gy,
+                function() return db().debuffPlayerOnly or false end,
+                function(v) db().debuffPlayerOnly = v; applyAuras() end)
+            gy = gy - 26
+            curableOnlyCB = CreateCheckbox(grp, "Only curable", gx, gy,
+                function() return db().debuffCurableOnly or false end,
+                function(v) db().debuffCurableOnly = v; applyAuras() end)
+        end
+
+        refreshFns[#refreshFns+1] = function()
+            for _, fn in ipairs(refreshList) do fn() end
+            anchorCB:Refresh(); showCB:Refresh()
+            growXDD:SetSelection(gdb("GrowX") or (isDebuff and "LEFT" or "RIGHT"))
+            growYDD:SetSelection(gdb("GrowY") or (isDebuff and "UP" or "DOWN"))
+            if playerOnlyCB  then playerOnlyCB:Refresh()  end
+            if curableOnlyCB then curableOnlyCB:Refresh() end
+        end
+    end
+
+    BuildSection("buff",   false, 8,         -8)
+    BuildSection("debuff", true,  8 + GRP_W + 8, -8)
+
+    panel.refreshBuffs = function()
+        for _, fn in ipairs(refreshFns) do fn() end
+    end
+end
+
+-- Tab 6: Conditions (includes Alpha section) ---------------------------------
 
 local function BuildConditionsContent(content, unit, getDB, panel)
     local x = 16
@@ -957,8 +1166,13 @@ local function BuildConditionsContent(content, unit, getDB, panel)
         function() return getDB().alphaAffects or "Everything" end,
         function(v) getDB().alphaAffects = v; UnitFramesLite_UpdateAlpha(unit) end)
 
-    local _,_,rCombat    = CreateAlphaSliderRow(content,"Alpha in combat",    ax,ay-120,"alphaCombat",   getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
-    local _,_,rOutCombat = CreateAlphaSliderRow(content,"Alpha out of combat", ax,ay-210,"alphaOutCombat",getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
+    local outLabel = (unit == "player") and "Alpha out of combat (& target)" or "Alpha out of combat"
+    local function onOutCombatChange()
+        UnitFramesLite_UpdateAlpha(unit)
+        if unit == "player" then UnitFramesLite_UpdateAlpha("target") end
+    end
+    local _,_,rCombat    = CreateAlphaSliderRow(content,"Alpha in combat", ax,ay-120,"alphaCombat",   getDB,function() UnitFramesLite_UpdateAlpha(unit) end)
+    local _,_,rOutCombat = CreateAlphaSliderRow(content, outLabel,         ax,ay-170,"alphaOutCombat",getDB,onOutCombatChange)
 
     local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
     sep2:SetPoint("TOPLEFT",content,"TOPLEFT",ax,ay-296); sep2:SetPoint("TOPRIGHT",content,"TOPRIGHT",-16,ay-296)
@@ -994,7 +1208,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
 
     -- Tab buttons are created externally (on the main frame header).
     -- We only create scroll frames + content here.
-    local tabNames        = {"General", "Text", "Appearance", "Conditions"}
+    local tabNames        = {"General", "Text", "Appearance", "Conditions", "Auras"}
     local tabContents     = {}   -- scroll child frames (passed to Build* functions)
     local tabScrollFrames = {}   -- scroll frame wrappers (shown/hidden by SelectTab)
 
@@ -1024,6 +1238,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
     BuildTextContent(tabContents[2],          unit, getDB, panel)
     BuildAppearanceContent(tabContents[3],    unit, getDB, panel)
     BuildConditionsContent(tabContents[4],    unit, getDB, panel)
+    BuildBuffsContent(tabContents[5],         unit, getDB, panel)
 
     panel.refresh = function(self)
         local db = getDB()
@@ -1071,6 +1286,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         if self.UpdateAppearanceMode then self:UpdateAppearanceMode() end
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
         if self.refreshAlpha then self:refreshAlpha() end
+        if self.refreshBuffs then self:refreshBuffs() end
         for _, btn in ipairs(self.swatchButtons) do btn:RefreshSwatch() end
         self:UpdateColourMode()
         self:UpdateOrbColourMode()
@@ -1079,13 +1295,57 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self:UpdateAppearanceMode()
     end
 
-    local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetBtn:SetSize(120, 22); resetBtn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 12)
-    resetBtn:SetText("Reset to Defaults")
-    resetBtn:SetScript("OnClick", function()
+    -- Keys owned by each tab (index matches tabNames order).
+    -- Nilling these keys then re-running CopyDefaults restores just that tab's defaults.
+    local TAB_KEYS = {
+        -- 1: General
+        { "x","y","enabled","locked","frameWidth","frameHeight","reverseFill",
+          "portrait","portraitMode","portraitSide","portraitClamp",
+          "portraitW","portraitH","portraitX","portraitY",
+          "showName","showHPText","showHPPct","showLevel","showPowerBar","showPowerText",
+          "hpBarHeight","barBorderEnabled","barBorderThickness","barBorderColor",
+          "nameAlign","hpTextAlign","hpPctAlign","levelTextAlign",
+        },
+        -- 2: Text
+        { "font","nameFont","hpTextFont","hpPctFont","levelFont",
+          "nameColor","hpTextColor","hpPctColor","levelColor","hpColor",
+          "nameTextFontSize","nameTextX","nameTextY",
+          "hpTextFontSize","hpTextX","hpTextY",
+          "hpPctFontSize","hpPctX","hpPctY",
+          "levelTextFontSize","levelTextX","levelTextY",
+          "hpContent","hpFormat","hpPctSymbol",
+        },
+        -- 3: Appearance
+        { "useSolidColor","solidColor","gradientStart","gradientEnd","gradientDir",
+          "statusbarTexture","barBG",
+          "sphereMode","sphereSize","sphereFillDir","orbGradientDir",
+          "orbGradStart","orbGradEnd","orbSolidColor","orbUseSolidColor",
+          "showOrbBorder","orbBorderThickness","orbBorderColor",
+          "showOrbPower","orbPowerRingThickness","orbPowerRingCCW",
+          "orbPowerRingBgColor","orbPowerRingColor","orbPowerRingUseTypeColor",
+        },
+        -- 4: Conditions
+        { "loadMounted","loadInVehicle","loadResting","loadStealthed","loadInCombat",
+          "loadOutOfCombat","loadSolo","loadInGroup","loadInInstance",
+          "syncAlpha","keepTextVisible","alphaAffects",
+          "alphaCombat","alphaOutCombat","fadeNoTarget","fadeNoTargetAlpha",
+        },
+        -- 5: Auras
+        { "buffIconSize","buffPerRow","buffMaxShown","buffGrowX","buffGrowY",
+          "buffXOffset","buffYOffset","buffAnchorToFrame","buffShowBuffs",
+          "debuffIconSize","debuffPerRow","debuffMaxShown","debuffGrowX","debuffGrowY",
+          "debuffXOffset","debuffYOffset","debuffAnchorToFrame","debuffShowDebuffs",
+          "debuffPlayerOnly","debuffCurableOnly",
+        },
+    }
+
+    local resetAllBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetAllBtn:SetSize(150, 22); resetAllBtn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 12)
+    resetAllBtn:SetText("Reset All to Defaults")
+    resetAllBtn:SetScript("OnClick", function()
         local key = "UFL_RESET_" .. unit:upper()
         StaticPopupDialogs[key] = {
-            text = "Reset " .. unit .. " settings to defaults?",
+            text = "Reset ALL " .. unit .. " settings to defaults?",
             button1 = YES, button2 = NO,
             OnAccept = function()
                 UnitFramesLiteDB[unit] = nil
@@ -1097,8 +1357,36 @@ local function BuildUnitPanel(panel, unit, tabSync)
         StaticPopup_Show(key)
     end)
 
+    local resetTabBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetTabBtn:SetSize(100, 22); resetTabBtn:SetPoint("RIGHT", resetAllBtn, "LEFT", -6, 0)
+    resetTabBtn:SetText("Reset Tab")
+    resetTabBtn:SetScript("OnClick", function()
+        local tabIdx  = tabSync.current or 1
+        local tabName = ({"General","Text","Appearance","Conditions","Auras"})[tabIdx] or "Tab"
+        local key = "UFL_RESET_TAB_" .. unit:upper() .. "_" .. tabIdx
+        StaticPopupDialogs[key] = {
+            text = "Reset " .. unit .. " " .. tabName .. " settings to defaults?",
+            button1 = YES, button2 = NO,
+            OnAccept = function()
+                local db = UnitFramesLiteDB[unit]
+                if db and TAB_KEYS[tabIdx] then
+                    -- Nil the tab's keys so GetDB re-fills them from defaults
+                    for _, k in ipairs(TAB_KEYS[tabIdx]) do db[k] = nil end
+                    UnitFramesLite_GetDB(unit)  -- re-applies CopyDefaults
+                end
+                UnitFramesLite_UpdateFrame(unit)
+                if tabIdx == 5 and UnitFramesLite_UpdateAuras then
+                    UnitFramesLite_UpdateAuras(unit)
+                end
+                panel:refresh()
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true,
+        }
+        StaticPopup_Show(key)
+    end)
+
     local undoBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    undoBtn:SetSize(80, 22); undoBtn:SetPoint("RIGHT", resetBtn, "LEFT", -6, 0)
+    undoBtn:SetSize(80, 22); undoBtn:SetPoint("RIGHT", resetTabBtn, "LEFT", -6, 0)
     undoBtn:SetText("Undo")
     undoBtn:SetEnabled(false)
     undoBtn:SetScript("OnClick", function()
@@ -1132,8 +1420,17 @@ function CreateOptionsPanel()
     mainFrame:SetSize(OPTS_W, OPTS_H); mainFrame:SetPoint("CENTER")
     mainFrame:SetFrameStrata("HIGH"); mainFrame:SetMovable(true); mainFrame:EnableMouse(true)
     mainFrame:RegisterForDrag("LeftButton")
+
+    -- After any move or resize, convert the anchor to an absolute TOPLEFT point so that
+    -- subsequent StartSizing / StartMoving calls don't cause the frame to jump.
+    local function SaveFramePosition()
+        local x, y = mainFrame:GetLeft(), mainFrame:GetTop()
+        mainFrame:ClearAllPoints()
+        mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+    end
+
     mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
-    mainFrame:SetScript("OnDragStop",  mainFrame.StopMovingOrSizing)
+    mainFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing(); SaveFramePosition() end)
     mainFrame:SetResizable(true)
     mainFrame:SetResizeBounds(500, 400, 1400, 900)
     mainFrame:EnableMouseWheel(true)
@@ -1207,8 +1504,8 @@ function CreateOptionsPanel()
         end)
 
     -- Tab buttons on the main frame header, right of the unit dropdown
-    local tabNames = {"General", "Text", "Appearance", "Conditions"}
-    local tabWidths = {76, 60, 100, 90}
+    local tabNames = {"General", "Text", "Appearance", "Conditions", "Auras"}
+    local tabWidths = {76, 60, 100, 90, 60}
     local sharedTabBtns = {}
     for i, name in ipairs(tabNames) do
         local btn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
@@ -1388,8 +1685,9 @@ function CreateOptionsPanel()
     sizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     sizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     sizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-    sizeGrip:SetScript("OnMouseDown", function() mainFrame:StartSizing("BOTTOMRIGHT") end)
-    sizeGrip:SetScript("OnMouseUp",   function() mainFrame:StopMovingOrSizing() end)
+    sizeGrip:RegisterForDrag("LeftButton")
+    sizeGrip:SetScript("OnDragStart", function() SaveFramePosition(); mainFrame:StartSizing("BOTTOMRIGHT") end)
+    sizeGrip:SetScript("OnDragStop",  function() mainFrame:StopMovingOrSizing(); SaveFramePosition() end)
     sizeGrip:SetFrameLevel(sizeGrip:GetFrameLevel() + 10)
 end
 
