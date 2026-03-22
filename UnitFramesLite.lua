@@ -1383,7 +1383,7 @@ SlashCmdList["UNITFRAMESLITE"] = function(msg)
     if cmd == "debug" then
         local db = GetDB("player")
         print("UFL debug: showHPPct=" .. tostring(db.showHPPct) .. " sphereMode=" .. tostring(db.sphereMode))
-        local ok, pct = pcall(UnitHealthPercent, "player", false, CurveConstants and CurveConstants.ScaleTo100)
+        local ok, pct = pcall(UnitHealthPercent, "player", true, CurveConstants and CurveConstants.ScaleTo100)
         print("UFL debug: UnitHealthPercent ok=" .. tostring(ok) .. " pct=" .. tostring(pct))
         local pctStr = GetHPPercentText(false, true, "player")
         print("UFL debug: GetHPPercentText=" .. tostring(pctStr))
@@ -1754,6 +1754,22 @@ local function SetupFrame(displayFrame, unit)
 
     listener:SetScript("OnEvent", function() Update() end)
     displayFrame.OnUFLUpdate = Update
+
+    -- Orb HP% text: poll UnitHealthPercent on a throttle so the text stays in sync
+    -- with the fill without waiting for UNIT_HEALTH events. CurveConstants.ScaleTo100
+    -- returns a plain integer, avoiding all secret-number arithmetic.
+    local orbPctElapsed = 0
+    orbFill:SetScript("OnUpdate", function(self, elapsed)
+        orbPctElapsed = orbPctElapsed + elapsed
+        if orbPctElapsed < 0.05 then return end  -- ~20 Hz
+        orbPctElapsed = 0
+        local db = GetDB(unit)
+        if not (db.sphereMode and db.showHPPct) then return end
+        local hpPctText = displayFrame.hpPctText
+        if not hpPctText or not hpPctText:IsShown() then return end
+        local pctStr = GetHPPercentText(UnitIsDead(unit), db.hpPctShowSymbol ~= false, unit)
+        if pctStr then hpPctText:SetText(pctStr) end
+    end)
 end
 
 -- Aura display --------------------------------------------------------------
