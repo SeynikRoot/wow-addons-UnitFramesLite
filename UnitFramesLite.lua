@@ -896,6 +896,9 @@ function UnitFramesLite_UpdateFrame(unit)
         -- Background circle
         local bc = db.orbBgColor or {0, 0, 0, 0.9}
         frame.orbBg:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+        if frame.powerRingCentreCover then
+            frame.powerRingCentreCover:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+        end
 
         -- Fill bars
         -- When Gradient Direction is CENTRE the orb is split into lower and upper
@@ -978,6 +981,17 @@ function UnitFramesLite_UpdateFrame(unit)
             SetupRingBar(frame.powerRingFillR)
 
             ApplyPowerRingColor(frame, unit)
+
+            -- Size the centre cover to the orb and colour it with orbBgColor so the
+            -- ring BG is only visible in the ring band, not behind the health orb.
+            if frame.powerRingCentreCover then
+                frame.powerRingCentreCover:SetSize(sz, sz)
+                frame.powerRingCentreMask:SetSize(sz, sz)
+                frame.powerRingCentreMask:SetPoint("CENTER", prf, "CENTER", 0, 0)
+                local bc = db.orbBgColor or {0, 0, 0, 0.9}
+                frame.powerRingCentreCover:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+            end
+
             prf:Show()
         else
             if frame.powerRingFrame then frame.powerRingFrame:Hide() end
@@ -1524,6 +1538,18 @@ local function SetupFrame(displayFrame, unit)
     powerRingCircMask:SetAllPoints()
     powerRingBg:AddMaskTexture(powerRingCircMask)
     displayFrame.powerRingCircMask = powerRingCircMask
+
+    -- Centre cover: sits above powerRingBg (BORDER layer) on the same frame, sized to
+    -- the orb diameter and masked to a circle. Always coloured with orbBgColor so the
+    -- ring BG colour only shows in the ring band, not the orb centre.
+    local powerRingCentreCover = powerRingFrame:CreateTexture(nil, "BORDER")
+    powerRingCentreCover:SetPoint("CENTER", powerRingFrame, "CENTER", 0, 0)
+    displayFrame.powerRingCentreCover = powerRingCentreCover
+
+    local powerRingCentreMask = powerRingFrame:CreateMaskTexture()
+    powerRingCentreMask:SetTexture(ORB_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    powerRingCentreCover:AddMaskTexture(powerRingCentreMask)
+    displayFrame.powerRingCentreMask = powerRingCentreMask
 
     -- Radial sweep via Cooldown frame. SetCooldown(start, duration) is a C-function
     -- that accepts secret numbers directly as arguments — no Lua arithmetic needed.
