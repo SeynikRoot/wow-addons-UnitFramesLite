@@ -1023,9 +1023,9 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
     local orbSolidBtn = CreateColorSwatch(orbSection, ox, -224, "Solid",      getDB, "orbSolidColor",    function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbSolidBtn
-    local orbGSBtn    = CreateColorSwatch(orbSection, ox, -224, "Grad Start", getDB, "orbGradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbGSBtn    = CreateColorSwatch(orbSection, ox, -224, "Grad Start", getDB, "orbGradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbGSBtn
-    local orbGEBtn    = CreateColorSwatch(orbSection, ox, -254, "Grad End",   getDB, "orbGradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbGEBtn    = CreateColorSwatch(orbSection, ox, -254, "Grad End",   getDB, "orbGradientStart", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbGEBtn
     panel.orbSolidGroup    = {orbSolidBtn}
     panel.orbGradientGroup = {orbGSBtn, orbGEBtn}
