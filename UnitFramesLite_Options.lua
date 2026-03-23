@@ -79,13 +79,17 @@ local function CreateNudgeSlider(parent, label, minV, maxV, step, x, y, sliderW,
     box:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 46 + sliderW, y - 15)
     box:SetAutoFocus(false)
 
+    -- Determine display format from step: step<1 → show 2 decimal places, else integer
+    local fmt = (step < 1) and "%.2f" or "%d"
+    local function FmtVal(v) return string.format(fmt, v) end
+
     local updating = false
     local function SetVal(v)
         if updating then return end
         v = math.max(minV, math.min(maxV, math.floor(v / step + 0.5) * step))
         getDB()[dbKey] = v
         updating = true; s:SetValue(v); updating = false
-        box:SetText(tostring(v))
+        box:SetText(FmtVal(v))
         onChange()
     end
     s:SetScript("OnValueChanged", function(self, v) if not updating then SetVal(v) end end)
@@ -97,7 +101,7 @@ local function CreateNudgeSlider(parent, label, minV, maxV, step, x, y, sliderW,
     local function Refresh()
         local v = getDB()[dbKey] or 0
         updating = true; s:SetValue(math.max(minV, math.min(maxV, v))); updating = false
-        box:SetText(tostring(v))
+        box:SetText(FmtVal(math.max(minV, math.min(maxV, v))))
     end
     Refresh()
     return s, box, Refresh, lbl, minus, plus
@@ -996,20 +1000,20 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     local orx = 310  -- right column x
 
     -- ── Orb Size & Direction (left column, group box) ─────────────────────────
-    local orbSizeGroup = CreateGroupBox(orbSection, "Orb Size & Direction", ox, 0, 290, 144, "GameFontNormal")
-    s,b,r = CreateNudgeSlider(orbSizeGroup,"Orb Diameter (px)",20,300,1, gx,-20,100,"sphereSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbSizeGroup = CreateGroupBox(orbSection, "Orb Size & Direction", ox, 0, 290, 152, "GameFontNormal")
+    s,b,r = CreateNudgeSlider(orbSizeGroup,"Orb Diameter (px)",20,300,1, gx,-28,100,"sphereSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.sphereSizeSlider,panel.sphereSizeBox,panel.sphereSizeRefresh = s,b,r
-    CreateLabel(orbSizeGroup, "Health Fill Direction", gx, -58)
-    panel.sphereFillDirDD = CreateDropdown(orbSizeGroup, gx, -76, 110, fillDirOptions,
+    CreateLabel(orbSizeGroup, "Health Fill Direction", gx, -66)
+    panel.sphereFillDirDD = CreateDropdown(orbSizeGroup, gx, -84, 110, fillDirOptions,
         function() return getDB().sphereFillDir or "VERTICAL" end,
         function(v) getDB().sphereFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(orbSizeGroup, "Gradient Direction", gx, -100)
-    panel.orbGradDirDD = CreateDropdown(orbSizeGroup, gx, -116, 110, {"VERTICAL","HORIZONTAL","CENTRE"},
+    CreateLabel(orbSizeGroup, "Gradient Direction", gx, -110)
+    panel.orbGradDirDD = CreateDropdown(orbSizeGroup, gx, -126, 110, {"VERTICAL","HORIZONTAL","CENTRE"},
         function() return getDB().orbGradientDir or "VERTICAL" end,
         function(v) getDB().orbGradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     -- ── Orb Colour (left column, group box) ──────────────────────────────────
-    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -154, 290, 100, "GameFontNormal")
+    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -162, 290, 100, "GameFontNormal")
     panel.orbSolidCheck = CreateCheckbox(orbColGroup, "Use Solid Colour", gx, -20,
         function() return getDB().orbUseSolidColor or false end,
         function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
@@ -1028,7 +1032,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     end
 
     -- ── Orb Background (left column, group box) ───────────────────────────────
-    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -264, 290, 96, "GameFontNormal")
+    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -272, 290, 96, "GameFontNormal")
     local orbBgBtn = CreateColorSwatch(orbBgGroup, gx, -20, "Colour", getDB, "orbBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbBgBtn
     local function orbBgAlphaDB()
