@@ -1240,8 +1240,14 @@ function UnitFramesLite_CopyUnit(srcUnit, destUnit, mirror)
         if dest.portraitSide == "Left" then dest.portraitSide = "Right"
         elseif dest.portraitSide == "Right" then dest.portraitSide = "Left" end
         dest.portraitX = -(dest.portraitX or 0)
+        -- Mirror aura Grow X: LEFT↔RIGHT for both buffs and debuffs
+        if dest.buffGrowX == "LEFT" then dest.buffGrowX = "RIGHT"
+        elseif dest.buffGrowX == "RIGHT" then dest.buffGrowX = "LEFT" end
+        if dest.debuffGrowX == "LEFT" then dest.debuffGrowX = "RIGHT"
+        elseif dest.debuffGrowX == "RIGHT" then dest.debuffGrowX = "LEFT" end
     end
     UnitFramesLite_UpdateFrame(destUnit)
+    UnitFramesLite_UpdateAuras(destUnit)
 end
 
 -- Profiles -------------------------------------------------------------------
