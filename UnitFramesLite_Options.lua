@@ -1709,15 +1709,14 @@ function CreateOptionsPanel()
     mainFrame:RegisterForDrag("LeftButton")
 
     -- Convert frame anchor to absolute TOPLEFT so StartSizing/StartMoving don't jump.
-    -- GetLeft()/GetTop() return values in the frame's own coordinate space.
-    -- Multiply by effectiveScale to get screen pixels, then divide by UIParent's
-    -- effectiveScale to get UIParent-relative coordinates for SetPoint.
+    -- GetLeft()/GetTop() are in the frame's effective-scale space; convert to UIParent space.
     local function PinToTopLeft()
         local x = mainFrame:GetLeft()
         local y = mainFrame:GetTop()
         if not x or not y then return end
+        local scale = mainFrame:GetEffectiveScale() / UIParent:GetEffectiveScale()
         mainFrame:ClearAllPoints()
-        mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+        mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x * scale, y * scale)
     end
 
     mainFrame:SetScript("OnDragStart", function(self) PinToTopLeft(); self:StartMoving() end)
