@@ -39,7 +39,8 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showHPText    = true,
         showHPPct     = false,
         showLevel     = true,
-        showPowerBar  = false,
+        showPowerBar  = false,   -- legacy; superseded by orbPowerMode == "Bar"
+        powerBarAttach = true,  -- bar mode: attach power bar to bottom of health bar
         showPowerText = false,
         showResources           = true,
         resourcePipWidth        = 18,
@@ -123,13 +124,21 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showOrbBorder      = false,
         orbBorderThickness = 4,
         orbBorderColor     = {0, 0, 0, 1},
-        -- Power ring
-        showOrbPower             = false,
+        -- Power ring / bar (orbPowerMode replaces showOrbPower; NOT in defaults so migration can detect nil)
+        showOrbPower             = false,  -- kept for migration only
         orbPowerRingThickness    = 8,
         orbPowerRingCCW          = false,
         orbPowerRingUseTypeColor = true,
         orbPowerRingColor        = {0, 0.5, 1, 1},
         orbPowerRingBgColor      = {0, 0, 0, 0.9},
+        -- Power bar (used when orbPowerMode == "Bar")
+        orbPowerBarWidth         = 80,
+        orbPowerBarHeight        = 12,
+        orbPowerBarX             = 0,
+        orbPowerBarY             = 0,
+        orbPowerBarFillDir       = "HORIZONTAL",
+        orbPowerBarColor         = {0, 0.5, 1, 1},
+        orbPowerBarBgColor       = {0, 0, 0, 0.9},
     }
 end
 
@@ -268,6 +277,7 @@ function UnitFramesLite_UpdateAlpha(unit)
     end
 
     if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(alpha) end
+    if frame.orbPowerBar    then frame.orbPowerBar:SetAlpha(alpha)    end
     if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
     if frame.borderFrame     then frame.borderFrame:SetAlpha(alpha)     end
 
@@ -947,8 +957,10 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.orbBorderFrame:Hide()
         end
 
-        -- Power ring
-        if db.showOrbPower and frame.powerRingFrame then
+        -- Power ring / bar
+        local pMode = db.orbPowerMode or "None"
+
+        if pMode == "Ring" and frame.powerRingFrame then
             local thick    = math.max(4, db.orbPowerRingThickness or 8)
             local ringSz   = sz + thick * 2
             local prf      = frame.powerRingFrame
@@ -995,6 +1007,31 @@ function UnitFramesLite_UpdateFrame(unit)
             prf:Show()
         else
             if frame.powerRingFrame then frame.powerRingFrame:Hide() end
+        end
+
+        if pMode == "Bar" and frame.orbPowerBar then
+            local pb  = frame.orbPowerBar
+            local bw  = db.orbPowerBarWidth    or 80
+            local bh  = db.orbPowerBarHeight   or 12
+            local bx  = db.orbPowerBarX        or 0
+            local by  = db.orbPowerBarY        or 0
+            local fd  = db.orbPowerBarFillDir  or "HORIZONTAL"
+            pb:SetSize(bw, bh)
+            pb:ClearAllPoints()
+            pb:SetPoint("CENTER", frame, "CENTER", bx, by)
+            pb:SetOrientation(fd)
+            pb:SetReverseFill(db.reverseFill or false)
+            local fc = db.orbPowerBarColor   or {0, 0.5, 1, 1}
+            pb:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
+            if frame.orbPowerBarBg then
+                local bc = db.orbPowerBarBgColor or {0, 0, 0, 0.9}
+                frame.orbPowerBarBg:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+            end
+            -- Ensure bar has valid range so it renders before first event fires
+            pb:SetMinMaxValues(0, 1); pb:SetValue(1)
+            pb:Show()
+        else
+            if frame.orbPowerBar then frame.orbPowerBar:Hide() end
         end
 
         -- Text (uses Text tab settings, positioned relative to orb centre)
@@ -1045,6 +1082,7 @@ function UnitFramesLite_UpdateFrame(unit)
         if frame.orbFill2        then frame.orbFill2:Hide()       end
         if frame.orbBorderFrame  then frame.orbBorderFrame:Hide() end
         if frame.powerRingFrame  then frame.powerRingFrame:Hide() end
+        if frame.orbPowerBar     then frame.orbPowerBar:Hide()    end
         -- Portrait frame is hidden when sphere mode is active (handled in portrait block below)
 
         frame.hp:Show()
@@ -1074,11 +1112,26 @@ function UnitFramesLite_UpdateFrame(unit)
 
         if frame.power then
             frame.power:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-            frame.power:SetWidth(w)
-            if db.showPowerBar then
-                local hpH = math.max(10, barH - 8)
+            -- Bar mode power is enabled when orbPowerMode is "Bar" (or legacy showPowerBar)
+            local barPowerEnabled = (db.orbPowerMode == "Bar") or
+                                    (db.orbPowerMode == nil and db.showPowerBar)
+            if barPowerEnabled then
+                local attach = db.powerBarAttach ~= false  -- default true (attached)
+                local maxPH  = math.max(1, math.floor(h / 2))
+                local pH     = attach and math.max(1, math.min(db.orbPowerBarHeight or 8, maxPH))
+                               or math.max(1, db.orbPowerBarHeight or 8)
+                local pw     = attach and w or math.max(1, db.orbPowerBarWidth or w)
+                local hpH    = math.max(1, barH - pH)
                 frame.hp:SetHeight(hpH)
-                frame.power:SetHeight(8)
+                frame.power:SetWidth(pw)
+                frame.power:SetHeight(pH)
+                frame.power:ClearAllPoints()
+                frame.power:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+                local fd = db.orbPowerBarFillDir or "HORIZONTAL"
+                frame.power:SetOrientation(fd)
+                frame.power:SetReverseFill(db.reverseFill or false)
+                local fc = db.orbPowerBarColor or {0, 0.5, 1, 1}
+                frame.power:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
                 frame.power:Show()
             else
                 frame.hp:SetHeight(barH)
@@ -1575,6 +1628,17 @@ local function SetupFrame(displayFrame, unit)
     local prStL = prFillL:GetStatusBarTexture()
     if prStL then prStL:AddMaskTexture(powerRingCircMask) end
 
+    -- ── Orb power bar (standalone bar, shown when orbPowerMode=="Bar") ─────
+    local orbPowerBar = CreateFrame("StatusBar", nil, displayFrame)
+    orbPowerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    orbPowerBar:SetFrameStrata("HIGH")
+    orbPowerBar:SetFrameLevel(parentLevel + 6)
+    orbPowerBar:Hide()
+    displayFrame.orbPowerBar = orbPowerBar
+    local orbPowerBarBg = orbPowerBar:CreateTexture(nil, "BACKGROUND")
+    orbPowerBarBg:SetAllPoints()
+    displayFrame.orbPowerBarBg = orbPowerBarBg
+
     -- ── Orb inner border (between power ring fills and health orb) ───────
     local orbBorderFrame = CreateFrame("Frame", nil, displayFrame)
     orbBorderFrame:Hide()
@@ -1690,7 +1754,8 @@ local function SetupFrame(displayFrame, unit)
         --                right → SetMinMaxValues(halfMax, max), SetValue(power)
         -- SetMinMaxValues and SetValue accept secret numbers just like StatusBar
         -- hp/power bars do — no taint error.
-        if displayFrame.powerRingFillR and displayFrame.powerRingFillL and db.showOrbPower then
+        local pMode = db.orbPowerMode or "None"
+        if pMode == "Ring" and displayFrame.powerRingFillR and displayFrame.powerRingFillL then
             local ccw   = db.orbPowerRingCCW or false
             local fillR = displayFrame.powerRingFillR
             local fillL = displayFrame.powerRingFillL
@@ -1708,6 +1773,10 @@ local function SetupFrame(displayFrame, unit)
                 fillL:SetValue(isDead and 0 or power)
             end
             ApplyPowerRingColor(displayFrame, unit)
+        end
+        if pMode == "Bar" and displayFrame.orbPowerBar then
+            displayFrame.orbPowerBar:SetMinMaxValues(0, maxPower)
+            displayFrame.orbPowerBar:SetValue(isDead and 0 or power)
         end
 
         -- Name
@@ -1867,7 +1936,8 @@ local function GetFrameVerticalExtent(frame, db)
     if db.sphereMode then
         local sz    = math.max(20, db.sphereSize or 80)
         local extra = 0
-        if db.showOrbPower then
+        local pMode = db.orbPowerMode or "None"
+        if pMode == "Ring" then
             extra = math.max(4, db.orbPowerRingThickness or 8)
         end
         return sz / 2 + extra
@@ -2106,6 +2176,15 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         }
         -- Profiles table: { active="Default", profiles={ Default={player={...}, target={...}, ...} } }
         UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
+        -- Migrate: showOrbPower (bool) → orbPowerMode (string)
+        -- Runs before CopyDefaults. Also fixes saves where orbPowerMode was wrongly
+        -- set to "None" by a previous version that had it in defaults.
+        for _, unit in ipairs({"player", "target", "focus", "pet"}) do
+            local udb = UnitFramesLiteDB[unit]
+            if udb and udb.showOrbPower == true and (udb.orbPowerMode == nil or udb.orbPowerMode == "None") then
+                udb.orbPowerMode = "Ring"
+            end
+        end
         for unit, def in pairs(defaults) do
             UnitFramesLiteDB[unit] = CopyDefaults(def, UnitFramesLiteDB[unit] or {})
         end

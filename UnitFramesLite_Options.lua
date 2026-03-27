@@ -22,7 +22,7 @@ local function CreateCheckbox(parent, label, x, y, getValue, setValue)
     local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     cb:SetSize(24, 24)
     cb:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local fs = cb:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
     fs:SetText(label)
     cb:SetChecked(getValue())
@@ -152,10 +152,11 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
         local dd = CreateFrame("Frame", nil, parent, "UIDropDownMenuTemplate")
         dd:SetPoint("TOPLEFT", parent, "TOPLEFT", x - 16, y)
         UIDropDownMenu_SetWidth(dd, width)
+        local currentItems = items
         UIDropDownMenu_Initialize(dd, function(self, level)
             local info = UIDropDownMenu_CreateInfo()
             local cur  = getValue()
-            for _, name in ipairs(items) do
+            for _, name in ipairs(currentItems) do
                 info.text    = name
                 info.checked = (name == cur)
                 info.func    = function()
@@ -174,17 +175,40 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
             UIDropDownMenu_SetSelectedName(self, name)
             if self.Text then self.Text:SetText(name) end
         end
+        function dd:SetOptions(newItems)
+            currentItems = newItems
+            UIDropDownMenu_Initialize(self, function(self2, level)
+                local info = UIDropDownMenu_CreateInfo()
+                local cur  = getValue()
+                for _, name in ipairs(currentItems) do
+                    info.text    = name
+                    info.checked = (name == cur)
+                    info.func    = function()
+                        setValue(name)
+                        UIDropDownMenu_SetSelectedName(dd, name)
+                        if dd.Text then dd.Text:SetText(name) end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end)
+            -- Force the button text to show the current value immediately
+            local curVal = getValue()
+            UIDropDownMenu_SetSelectedName(self, curVal)
+            if self.Text then self.Text:SetText(curVal) end
+        end
         return dd
     end
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     btn:SetSize(width + 24, 22); btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     btn:SetText(tostring(getValue()))
+    local currentItems = items
     btn:SetScript("OnClick", function(self)
-        local cur = getValue(); local nxt = items[1]
-        for i, v in ipairs(items) do if v == cur then nxt = items[i % #items + 1]; break end end
+        local cur = getValue(); local nxt = currentItems[1]
+        for i, v in ipairs(currentItems) do if v == cur then nxt = currentItems[i % #currentItems + 1]; break end end
         setValue(nxt); self:SetText(tostring(nxt))
     end)
     function btn:SetSelection(name) self:SetText(tostring(name)) end
+    function btn:SetOptions(newItems) currentItems = newItems end
     return btn
 end
 
@@ -956,11 +980,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     -- colGroup top at -16, height 230 → bottom -246, +10 gap → genY=-256
     local genY = -256
 
-    panel.showPowerCheck = CreateCheckbox(barSection, "Show power bar", bx, genY,
-        function() return getDB().showPowerBar or false end,
-        function(v) getDB().showPowerBar = v; UnitFramesLite_UpdateFrame(unit) end)
-
-    s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full)",0,120,1, bx,genY-34,bSliderW,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full)",0,120,1, bx,genY,bSliderW,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
 
     -- ── Bar Border (collapsible sub-frame) ───────────────────────────────────
@@ -991,7 +1011,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     -- Left column: Orb Size & Direction, Orb Colour, Orb Background groups
     -- Right column: Power Ring group (top), Inner Border group (below)
     local orbSection = CreateFrame("Frame", nil, content)
-    orbSection:SetPoint("TOPLEFT", content, "TOPLEFT", x, -66)
+    orbSection:SetPoint("TOPLEFT", content, "TOPLEFT", x, -178)
     orbSection:SetSize(590, 680)
     orbSection:Hide()
     panel.orbSection = orbSection
@@ -1045,46 +1065,126 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     local s4,b4,r4 = CreateNudgeSlider(orbBgGroup,"Alpha",0,1,0.01, gx,-54,100,"orbBgAlpha",orbBgAlphaDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbBgAlphaRefresh = r4
 
-    -- ── Power Ring (right column top, group box, collapsible) ─────────────────
-    local orbRingGroup = CreateGroupBox(orbSection, "Power Ring", orx, 0, 270, 176, "GameFontNormal")
-    local orbRingDetails  -- declared before checkbox so closure captures the upvalue
-    panel.showOrbPowerCheck = CreateCheckbox(orbRingGroup, "Enabled", gx, -20,
-        function() return getDB().showOrbPower or false end,
+    -- ── Power group (right column, shared between Bar and Orb modes) ────────────
+    -- Anchored to content so it can be shown in both bar and orb modes.
+    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 320, "GameFontNormal")
+    powerGroup:Hide()
+    panel.orbPowerGroup = powerGroup   -- kept for UpdateAppearanceMode compat
+
+    CreateLabel(powerGroup, "Type", gx, -22)
+
+    local ringDetailsFrame = CreateFrame("Frame", nil, powerGroup)
+    local barDetailsFrame  = CreateFrame("Frame", nil, powerGroup)
+
+    local function UpdatePowerMode()
+        local m      = getDB().orbPowerMode or "None"
+        local isOrb  = getDB().sphereMode
+        local attach = getDB().powerBarAttach ~= false
+        ringDetailsFrame:SetShown(m == "Ring")
+        barDetailsFrame:SetShown(m == "Bar")
+        if m == "Bar" then
+            -- Attach checkbox: only in bar-frame mode
+            panel.powerBarAttachCheck:SetShown(not isOrb)
+            -- Width row: hidden when attached in bar-frame mode
+            panel.powerBarWidthRow:SetShown(isOrb or not attach)
+            -- Height slider: when attached, clamp max to frameHeight/2
+            if not isOrb and attach then
+                local maxH = math.max(1, math.floor((getDB().frameHeight or 35) / 2))
+                panel.orbPBarHeightSlider:SetMinMaxValues(1, maxH)
+            else
+                panel.orbPBarHeightSlider:SetMinMaxValues(4, 80)
+            end
+        end
+    end
+    panel.UpdatePowerMode = UpdatePowerMode
+    panel.UpdatePowerBarAttach = function(self) UpdatePowerMode() end
+
+    -- Power type dropdown — options differ by mode; rebuilt in UpdateAppearanceMode
+    panel.powerTypeDD = CreateDropdown(powerGroup, gx + 52, -20, 90, {"None","Ring","Bar"},
+        function() return getDB().orbPowerMode or "None" end,
         function(v)
-            getDB().showOrbPower = v
-            orbRingDetails:SetShown(v)
+            getDB().orbPowerMode = v
+            -- Migrate legacy showPowerBar when user explicitly picks a mode
+            getDB().showPowerBar = (v == "Bar")
+            UpdatePowerMode()
             UnitFramesLite_UpdateFrame(unit)
         end)
-    orbRingDetails = CreateFrame("Frame", nil, orbRingGroup)
-    orbRingDetails:SetPoint("TOPLEFT", orbRingGroup, "TOPLEFT", 0, -40)
-    orbRingDetails:SetSize(260, 130)
-    local s3,b3,r3 = CreateNudgeSlider(orbRingDetails,"Thickness (px)",4,40,1, gx,-4,100,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+
+    -- Ring details sub-frame
+    ringDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -50)
+    ringDetailsFrame:SetSize(260, 150)
+    local s3,b3,r3 = CreateNudgeSlider(ringDetailsFrame,"Thickness (px)",4,40,1, gx,-4,100,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s3,b3,r3
-    panel.ringCCWCheck = CreateCheckbox(orbRingDetails, "Counter-clockwise", gx, -46,
+    panel.ringCCWCheck = CreateCheckbox(ringDetailsFrame, "Counter-clockwise", gx, -46,
         function() return getDB().orbPowerRingCCW or false end,
         function(v) getDB().orbPowerRingCCW = v; UnitFramesLite_UpdateFrame(unit) end)
-    panel.ringTypeColorCheck = CreateCheckbox(orbRingDetails, "Use power type colour", gx, -72,
+    panel.ringTypeColorCheck = CreateCheckbox(ringDetailsFrame, "Use power type colour", gx, -72,
         function() return getDB().orbPowerRingUseTypeColor ~= false end,
         function(v)
             getDB().orbPowerRingUseTypeColor = v
             panel:UpdateRingColourMode()
             UnitFramesLite_UpdateFrame(unit)
         end)
-    local ringColBtn = CreateColorSwatch(orbRingDetails, gx, -106, "Ring Colour", getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local ringColBtn = CreateColorSwatch(ringDetailsFrame, gx, -106, "Ring Colour", getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringColBtn
     panel.ringColBtn = ringColBtn
     panel.UpdateRingColourMode = function(self)
-        local useType = getDB().orbPowerRingUseTypeColor ~= false
-        ringColBtn:SetShown(not useType)
-    end
-    orbRingDetails:SetShown(getDB().showOrbPower or false)
-    panel.showOrbPowerCheck.Refresh = function(self)
-        local v = getDB().showOrbPower or false
-        self:SetChecked(v); orbRingDetails:SetShown(v)
+        ringColBtn:SetShown(getDB().orbPowerRingUseTypeColor == false)
     end
 
-    -- ── Inner Border (right column below Power Ring, group box, collapsible) ──
-    local orbBorderGroup = CreateGroupBox(orbSection, "Inner Border", orx, -186, 270, 120, "GameFontNormal")
+    -- Bar details sub-frame (shared by bar-frame and orb Bar mode)
+    -- Layout (top-to-bottom):
+    --   y=  0 : Attach to health bar checkbox  (bar-frame mode only)
+    --   y=-30 : Width row                       (hidden when attached in bar-frame mode)
+    --   y=-68 : Height
+    --   y=-106: X Offset
+    --   y=-144: Y Offset
+    --   y=-182: Fill Direction label + dropdown
+    --   y=-210: FG/BG colour swatches
+    barDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -50)
+    barDetailsFrame:SetSize(260, 240)
+
+    -- Attach checkbox (bar-frame mode only, at top)
+    local attachCheck = CreateCheckbox(barDetailsFrame, "Attach to health bar", gx, 0,
+        function() return getDB().powerBarAttach ~= false end,
+        function(v)
+            getDB().powerBarAttach = v
+            panel:UpdatePowerBarAttach()
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+    panel.powerBarAttachCheck = attachCheck
+
+    -- Width row (hidden when attached in bar-frame mode)
+    local pBarWidthRow = CreateFrame("Frame", nil, barDetailsFrame)
+    pBarWidthRow:SetPoint("TOPLEFT", barDetailsFrame, "TOPLEFT", 0, -30)
+    pBarWidthRow:SetSize(260, 38)
+    local s5,b5,r5 = CreateNudgeSlider(pBarWidthRow,"Width",20,400,1, gx,-4,100,"orbPowerBarWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbPBarWidthSlider,panel.orbPBarWidthBox,panel.orbPBarWidthRefresh = s5,b5,r5
+    panel.powerBarWidthRow = pBarWidthRow
+
+    local s6,b6,r6 = CreateNudgeSlider(barDetailsFrame,"Height",4,80,1,       gx,-68, 100,"orbPowerBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbPBarHeightSlider,panel.orbPBarHeightBox,panel.orbPBarHeightRefresh = s6,b6,r6
+    local s7,b7,r7 = CreateNudgeSlider(barDetailsFrame,"X Offset",-500,500,1, gx,-106,100,"orbPowerBarX",     getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbPBarXSlider,panel.orbPBarXBox,panel.orbPBarXRefresh = s7,b7,r7
+    local s8,b8,r8 = CreateNudgeSlider(barDetailsFrame,"Y Offset",-500,500,1, gx,-144,100,"orbPowerBarY",     getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbPBarYSlider,panel.orbPBarYBox,panel.orbPBarYRefresh = s8,b8,r8
+    CreateLabel(barDetailsFrame, "Fill Direction", gx, -182)
+    panel.orbPBarFillDirDD = CreateDropdown(barDetailsFrame, gx, -200, 120, {"HORIZONTAL","VERTICAL"},
+        function() return getDB().orbPowerBarFillDir or "HORIZONTAL" end,
+        function(v) getDB().orbPowerBarFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
+    local orbPBarFgBtn = CreateColorSwatch(barDetailsFrame, gx,     -230, "Foreground", getDB, "orbPowerBarColor",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbPBarBgBtn = CreateColorSwatch(barDetailsFrame, gx+130, -230, "Background", getDB, "orbPowerBarBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = orbPBarFgBtn
+    panel.swatchButtons[#panel.swatchButtons+1] = orbPBarBgBtn
+
+    -- Init visibility
+    UpdatePowerMode()
+    panel.showOrbPowerCheck = { Refresh = function() end }
+
+    -- ── Inner Border (right column below Power group, anchored to content) ────
+    local orbBorderGroup = CreateGroupBox(content, "Inner Border", rx, -396, 268, 120, "GameFontNormal")
+    orbBorderGroup:Hide()
+    panel.orbBorderGroup = orbBorderGroup
     local orbBorderDetails  -- declared before checkbox so closure captures the upvalue
     panel.showOrbBorderCheck = CreateCheckbox(orbBorderGroup, "Enabled", gx, -20,
         function() return getDB().showOrbBorder or false end,
@@ -1114,22 +1214,55 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
     -- ── UpdateAppearanceMode ────────────────────────────────────────────────
     panel.UpdateAppearanceMode = function(self)
+        -- Migrate legacy showPowerBar to orbPowerMode if not yet set
+        if getDB().orbPowerMode == nil and getDB().showPowerBar then
+            getDB().orbPowerMode = "Bar"
+        end
         local isOrb = getDB().sphereMode
         barSection:SetShown(not isOrb)
         orbSection:SetShown(isOrb)
-        -- Frame Size and Portrait are bar-only
+        -- Power group: always at rx, -66 (right column top) in both modes.
+        if self.orbPowerGroup then
+            self.orbPowerGroup:ClearAllPoints()
+            self.orbPowerGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -66)
+            self.orbPowerGroup:SetShown(true)
+        end
+        if self.orbBorderGroup then self.orbBorderGroup:SetShown(isOrb) end
+        -- Frame Size is bar-only (left column, always at x,-178)
         sizeGroup:SetShown(not isOrb)
+        -- Bar mode: Bar section left column (below Frame Size), Portrait right column (below Power)
+        -- Orb mode: Bar section hidden, Portrait hidden
+        if not isOrb then
+            barSection:ClearAllPoints()
+            barSection:SetPoint("TOPLEFT", content, "TOPLEFT", x, -290)
+            barSection:SetSize(290, 440)
+            portGroup:ClearAllPoints()
+            portGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -396)
+            portGroup:SetSize(268, 180)
+        end
         portGroup:SetShown(not isOrb)
         if self.frameStyleDD then
             self.frameStyleDD:SetSelection(isOrb and "Orb" or "Bar")
         end
+        -- Rebuild power type dropdown options: bar mode hides Ring option
+        if self.powerTypeDD then
+            local opts = isOrb and {"None","Ring","Bar"} or {"None","Bar"}
+            self.powerTypeDD:SetOptions(opts)
+            -- If Ring was selected and we're now in bar mode, reset to None
+            local cur = getDB().orbPowerMode or "None"
+            if not isOrb and cur == "Ring" then
+                getDB().orbPowerMode = "None"
+                cur = "None"
+            end
+            self.powerTypeDD:SetSelection(cur)
+        end
         -- Sync sub-section visibility with DB when switching modes
         if isOrb then
             orbBorderDetails:SetShown(getDB().showOrbBorder or false)
-            orbRingDetails:SetShown(getDB().showOrbPower or false)
         else
             barBorderDetails:SetShown(getDB().barBorderEnabled or false)
         end
+        UpdatePowerMode()
     end
 end
 
@@ -1403,7 +1536,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.hpPctFontSizeRefresh(); self.hpPctXRefresh(); self.hpPctYRefresh()
         self.levelFontSizeRefresh(); self.levelXRefresh(); self.levelYRefresh()
         self.texDD:SetSelection(db.statusbarTexture or "Blizzard")
-        self.solidCheckbox:Refresh(); self.showPowerCheck:Refresh()
+        self.solidCheckbox:Refresh()
         if self.dirDD then self.dirDD:SetSelection(db.gradientDir or "HORIZONTAL") end
         self.hpBarHeightRefresh(); self.barBorderCheck:Refresh(); self.borderThicknessRefresh()
         self.sphereModeCheck:Refresh(); self.sphereSizeRefresh()
@@ -1414,6 +1547,13 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.showOrbBorderCheck:Refresh(); self.orbBorderThickRefresh()
         self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
+        if self.powerTypeDD         then self.powerTypeDD:SetSelection(db.orbPowerMode or "None") end
+        if self.powerBarAttachCheck then self.powerBarAttachCheck:Refresh() end
+        if self.orbPBarWidthRefresh  then self.orbPBarWidthRefresh()  end
+        if self.orbPBarHeightRefresh then self.orbPBarHeightRefresh() end
+        if self.orbPBarXRefresh      then self.orbPBarXRefresh()      end
+        if self.orbPBarYRefresh      then self.orbPBarYRefresh()      end
+        if self.orbPBarFillDirDD     then self.orbPBarFillDirDD:SetSelection(db.orbPowerBarFillDir or "HORIZONTAL") end
         if self.UpdateAppearanceMode then self:UpdateAppearanceMode() end
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
         if self.refreshAlpha then self:refreshAlpha() end
@@ -1453,8 +1593,11 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "orbBgColor",
           "orbGradStart","orbGradEnd","orbSolidColor","orbUseSolidColor",
           "showOrbBorder","orbBorderThickness","orbBorderColor",
-          "showOrbPower","orbPowerRingThickness","orbPowerRingCCW",
+          "showOrbPower","orbPowerMode",
+          "orbPowerRingThickness","orbPowerRingCCW",
           "orbPowerRingBgColor","orbPowerRingColor","orbPowerRingUseTypeColor",
+          "orbPowerBarWidth","orbPowerBarHeight","orbPowerBarX","orbPowerBarY",
+          "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor",
         },
         -- 4: Conditions
         { "loadMounted","loadInVehicle","loadResting","loadStealthed","loadInCombat",
@@ -1570,13 +1713,9 @@ function CreateOptionsPanel()
     -- Multiply by effectiveScale to get screen pixels, then divide by UIParent's
     -- effectiveScale to get UIParent-relative coordinates for SetPoint.
     local function PinToTopLeft()
-        local frameScale  = mainFrame:GetEffectiveScale()
-        local parentScale = UIParent:GetEffectiveScale()
         local x = mainFrame:GetLeft()
         local y = mainFrame:GetTop()
         if not x or not y then return end
-        x = x * frameScale / parentScale
-        y = y * frameScale / parentScale
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
     end
@@ -1584,7 +1723,7 @@ function CreateOptionsPanel()
     mainFrame:SetScript("OnDragStart", function(self) PinToTopLeft(); self:StartMoving() end)
     mainFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing(); PinToTopLeft() end)
     mainFrame:SetResizable(true)
-    mainFrame:SetResizeBounds(500, 400, 1400, 900)
+    mainFrame:SetResizeBounds(560, 400, 1400, 900)
     mainFrame:EnableMouseWheel(true)
     mainFrame:SetScript("OnMouseWheel", function(self, delta)
         if not IsControlKeyDown() then return end
@@ -1671,8 +1810,6 @@ function CreateOptionsPanel()
     for i, name in ipairs(tabNames) do
         local btn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
         btn:SetSize(tabWidths[i] or 76, 22); btn:SetText(name)
-        if i == 1 then btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 210, -38)
-        else            btn:SetPoint("LEFT", sharedTabBtns[i-1], "RIGHT", 2, 0) end
         sharedTabBtns[i] = btn
         if i == 6 then classResourcesBtn = btn end
         btn:SetScript("OnClick", function()
@@ -1867,13 +2004,77 @@ function CreateOptionsPanel()
     -- ── "Profiles" top-level button beside the unit dropdown ────────────────
     local profilesTabBtn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
     profilesTabBtn:SetSize(76, 22)
-    profilesTabBtn:SetPoint("LEFT", sharedTabBtns[#sharedTabBtns], "RIGHT", 10, 0)
     profilesTabBtn:SetText("Profiles")
 
     profilesTabBtn:SetScript("OnClick", function()
         for _, p in pairs(unitPanels) do p:Hide() end
         profilesPanel:Show()
     end)
+
+    -- Ordered list of all tab buttons for reflow (Profiles last)
+    local allTabBtns = {}
+    for _, b in ipairs(sharedTabBtns) do allTabBtns[#allTabBtns + 1] = b end
+    allTabBtns[#allTabBtns + 1] = profilesTabBtn
+
+    -- TAB_START_X: x offset where the first tab button begins (after "Unit:" + dropdown)
+    local TAB_START_X = 210
+    local BTN_H       = 22
+    local BTN_GAP     = 2
+    local ROW1_Y      = -38   -- y for first row (relative to mainFrame TOPLEFT)
+    local ROW2_Y      = ROW1_Y - (BTN_H + 4)  -- y for second row when wrapping
+
+    -- These are repositioned by ReflowTabButtons; forward-declare so the divider
+    -- and panels can reference them after reflow.
+    local function SetContentOffsets(twoRows)
+        local divY     = twoRows and (ROW2_Y - BTN_H - 2) or -64
+        local panelY   = divY - 4
+        divider:ClearAllPoints()
+        divider:SetPoint("TOPLEFT",  mainFrame, "TOPLEFT",  16, divY)
+        divider:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -16, divY)
+        for _, c in pairs(unitPanels) do
+            c:ClearAllPoints()
+            c:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, panelY)
+            c:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
+        end
+        profilesPanel:ClearAllPoints()
+        profilesPanel:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, panelY)
+        profilesPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
+    end
+
+    local function ReflowTabButtons()
+        local frameW = mainFrame:GetWidth()
+        if not frameW or frameW == 0 then return end
+
+        -- Place buttons left-to-right, wrapping to a new row when they would overflow.
+        -- Profiles gets an extra 8px left gap to visually separate it from the tab buttons.
+        local RIGHT_MARGIN = 16
+        local rowYs = {ROW1_Y, ROW2_Y}
+        local x   = TAB_START_X
+        local row = 1
+
+        for i, btn in ipairs(allTabBtns) do
+            local isProfiles = (btn == profilesTabBtn)
+            local extraGap   = isProfiles and 8 or 0
+            local btnW       = btn:GetWidth()
+
+            -- Wrap to next row if this button (plus its gap) would exceed the right edge
+            if row < #rowYs and (x + extraGap + btnW > frameW - RIGHT_MARGIN) then
+                row = row + 1
+                x   = TAB_START_X
+                extraGap = 0  -- no extra gap when starting a new row
+            end
+
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", x + extraGap, rowYs[row])
+            x = x + extraGap + btnW + BTN_GAP
+        end
+
+        SetContentOffsets(row > 1)
+    end
+
+    -- Initial layout and re-layout on resize
+    ReflowTabButtons()
+    mainFrame:SetScript("OnSizeChanged", function() ReflowTabButtons() end)
 
     -- Resize grip (bottom-right corner)
     local sizeGrip = CreateFrame("Button", nil, mainFrame)
@@ -1884,7 +2085,7 @@ function CreateOptionsPanel()
     sizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
     sizeGrip:RegisterForDrag("LeftButton")
     sizeGrip:SetScript("OnDragStart", function() PinToTopLeft(); mainFrame:StartSizing("BOTTOMRIGHT") end)
-    sizeGrip:SetScript("OnDragStop",  function() mainFrame:StopMovingOrSizing() end)
+    sizeGrip:SetScript("OnDragStop",  function() mainFrame:StopMovingOrSizing(); PinToTopLeft() end)
     sizeGrip:SetFrameLevel(sizeGrip:GetFrameLevel() + 10)
 end
 
