@@ -1708,8 +1708,20 @@ function CreateOptionsPanel()
     mainFrame:SetFrameStrata("HIGH"); mainFrame:SetMovable(true); mainFrame:EnableMouse(true)
     mainFrame:RegisterForDrag("LeftButton")
 
-    -- Convert frame anchor to absolute TOPLEFT so StartSizing/StartMoving don't jump.
-    -- GetLeft()/GetTop() are in the frame's effective-scale space; convert to UIParent space.
+    -- Pin the frame to an absolute TOPLEFT anchor before StartMoving/StartSizing.
+    --
+    -- WHY THIS EXISTS:
+    --   WoW's StartMoving() and StartSizing() require the frame to be anchored by a
+    --   single TOPLEFT point. Any other anchor (e.g. CENTER) causes the frame to jump
+    --   the moment the mouse moves, because WoW recalculates the position from the
+    --   wrong reference point.
+    --
+    -- WHY THE SCALE CONVERSION IS REQUIRED (do not remove):
+    --   GetLeft()/GetTop() return coordinates in the frame's *own* effective-scale
+    --   space. SetPoint with UIParent as the reference expects coordinates in
+    --   *UIParent's* effective-scale space. Without the conversion the frame teleports
+    --   by the difference between the two scales (usually small but visible).
+    --   Formula: uiParentCoord = frameCoord * (frame.effectiveScale / UIParent.effectiveScale)
     local function PinToTopLeft()
         local x = mainFrame:GetLeft()
         local y = mainFrame:GetTop()
