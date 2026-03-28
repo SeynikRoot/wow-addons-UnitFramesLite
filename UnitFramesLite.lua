@@ -885,7 +885,7 @@ function UnitFramesLite_UpdateFrame(unit)
     local br, bg, bb, ba = unpack(db.barBG)
     frame.bg:SetColorTexture(br, bg, bb, ba)
 
-    local barH = (db.hpBarHeight and db.hpBarHeight > 0) and db.hpBarHeight or h
+    local barH = (db.hpBarHeight and db.hpBarHeight > 0) and math.min(db.hpBarHeight, h) or h
 
     if db.sphereMode then
         -- ── Orb / sphere mode ─────────────────────────────────────────────
@@ -2177,12 +2177,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Profiles table: { active="Default", profiles={ Default={player={...}, target={...}, ...} } }
         UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
         -- Migrate: showOrbPower (bool) → orbPowerMode (string)
+        -- Migrate: showPowerBar (bool) → orbPowerMode (string)
         -- Runs before CopyDefaults. Also fixes saves where orbPowerMode was wrongly
         -- set to "None" by a previous version that had it in defaults.
         for _, unit in ipairs({"player", "target", "focus", "pet"}) do
             local udb = UnitFramesLiteDB[unit]
-            if udb and udb.showOrbPower == true and (udb.orbPowerMode == nil or udb.orbPowerMode == "None") then
-                udb.orbPowerMode = "Ring"
+            if udb then
+                if udb.showOrbPower == true and (udb.orbPowerMode == nil or udb.orbPowerMode == "None") then
+                    udb.orbPowerMode = "Ring"
+                elseif udb.showPowerBar == true and udb.orbPowerMode == nil then
+                    udb.orbPowerMode = "Bar"
+                end
             end
         end
         for unit, def in pairs(defaults) do
