@@ -162,18 +162,17 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
                 info.func    = function()
                     setValue(name)
                     UIDropDownMenu_SetSelectedName(dd, name)
+                    UIDropDownMenu_SetText(dd, name)
                 end
                 UIDropDownMenu_AddButton(info, level)
             end
         end)
         local initVal = getValue()
         UIDropDownMenu_SetSelectedName(dd, initVal)
-        -- Belt-and-suspenders: also set the button text directly so it shows correctly
-        -- before the first OnShow/refresh fires (avoids "Custom" placeholder).
-        if dd.Text then dd.Text:SetText(initVal) end
+        UIDropDownMenu_SetText(dd, initVal)
         function dd:SetSelection(name)
             UIDropDownMenu_SetSelectedName(self, name)
-            if self.Text then self.Text:SetText(name) end
+            UIDropDownMenu_SetText(self, name)
         end
         function dd:SetOptions(newItems)
             currentItems = newItems
@@ -186,7 +185,7 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
                     info.func    = function()
                         setValue(name)
                         UIDropDownMenu_SetSelectedName(dd, name)
-                        if dd.Text then dd.Text:SetText(name) end
+                        UIDropDownMenu_SetText(dd, name)
                     end
                     UIDropDownMenu_AddButton(info, level)
                 end
@@ -194,7 +193,7 @@ local function CreateDropdown(parent, x, y, width, items, getValue, setValue)
             -- Force the button text to show the current value immediately
             local curVal = getValue()
             UIDropDownMenu_SetSelectedName(self, curVal)
-            if self.Text then self.Text:SetText(curVal) end
+            UIDropDownMenu_SetText(self, curVal)
         end
         return dd
     end
@@ -1395,8 +1394,25 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         end
     end
 
-    BuildSection("buff",   false, 8,         -8)
+    BuildSection("buff",   false, 8,             -8)
     BuildSection("debuff", true,  8 + GRP_W + 8, -8)
+
+    -- ── Tooltip section (below both columns) ────────────────────────────────
+    local ttY   = -(8 + GRP_H_DEB + 8)
+    local ttGrp = CreateGroupBox(content, "Tooltips", 8, ttY, GRP_W * 2 + 8, 72)
+    local ttgx  = 8
+
+    local tooltipCheck = CreateCheckbox(ttGrp, "Show aura tooltips on mouseover", ttgx, -20,
+        function() return getDB().auraTooltipEnabled ~= false end,
+        function(v) getDB().auraTooltipEnabled = v end)
+
+    local _,_,rTTDelay = CreateNudgeSlider(ttGrp, "Tooltip delay (s)", 0, 2, 0.1,
+        ttgx + 220, -20, 120, "auraTooltipDelay", getDB, function() end)
+
+    refreshFns[#refreshFns+1] = function()
+        tooltipCheck:Refresh()
+        rTTDelay()
+    end
 
     panel.refreshBuffs = function()
         for _, fn in ipairs(refreshFns) do fn() end
@@ -1449,17 +1465,13 @@ local function BuildConditionsContent(content, unit, getDB, panel)
         function() return getDB().alphaAffects or "Everything" end,
         function(v) getDB().alphaAffects = v; UnitFramesLite_UpdateAlpha(unit) end)
 
-    local outLabel = (unit == "player") and "Alpha out of combat (& target)" or "Alpha out of combat"
-    local function onOutCombatChange()
-        UnitFramesLite_UpdateAlpha(unit)
-        if unit == "player" then UnitFramesLite_UpdateAlpha("target") end
-    end
-    local _,_,rCombat    = CreateNudgeSlider(alphaBox, "Alpha in combat",  0,1,0.01, gx,-100,140,"alphaCombat",    getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
-    local _,_,rOutCombat = CreateNudgeSlider(alphaBox, outLabel,           0,1,0.01, gx,-142,140,"alphaOutCombat", getDB, onOutCombatChange)
+    local _,_,rCombat    = CreateNudgeSlider(alphaBox, "Alpha in combat",    0,1,0.01, gx,-100,140,"alphaCombat",    getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
+    local _,_,rOutCombat = CreateNudgeSlider(alphaBox, "Alpha out of combat", 0,1,0.01, gx,-142,140,"alphaOutCombat", getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
 
-    panel.syncAlphaCheck = CreateCheckbox(alphaBox, "Sync in/out alpha", gx, -196,
+    panel.syncAlphaCheck = CreateCheckbox(alphaBox, "Sync alpha with Player", gx, -196,
         function() return getDB().syncAlpha or false end,
         function(v) getDB().syncAlpha = v; UnitFramesLite_UpdateAlpha(unit) end)
+    panel.syncAlphaCheck:SetShown(unit ~= "player")
 
     -- ── Fade Conditions group (right bottom) ─────────────────────────────────
     local fadeBox = CreateGroupBox(content, "Fade Conditions", 346, -246, 310, 100)
@@ -1641,6 +1653,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "debuffIconSize","debuffPerRow","debuffMaxShown","debuffGrowX","debuffGrowY",
           "debuffXOffset","debuffYOffset","debuffAnchorToFrame","debuffShowDebuffs",
           "debuffPlayerOnly","debuffCurableOnly",
+          "auraTooltipEnabled","auraTooltipDelay",
         },
         -- 6: Conditions
         { "loadMounted","loadInVehicle","loadResting","loadStealthed","loadInCombat",
@@ -1824,7 +1837,7 @@ function CreateOptionsPanel()
         -- fall back to tab 1 if it was active
         local isPlayer = (unit == "player")
         if classResourcesBtn then classResourcesBtn:SetShown(isPlayer) end
-        if not isPlayer and tabSync.current == 6 then
+        if not isPlayer and tabSync.current == 4 then
             tabSync.current = 1
         end
         if unitPanels[unit] then

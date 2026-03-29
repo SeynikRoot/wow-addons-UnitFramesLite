@@ -84,6 +84,8 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         debuffShowDebuffs = true,
         debuffPlayerOnly  = false,
         debuffCurableOnly = false,
+        auraTooltipEnabled = true,
+        auraTooltipDelay   = 0,
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -184,6 +186,7 @@ defaults.target.debuffXOffset = 45
 defaults.target.debuffGrowX = "RIGHT"
 
 local frames = {}
+local auraFrames = {}  -- forward-declared; populated by GetAuraData below
 
 local function CopyDefaults(src, dest)
     if type(dest) ~= "table" then dest = {} end
@@ -234,6 +237,17 @@ function UnitFramesLite_UpdateVisibility(unit)
     frame:SetShown(CheckLoadConditions(unit))
 end
 
+-- Returns false when the unit has no meaningful power resource to display.
+-- WoW 12.0 secret numbers make UnitPowerMax unsafe to compare in Lua.
+-- We instead check whether the unit is a player or player-controlled unit
+-- (pets, player-controlled vehicles) — only these reliably have a power bar.
+-- Non-player enemies and dummies are excluded even if WoW assigns them a
+-- secret non-zero mana value.
+local function UnitHasPower(unit)
+    if not UnitExists(unit) then return false end
+    return UnitIsPlayer(unit) or UnitPlayerControlled(unit) or false
+end
+
 -- Alpha ----------------------------------------------------------------------
 
 function UnitFramesLite_UpdateAlpha(unit)
@@ -241,15 +255,11 @@ function UnitFramesLite_UpdateAlpha(unit)
     if not frame then return end
     local db = GetDB(unit)
 
-    local alphaDB = (unit == "target" and db.syncAlpha) and GetDB("player") or db
+    local alphaDB  = (db.syncAlpha) and GetDB("player") or db
     local inCombat = UnitAffectingCombat("player")
-    -- Out-of-combat alpha for the target is always driven by the player's setting
-    local outCombatAlpha = (unit == "target")
-        and (GetDB("player").alphaOutCombat or 1)
-        or  (alphaDB.alphaOutCombat or 1)
-    local alpha = inCombat and (alphaDB.alphaCombat or 1) or outCombatAlpha
+    local alpha    = inCombat and (alphaDB.alphaCombat or 1) or (alphaDB.alphaOutCombat or 1)
 
-    if unit == "player" and db.fadeNoTarget and not UnitExists("target") then
+    if unit == "player" and db.fadeNoTarget and not UnitExists("target") and not inCombat then
         alpha = db.fadeNoTargetAlpha or 0.4
     end
 
@@ -279,7 +289,8 @@ function UnitFramesLite_UpdateAlpha(unit)
     end
 
     local showPowerOOC = db.orbPowerShowOutOfCombat ~= false
-    local powerAlpha   = (inCombat or showPowerOOC) and alpha or 0
+    local hasPower     = UnitHasPower(unit)
+    local powerAlpha   = hasPower and ((inCombat or showPowerOOC) and alpha or 0) or 0
     if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(powerAlpha) end
     if frame.orbPowerBar    then frame.orbPowerBar:SetAlpha(powerAlpha)    end
     if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
@@ -293,6 +304,22 @@ function UnitFramesLite_UpdateAlpha(unit)
     if frame.hpText      then frame.hpText:SetAlpha(textAlpha)      end
     if frame.hpPctText   then frame.hpPctText:SetAlpha(textAlpha)   end
     if frame.levelText   then frame.levelText:SetAlpha(textAlpha)   end
+
+    -- Aura containers are parented to UIParent so must be alpha'd explicitly
+    local auraData = auraFrames[unit]
+    if auraData then
+        if auraData.buff   and auraData.buff.container   then auraData.buff.container:SetAlpha(alpha)   end
+        if auraData.debuff and auraData.debuff.container then auraData.debuff.container:SetAlpha(alpha) end
+    end
+
+    -- Propagate to any other units that are syncing their alpha from this unit
+    if unit == "player" then
+        for otherUnit, _ in pairs(frames) do
+            if otherUnit ~= "player" and GetDB(otherUnit).syncAlpha then
+                UnitFramesLite_UpdateAlpha(otherUnit)
+            end
+        end
+    end
 end
 
 -- Health text ----------------------------------------------------------------
@@ -1190,7 +1217,12 @@ function UnitFramesLite_UpdateFrame(unit)
                 local fc = db.orbPowerBarUseTypeColor and GetPowerColor(unit)
                            or db.orbPowerBarColor or {0, 0.5, 1, 1}
                 frame.power:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
-                frame.power:Show()
+                if UnitHasPower(unit) then
+                    frame.power:Show()
+                else
+                    frame.hp:SetHeight(barH)
+                    frame.power:Hide()
+                end
             else
                 frame.hp:SetHeight(barH)
                 frame.power:Hide()
@@ -1759,6 +1791,7 @@ local function SetupFrame(displayFrame, unit)
     listener:RegisterUnitEvent("UNIT_DISPLAYPOWER",    unit)
     listener:RegisterUnitEvent("UNIT_PORTRAIT_UPDATE", unit)
     listener:RegisterUnitEvent("UNIT_MODEL_CHANGED",   unit)
+    listener:RegisterUnitEvent("UNIT_AURA",            unit)
     if unit == "target" then listener:RegisterEvent("PLAYER_TARGET_CHANGED") end
     if unit == "focus"  then listener:RegisterEvent("PLAYER_FOCUS_CHANGED")  end
     if unit == "pet"    then listener:RegisterEvent("UNIT_PET")               end
@@ -1915,7 +1948,10 @@ local function SetupFrame(displayFrame, unit)
         end
     end
 
-    listener:SetScript("OnEvent", function() Update() end)
+    listener:SetScript("OnEvent", function(_, evt)
+        Update()
+        if evt == "UNIT_AURA" then UnitFramesLite_UpdateAuras(unit) end
+    end)
     displayFrame.OnUFLUpdate = Update
 
     -- Orb HP% text: poll UnitHealthPercent on a throttle so the text stays in sync
@@ -1940,7 +1976,7 @@ end
 -- Layout and filtering are recomputed on every UNIT_AURA event.
 
 -- auraFrames[unit] = { buff = {container, pool={}}, debuff = {container, pool={}} }
-local auraFrames = {}
+-- (auraFrames is forward-declared near the top of the file)
 
 local DISPEL_TYPES = { Magic=true, Curse=true, Disease=true, Poison=true }
 
@@ -1980,6 +2016,33 @@ local function GetOrCreateIcon(pool, idx, container)
     debuffBorder:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
     debuffBorder:SetAllPoints(); debuffBorder:Hide()
     btn.debuffBorder = debuffBorder
+
+    -- Tooltip: btn.auraUnit and btn.auraIndex are set by LayoutAuraStrip before Show()
+    local tooltipTimer = nil
+    btn:SetScript("OnEnter", function(self)
+        local db = self.auraUnit and GetDB(self.auraUnit)
+        if not db or not db.auraTooltipEnabled then return end
+        local delay = db.auraTooltipDelay or 0
+        local function showTip()
+            tooltipTimer = nil
+            if not self:IsMouseOver() then return end
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+            if self.auraUnit and self.auraIndex and self.auraFilter then
+                GameTooltip:SetUnitAura(self.auraUnit, self.auraIndex, self.auraFilter)
+            end
+            GameTooltip:Show()
+        end
+        if delay <= 0 then
+            showTip()
+        else
+            tooltipTimer = C_Timer.After(delay, showTip)
+        end
+    end)
+    btn:SetScript("OnLeave", function()
+        tooltipTimer = nil
+        GameTooltip:Hide()
+    end)
+
     pool[idx] = btn
     return btn
 end
@@ -2010,7 +2073,8 @@ end
 
 -- Lay out one aura strip (buffs or debuffs) given collected aura list + config.
 local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShown,
-                                growX, growY, xOffset, yOffset, anchorToFrame, extraVertPad)
+                                growX, growY, xOffset, yOffset, anchorToFrame, extraVertPad,
+                                unit, auraFilter)
     local container = slot.container
     local pool      = slot.pool
     local gap       = 2
@@ -2093,17 +2157,29 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
         btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + col * xStep, startY + row * yStep)
 
+        btn.auraUnit   = unit
+        btn.auraIndex  = i
+        btn.auraFilter = auraFilter
         btn.icon:SetTexture(aura.icon)
         -- aura.applications and aura.duration can be secret numbers in 12.0 — comparisons must use pcall.
         local showStack = false
         pcall(function() showStack = aura.applications and aura.applications > 1 end)
         btn.stack:SetText(showStack and aura.applications or "")
-        if aura.duration and aura.duration > 0 and aura.expirationTime then
-            btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
-        else
-            btn.cd:SetCooldown(0, 0)
+        local cdSet = false
+        if aura.duration and aura.expirationTime then
+            pcall(function()
+                if aura.duration > 0 then
+                    btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
+                    cdSet = true
+                end
+            end)
         end
-        if aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] then
+        if not cdSet then btn.cd:SetCooldown(0, 0) end
+        local showBorder = false
+        pcall(function()
+            showBorder = aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] ~= nil
+        end)
+        if showBorder then
             local dc = DEBUFF_COLORS[aura.dispelName]
             btn.debuffBorder:SetVertexColor(dc[1], dc[2], dc[3])
             btn.debuffBorder:Show()
@@ -2149,7 +2225,9 @@ function UnitFramesLite_UpdateAuras(unit)
         while true do
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL")
             if not aura then break end
-            if db.debuffPlayerOnly and not aura.isFromPlayerOrPlayerPet then
+            local fromPlayer = false
+            pcall(function() fromPlayer = aura.isFromPlayerOrPlayerPet == true end)
+            if db.debuffPlayerOnly and not fromPlayer then
                 -- skip
             elseif db.debuffCurableOnly and not (aura.dispelName and DISPEL_TYPES[aura.dispelName]) then
                 -- skip
@@ -2171,7 +2249,7 @@ function UnitFramesLite_UpdateAuras(unit)
             db.buffXOffset   or 0,
             db.buffYOffset   or 0,
             db.buffAnchorToFrame ~= false,
-            0)
+            0, unit, "HELPFUL")
     else
         data.buff.container:Hide()
         for i = 1, #data.buff.pool do data.buff.pool[i]:Hide() end
@@ -2188,7 +2266,7 @@ function UnitFramesLite_UpdateAuras(unit)
             db.debuffXOffset   or 0,
             db.debuffYOffset   or 0,
             db.debuffAnchorToFrame ~= false,
-            0)
+            0, unit, "HARMFUL")
     else
         data.debuff.container:Hide()
         for i = 1, #data.debuff.pool do data.debuff.pool[i]:Hide() end
@@ -2292,13 +2370,24 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Initialise aura containers for all units
         for unit in pairs(defaults) do GetAuraContainer(unit) end
         UnitFramesLite_UpdateAllAuras()
+        for unit in pairs(defaults) do UnitFramesLite_UpdateAlpha(unit) end
     elseif event == "UNIT_AURA" then
         UnitFramesLite_UpdateAuras(arg1)
     elseif event == "PLAYER_TARGET_CHANGED" then
         UnitFramesLite_UpdateVisibility("target")
+        UnitFramesLite_UpdateFrame("target")
         UnitFramesLite_UpdateAlpha("player")
         UnitFramesLite_UpdateAlpha("target")
         UnitFramesLite_UpdateResourceVisibility()
+        -- Clear target auras immediately so stale icons from the previous target
+        -- don't flash before UNIT_AURA fires with the new target's data.
+        local td = auraFrames["target"]
+        if td then
+            td.buff.container:Hide()
+            td.debuff.container:Hide()
+            for _, btn in ipairs(td.buff.pool)   do btn:Hide() end
+            for _, btn in ipairs(td.debuff.pool) do btn:Hide() end
+        end
         UnitFramesLite_UpdateAuras("target")
     elseif event == "PLAYER_FOCUS_CHANGED" then
         UnitFramesLite_UpdateVisibility("focus")
