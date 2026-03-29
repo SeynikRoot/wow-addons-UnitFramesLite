@@ -936,7 +936,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
     -- ── Colour & Texture sub-group ────────────────────────────────────────────
     -- Stacked layout: BG colour, solid/gradient swatches, then texture below
-    local colGroup = CreateGroupBox(barSection, "Colour & Texture", bx, -16, 248, 230, "GameFontNormal")
+    local colGroup = CreateGroupBox(barSection, "Colour & Texture", bx, -16, 248, 212, "GameFontNormal")
 
     CreateLabel(colGroup, "Background", bx, -20)
     local bgBtn = CreateColorSwatch(colGroup, bx+80, -18, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
@@ -952,8 +952,8 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.swatchButtons[#panel.swatchButtons+1] = gradSBtn
     local gradEBtn  = CreateColorSwatch(colGroup, bx, -104, "Gradient End",  getDB, "gradientEnd",   function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = gradEBtn
-    local gradDirLabel = CreateLabel(colGroup, "Direction", bx, -132)
-    panel.dirDD = CreateDropdown(colGroup, bx, -150, 120, dirOptions,
+    local gradDirLabel = CreateLabel(colGroup, "Direction", bx, -134)
+    panel.dirDD = CreateDropdown(colGroup, bx + 72, -132, 100, dirOptions,
         function() return getDB().gradientDir or "HORIZONTAL" end,
         function(v) getDB().gradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
@@ -961,9 +961,9 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.gradientGroup = {gradSBtn, gradEBtn, gradDirLabel, panel.dirDD}
 
     -- Texture below colour controls (hidden when solid colour)
-    local texLabel = CreateLabel(colGroup, "Statusbar Texture", bx, -182)
+    local texLabel = CreateLabel(colGroup, "Statusbar Texture", bx, -164)
     panel.texLabel = texLabel
-    panel.texDD = CreateDropdown(colGroup, bx, -200, 200, GetTextureList(),
+    panel.texDD = CreateDropdown(colGroup, bx, -182, 200, GetTextureList(),
         function() return getDB().statusbarTexture or "Blizzard" end,
         function(v) getDB().statusbarTexture = v; UnitFramesLite_UpdateFrame(unit) end)
 
@@ -977,8 +977,8 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     end
 
     -- ── General bar controls (below colour group) ─────────────────────────────
-    -- colGroup top at -16, height 230 → bottom -246, +10 gap → genY=-256
-    local genY = -256
+    -- colGroup top at -16, height 212 → bottom -228, +10 gap → genY=-238
+    local genY = -238
 
     s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full)",0,120,1, bx,genY,bSliderW,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
@@ -1020,20 +1020,20 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     local orx = 310  -- right column x
 
     -- ── Orb Size & Direction (left column, group box) ─────────────────────────
-    local orbSizeGroup = CreateGroupBox(orbSection, "Orb Size & Direction", ox, 0, 290, 152, "GameFontNormal")
+    local orbSizeGroup = CreateGroupBox(orbSection, "Orb Size & Direction", ox, 0, 290, 120, "GameFontNormal")
     s,b,r = CreateNudgeSlider(orbSizeGroup,"Orb Diameter (px)",20,300,1, gx,-28,100,"sphereSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.sphereSizeSlider,panel.sphereSizeBox,panel.sphereSizeRefresh = s,b,r
-    CreateLabel(orbSizeGroup, "Health Fill Direction", gx, -66)
-    panel.sphereFillDirDD = CreateDropdown(orbSizeGroup, gx, -84, 110, fillDirOptions,
+    CreateLabel(orbSizeGroup, "Health Fill Dir", gx, -68)
+    panel.sphereFillDirDD = CreateDropdown(orbSizeGroup, gx + 100, -66, 110, fillDirOptions,
         function() return getDB().sphereFillDir or "VERTICAL" end,
         function(v) getDB().sphereFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(orbSizeGroup, "Gradient Direction", gx, -110)
-    panel.orbGradDirDD = CreateDropdown(orbSizeGroup, gx, -126, 110, {"VERTICAL","HORIZONTAL","CENTRE"},
+    CreateLabel(orbSizeGroup, "Gradient Dir", gx, -102)
+    panel.orbGradDirDD = CreateDropdown(orbSizeGroup, gx + 100, -100, 110, {"VERTICAL","HORIZONTAL","CENTRE"},
         function() return getDB().orbGradientDir or "VERTICAL" end,
         function(v) getDB().orbGradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     -- ── Orb Colour (left column, group box) ──────────────────────────────────
-    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -162, 290, 100, "GameFontNormal")
+    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -128, 290, 100, "GameFontNormal")
     panel.orbSolidCheck = CreateCheckbox(orbColGroup, "Use Solid Colour", gx, -20,
         function() return getDB().orbUseSolidColor or false end,
         function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
@@ -1052,7 +1052,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     end
 
     -- ── Orb Background (left column, group box) ───────────────────────────────
-    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -272, 290, 96, "GameFontNormal")
+    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -236, 290, 96, "GameFontNormal")
     local orbBgBtn = CreateColorSwatch(orbBgGroup, gx, -20, "Colour", getDB, "orbBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbBgBtn
     local function orbBgAlphaDB()
@@ -1067,11 +1067,11 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
     -- ── Power group (right column, shared between Bar and Orb modes) ────────────
     -- Anchored to content so it can be shown in both bar and orb modes.
-    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 320, "GameFontNormal")
+    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 354, "GameFontNormal")
     powerGroup:Hide()
     panel.orbPowerGroup = powerGroup   -- kept for UpdateAppearanceMode compat
 
-    CreateLabel(powerGroup, "Type", gx, -22)
+    CreateLabel(powerGroup, "Type", gx, -24)
 
     local ringDetailsFrame = CreateFrame("Frame", nil, powerGroup)
     local barDetailsFrame  = CreateFrame("Frame", nil, powerGroup)
@@ -1080,8 +1080,12 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         local m      = getDB().orbPowerMode or "None"
         local isOrb  = getDB().sphereMode
         local attach = getDB().powerBarAttach ~= false
+        local hasMode = (m ~= "None")
         ringDetailsFrame:SetShown(m == "Ring")
         barDetailsFrame:SetShown(m == "Bar")
+        if panel.orbPowerShowOutOfCombatCheck then
+            panel.orbPowerShowOutOfCombatCheck:SetShown(hasMode)
+        end
         if m == "Bar" then
             -- Attach checkbox: only in bar-frame mode
             panel.powerBarAttachCheck:SetShown(not isOrb)
@@ -1100,7 +1104,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.UpdatePowerBarAttach = function(self) UpdatePowerMode() end
 
     -- Power type dropdown — options differ by mode; rebuilt in UpdateAppearanceMode
-    panel.powerTypeDD = CreateDropdown(powerGroup, gx + 52, -20, 90, {"None","Ring","Bar"},
+    panel.powerTypeDD = CreateDropdown(powerGroup, gx + 44, -22, 90, {"None","Ring","Bar"},
         function() return getDB().orbPowerMode or "None" end,
         function(v)
             getDB().orbPowerMode = v
@@ -1110,8 +1114,16 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
             UnitFramesLite_UpdateFrame(unit)
         end)
 
+    -- "Show out of combat" checkbox — shown whenever mode is not None
+    panel.orbPowerShowOutOfCombatCheck = CreateCheckbox(powerGroup, "Show out of combat", gx, -46,
+        function() return getDB().orbPowerShowOutOfCombat ~= false end,
+        function(v)
+            getDB().orbPowerShowOutOfCombat = v
+            UnitFramesLite_UpdateAlpha(unit)
+        end)
+
     -- Ring details sub-frame
-    ringDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -50)
+    ringDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -76)
     ringDetailsFrame:SetSize(260, 150)
     local s3,b3,r3 = CreateNudgeSlider(ringDetailsFrame,"Thickness (px)",4,40,1, gx,-4,100,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s3,b3,r3
@@ -1141,8 +1153,8 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     --   y=-144: Y Offset
     --   y=-182: Fill Direction label + dropdown
     --   y=-210: FG/BG colour swatches
-    barDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -50)
-    barDetailsFrame:SetSize(260, 240)
+    barDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -76)
+    barDetailsFrame:SetSize(260, 248)
 
     -- Attach checkbox (bar-frame mode only, at top)
     local attachCheck = CreateCheckbox(barDetailsFrame, "Attach to health bar", gx, 0,
@@ -1168,21 +1180,33 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.orbPBarXSlider,panel.orbPBarXBox,panel.orbPBarXRefresh = s7,b7,r7
     local s8,b8,r8 = CreateNudgeSlider(barDetailsFrame,"Y Offset",-500,500,1, gx,-144,100,"orbPowerBarY",     getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbPBarYSlider,panel.orbPBarYBox,panel.orbPBarYRefresh = s8,b8,r8
-    CreateLabel(barDetailsFrame, "Fill Direction", gx, -182)
-    panel.orbPBarFillDirDD = CreateDropdown(barDetailsFrame, gx, -200, 120, {"HORIZONTAL","VERTICAL"},
+    CreateLabel(barDetailsFrame, "Fill Direction", gx, -184)
+    panel.orbPBarFillDirDD = CreateDropdown(barDetailsFrame, gx + 90, -182, 100, {"HORIZONTAL","VERTICAL"},
         function() return getDB().orbPowerBarFillDir or "HORIZONTAL" end,
         function(v) getDB().orbPowerBarFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
-    local orbPBarFgBtn = CreateColorSwatch(barDetailsFrame, gx,     -230, "Foreground", getDB, "orbPowerBarColor",   function() UnitFramesLite_UpdateFrame(unit) end)
-    local orbPBarBgBtn = CreateColorSwatch(barDetailsFrame, gx+130, -230, "Background", getDB, "orbPowerBarBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbPBarTypeColorCheck = CreateCheckbox(barDetailsFrame, "Use power type colour", gx, -210,
+        function() return getDB().orbPowerBarUseTypeColor or false end,
+        function(v)
+            getDB().orbPowerBarUseTypeColor = v
+            panel:UpdateBarColourMode()
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+    local orbPBarFgBtn = CreateColorSwatch(barDetailsFrame, gx,     -238, "Foreground", getDB, "orbPowerBarColor",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbPBarBgBtn = CreateColorSwatch(barDetailsFrame, gx+130, -238, "Background", getDB, "orbPowerBarBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbPBarFgBtn
     panel.swatchButtons[#panel.swatchButtons+1] = orbPBarBgBtn
+    panel.orbPBarFgBtn = orbPBarFgBtn
+    panel.UpdateBarColourMode = function(self)
+        orbPBarFgBtn:SetShown(getDB().orbPowerBarUseTypeColor ~= true)
+    end
 
     -- Init visibility
     UpdatePowerMode()
+    if panel.UpdateBarColourMode then panel:UpdateBarColourMode() end
     panel.showOrbPowerCheck = { Refresh = function() end }
 
     -- ── Inner Border (right column below Power group, anchored to content) ────
-    local orbBorderGroup = CreateGroupBox(content, "Inner Border", rx, -396, 268, 120, "GameFontNormal")
+    local orbBorderGroup = CreateGroupBox(content, "Inner Border", rx, -428, 268, 120, "GameFontNormal")
     orbBorderGroup:Hide()
     panel.orbBorderGroup = orbBorderGroup
     local orbBorderDetails  -- declared before checkbox so closure captures the upvalue
@@ -1237,7 +1261,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
             barSection:SetPoint("TOPLEFT", content, "TOPLEFT", x, -290)
             barSection:SetSize(290, 440)
             portGroup:ClearAllPoints()
-            portGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -396)
+            portGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -428)
             portGroup:SetSize(268, 180)
         end
         portGroup:SetShown(not isOrb)
@@ -1549,6 +1573,9 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
         if self.powerTypeDD         then self.powerTypeDD:SetSelection(db.orbPowerMode or "None") end
         if self.powerBarAttachCheck then self.powerBarAttachCheck:Refresh() end
+        if self.orbPowerShowOutOfCombatCheck then self.orbPowerShowOutOfCombatCheck:Refresh() end
+        if self.orbPBarTypeColorCheck then self.orbPBarTypeColorCheck:Refresh() end
+        if self.UpdateBarColourMode then self:UpdateBarColourMode() end
         if self.orbPBarWidthRefresh  then self.orbPBarWidthRefresh()  end
         if self.orbPBarHeightRefresh then self.orbPBarHeightRefresh() end
         if self.orbPBarXRefresh      then self.orbPBarXRefresh()      end
@@ -1588,7 +1615,8 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "orbPowerRingThickness","orbPowerRingCCW",
           "orbPowerRingBgColor","orbPowerRingColor","orbPowerRingUseTypeColor",
           "orbPowerBarWidth","orbPowerBarHeight","orbPowerBarX","orbPowerBarY",
-          "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor",
+          "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor","orbPowerBarUseTypeColor",
+          "orbPowerShowOutOfCombat",
         },
         -- 3: Text
         { "font","nameFont","hpTextFont","hpPctFont","levelFont",

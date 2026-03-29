@@ -139,6 +139,8 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         orbPowerBarFillDir       = "HORIZONTAL",
         orbPowerBarColor         = {0, 0.5, 1, 1},
         orbPowerBarBgColor       = {0, 0, 0, 0.9},
+        orbPowerBarUseTypeColor  = false,
+        orbPowerShowOutOfCombat  = true,
     }
 end
 
@@ -276,8 +278,10 @@ function UnitFramesLite_UpdateAlpha(unit)
         if frame.orbBg      then frame.orbBg:SetAlpha(alpha) end
     end
 
-    if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(alpha) end
-    if frame.orbPowerBar    then frame.orbPowerBar:SetAlpha(alpha)    end
+    local showPowerOOC = db.orbPowerShowOutOfCombat ~= false
+    local powerAlpha   = (inCombat or showPowerOOC) and alpha or 0
+    if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(powerAlpha) end
+    if frame.orbPowerBar    then frame.orbPowerBar:SetAlpha(powerAlpha)    end
     if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
     if frame.borderFrame     then frame.borderFrame:SetAlpha(alpha)     end
 
@@ -1073,7 +1077,8 @@ function UnitFramesLite_UpdateFrame(unit)
             pb:SetPoint("CENTER", frame, "CENTER", bx, by)
             pb:SetOrientation(fd)
             pb:SetReverseFill(db.reverseFill or false)
-            local fc = db.orbPowerBarColor   or {0, 0.5, 1, 1}
+            local fc = db.orbPowerBarUseTypeColor and GetPowerColor(unit)
+                       or db.orbPowerBarColor or {0, 0.5, 1, 1}
             pb:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
             if frame.orbPowerBarBg then
                 local bc = db.orbPowerBarBgColor or {0, 0, 0, 0.9}
@@ -1182,7 +1187,8 @@ function UnitFramesLite_UpdateFrame(unit)
                 local fd = db.orbPowerBarFillDir or "HORIZONTAL"
                 frame.power:SetOrientation(fd)
                 frame.power:SetReverseFill(db.reverseFill or false)
-                local fc = db.orbPowerBarColor or {0, 0.5, 1, 1}
+                local fc = db.orbPowerBarUseTypeColor and GetPowerColor(unit)
+                           or db.orbPowerBarColor or {0, 0.5, 1, 1}
                 frame.power:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
                 frame.power:Show()
             else
@@ -1608,7 +1614,8 @@ local function SetupFrame(displayFrame, unit)
 
     local textOverlay = CreateFrame("Frame", nil, displayFrame)
     textOverlay:SetAllPoints()
-    textOverlay:SetFrameStrata("HIGH")
+    textOverlay:SetFrameStrata("MEDIUM")
+    textOverlay:SetFrameLevel(parentLevel + 20)  -- above orb (+3), border (+5), orbPowerBar (+6)
     displayFrame.textOverlay = textOverlay
 
     displayFrame.nameText   = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1686,7 +1693,7 @@ local function SetupFrame(displayFrame, unit)
     -- ── Orb power bar (standalone bar, shown when orbPowerMode=="Bar") ─────
     local orbPowerBar = CreateFrame("StatusBar", nil, displayFrame)
     orbPowerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    orbPowerBar:SetFrameStrata("HIGH")
+    orbPowerBar:SetFrameStrata("MEDIUM")
     orbPowerBar:SetFrameLevel(parentLevel + 6)
     orbPowerBar:Hide()
     displayFrame.orbPowerBar = orbPowerBar
@@ -2087,7 +2094,10 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
         btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + col * xStep, startY + row * yStep)
 
         btn.icon:SetTexture(aura.icon)
-        btn.stack:SetText((aura.applications and aura.applications > 1) and aura.applications or "")
+        -- aura.applications and aura.duration can be secret numbers in 12.0 — comparisons must use pcall.
+        local showStack = false
+        pcall(function() showStack = aura.applications and aura.applications > 1 end)
+        btn.stack:SetText(showStack and aura.applications or "")
         if aura.duration and aura.duration > 0 and aura.expirationTime then
             btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
         else
