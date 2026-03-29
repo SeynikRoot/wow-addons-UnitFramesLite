@@ -1471,7 +1471,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
 
     -- Tab buttons are created externally (on the main frame header).
     -- We only create scroll frames + content here.
-    local tabNames        = {"General", "Text", "Appearance", "Conditions", "Auras", "Class Resources"}
+    local tabNames        = {"General", "Appearance", "Text", "Class Resources", "Auras", "Conditions"}
     local tabContents     = {}   -- scroll child frames (passed to Build* functions)
     local tabScrollFrames = {}   -- scroll frame wrappers (shown/hidden by SelectTab)
 
@@ -1498,11 +1498,11 @@ local function BuildUnitPanel(panel, unit, tabSync)
     panel.SelectTab = SelectTab
 
     BuildGeneralContent(tabContents[1],          unit, getDB, panel)
-    BuildTextContent(tabContents[2],             unit, getDB, panel)
-    BuildAppearanceContent(tabContents[3],       unit, getDB, panel)
-    BuildConditionsContent(tabContents[4],       unit, getDB, panel)
+    BuildAppearanceContent(tabContents[2],       unit, getDB, panel)
+    BuildTextContent(tabContents[3],             unit, getDB, panel)
+    BuildClassResourcesContent(tabContents[4],   unit, getDB, panel)
     BuildBuffsContent(tabContents[5],            unit, getDB, panel)
-    BuildClassResourcesContent(tabContents[6],   unit, getDB, panel)
+    BuildConditionsContent(tabContents[6],       unit, getDB, panel)
 
     panel.refresh = function(self)
         local db = getDB()
@@ -1577,16 +1577,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "hpBarHeight","barBorderEnabled","barBorderThickness","barBorderColor",
           "nameAlign","hpTextAlign","hpPctAlign","levelTextAlign",
         },
-        -- 2: Text
-        { "font","nameFont","hpTextFont","hpPctFont","levelFont",
-          "nameColor","hpTextColor","hpPctColor","levelColor","hpColor",
-          "nameTextFontSize","nameTextX","nameTextY",
-          "hpTextFontSize","hpTextX","hpTextY",
-          "hpPctFontSize","hpPctX","hpPctY",
-          "levelTextFontSize","levelTextX","levelTextY",
-          "hpContent","hpFormat","hpPctSymbol",
-        },
-        -- 3: Appearance
+        -- 2: Appearance
         { "useSolidColor","solidColor","gradientStart","gradientEnd","gradientDir",
           "statusbarTexture","barBG",
           "sphereMode","sphereSize","sphereFillDir","orbGradientDir",
@@ -1599,11 +1590,22 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "orbPowerBarWidth","orbPowerBarHeight","orbPowerBarX","orbPowerBarY",
           "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor",
         },
-        -- 4: Conditions
-        { "loadMounted","loadInVehicle","loadResting","loadStealthed","loadInCombat",
-          "loadOutOfCombat","loadSolo","loadInGroup","loadInInstance",
-          "syncAlpha","keepTextVisible","alphaAffects",
-          "alphaCombat","alphaOutCombat","fadeNoTarget","fadeNoTargetAlpha",
+        -- 3: Text
+        { "font","nameFont","hpTextFont","hpPctFont","levelFont",
+          "nameColor","hpTextColor","hpPctColor","levelColor","hpColor",
+          "nameTextFontSize","nameTextX","nameTextY",
+          "hpTextFontSize","hpTextX","hpTextY",
+          "hpPctFontSize","hpPctX","hpPctY",
+          "levelTextFontSize","levelTextX","levelTextY",
+          "hpContent","hpFormat","hpPctSymbol",
+        },
+        -- 4: Class Resources
+        { "showResources","resourceShowOutCombat","resourceShowWithTarget","resourceAlpha",
+          "resourceX","resourceY",
+          "resourcePipWidth","resourcePipHeight","resourcePipGap","resourcePipShape",
+          "resourcePipBorderEnabled","resourcePipBorderThickness","resourcePipBorderColor",
+          "resourceUseCustomColor","resourceColorMode","resourceUseSolidColor",
+          "resourceSolidColor","resourceGradStart","resourceGradEnd","resourceGradPerPip",
         },
         -- 5: Auras
         { "buffIconSize","buffPerRow","buffMaxShown","buffGrowX","buffGrowY",
@@ -1612,13 +1614,11 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "debuffXOffset","debuffYOffset","debuffAnchorToFrame","debuffShowDebuffs",
           "debuffPlayerOnly","debuffCurableOnly",
         },
-        -- 6: Class Resources
-        { "showResources","resourceShowOutCombat","resourceShowWithTarget","resourceAlpha",
-          "resourceX","resourceY",
-          "resourcePipWidth","resourcePipHeight","resourcePipGap","resourcePipShape",
-          "resourcePipBorderEnabled","resourcePipBorderThickness","resourcePipBorderColor",
-          "resourceUseCustomColor","resourceColorMode","resourceUseSolidColor",
-          "resourceSolidColor","resourceGradStart","resourceGradEnd","resourceGradPerPip",
+        -- 6: Conditions
+        { "loadMounted","loadInVehicle","loadResting","loadStealthed","loadInCombat",
+          "loadOutOfCombat","loadSolo","loadInGroup","loadInInstance",
+          "syncAlpha","keepTextVisible","alphaAffects",
+          "alphaCombat","alphaOutCombat","fadeNoTarget","fadeNoTargetAlpha",
         },
     }
 
@@ -1645,7 +1645,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
     resetTabBtn:SetText("Reset Tab")
     resetTabBtn:SetScript("OnClick", function()
         local tabIdx  = tabSync.current or 1
-        local tabName = ({"General","Text","Appearance","Conditions","Auras","Class Resources"})[tabIdx] or "Tab"
+        local tabName = ({"General","Appearance","Text","Class Resources","Auras","Conditions"})[tabIdx] or "Tab"
         local key = "UFL_RESET_TAB_" .. unit:upper() .. "_" .. tabIdx
         StaticPopupDialogs[key] = {
             text = "Reset " .. unit .. " " .. tabName .. " settings to defaults?",
@@ -1661,7 +1661,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
                 if tabIdx == 5 and UnitFramesLite_UpdateAuras then
                     UnitFramesLite_UpdateAuras(unit)
                 end
-                if tabIdx == 6 then
+                if tabIdx == 4 then
                     if UnitFramesLite_UpdateResourceLayout    then UnitFramesLite_UpdateResourceLayout()    end
                     if UnitFramesLite_UpdateResourceVisibility then UnitFramesLite_UpdateResourceVisibility() end
                 end
@@ -1731,6 +1731,7 @@ function CreateOptionsPanel()
         mainFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x * scale, y * scale)
     end
 
+    mainFrame:SetScript("OnShow",      function() PinToTopLeft() end)
     mainFrame:SetScript("OnDragStart", function(self) PinToTopLeft(); self:StartMoving() end)
     mainFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing(); PinToTopLeft() end)
     mainFrame:SetResizable(true)
@@ -1815,14 +1816,14 @@ function CreateOptionsPanel()
         end)
 
     -- Tab buttons on the main frame header, right of the unit dropdown
-    local tabNames = {"General", "Text", "Appearance", "Conditions", "Auras", "Class Resources"}
-    local tabWidths = {76, 60, 100, 90, 60, 110}
+    local tabNames = {"General", "Appearance", "Text", "Class Resources", "Auras", "Conditions"}
+    local tabWidths = {76, 100, 60, 110, 60, 90}
     local sharedTabBtns = {}
     for i, name in ipairs(tabNames) do
         local btn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
         btn:SetSize(tabWidths[i] or 76, 22); btn:SetText(name)
         sharedTabBtns[i] = btn
-        if i == 6 then classResourcesBtn = btn end
+        if i == 4 then classResourcesBtn = btn end
         btn:SetScript("OnClick", function()
             tabSync.current = i
             -- SelectUnit hides the profiles panel and shows the correct unit panel

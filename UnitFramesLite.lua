@@ -401,16 +401,21 @@ SetPC(Enum.PowerType.Fury,        0.79, 0.26, 0.99)
 SetPC(Enum.PowerType.Pain,        1.00, 0.61, 0.00)
 SetPC(Enum.PowerType.Essence,     0.31, 1.00, 0.74)
 
--- Secondary resource (class resource) power types and max counts
+-- Secondary resource (class resource) power types and max counts.
+-- hideWhenEmpty: true  → pip hidden entirely when inactive (Soul Shards, Arcane Charges, Essence)
+--               false → pip shows a dim background when inactive (Combo Points, Holy Power, Chi, Runes)
+-- fractional:   true  → UnitPower unmodified=true; value is divided by 10 for per-pip fill fraction
+--                        (Warlock Soul Shards: 0-50 range, each 10 = one full shard)
+-- catFormOnly:  true  → bar only visible while player's primary power is Energy (Feral/cat form)
 local CLASS_RESOURCES = {
-    ROGUE       = { powerType = Enum.PowerType.ComboPoints, maxPips = 7 },
-    DRUID       = { powerType = Enum.PowerType.ComboPoints, maxPips = 7 },
-    PALADIN     = { powerType = Enum.PowerType.HolyPower,   maxPips = 5 },
-    MONK        = { powerType = Enum.PowerType.Chi,         maxPips = 6 },
-    WARLOCK     = { powerType = Enum.PowerType.SoulShards,  maxPips = 5 },
-    DEATHKNIGHT = { powerType = nil, isRunes = true,        maxPips = 6 },
-    MAGE        = { powerType = Enum.PowerType.ArcaneCharges, maxPips = 4 },
-    EVOKER      = { powerType = Enum.PowerType.Essence,     maxPips = 6 },
+    ROGUE       = { powerType = Enum.PowerType.ComboPoints,   maxPips = 7, hideWhenEmpty = false },
+    DRUID       = { powerType = Enum.PowerType.ComboPoints,   maxPips = 7, hideWhenEmpty = false, catFormOnly = true },
+    PALADIN     = { powerType = Enum.PowerType.HolyPower,     maxPips = 5, hideWhenEmpty = false },
+    MONK        = { powerType = Enum.PowerType.Chi,           maxPips = 6, hideWhenEmpty = false },
+    WARLOCK     = { powerType = Enum.PowerType.SoulShards,    maxPips = 5, hideWhenEmpty = true, fractional = true },
+    DEATHKNIGHT = { powerType = nil, isRunes = true,          maxPips = 6, hideWhenEmpty = false },
+    MAGE        = { powerType = Enum.PowerType.ArcaneCharges, maxPips = 4, hideWhenEmpty = true },
+    EVOKER      = { powerType = Enum.PowerType.Essence,       maxPips = 6, hideWhenEmpty = true },
 }
 
 local RESOURCE_COLORS = {
@@ -449,14 +454,26 @@ end
 
 -- Resource pips (class resources: combo points, holy power, etc.) ------------
 
-local resourceFrame = nil   -- created once on PLAYER_LOGIN
-local resourcePips  = {}
-local resourceClass = nil
+local resourceFrame   = nil   -- created once on PLAYER_LOGIN
+local resourcePips    = {}
+local resourceClass   = nil
+local resourceMaxPips = 0     -- live value from UnitPowerMax; updated in SetupResourcePips
 local UpdateResourcePips  -- forward declaration so SetupResourcePips can call it
 
 local function GetPlayerClass()
     local _, cls = UnitClass("player")
     return cls
+end
+
+-- Returns true if the resource bar should be suppressed due to a form/spec gate.
+-- catFormOnly: Druid combo points only appear in cat form (primary power = Energy).
+local function IsResourceGated(cfg)
+    if not cfg then return true end
+    if cfg.catFormOnly then
+        local pt = UnitPowerType("player")
+        return pt ~= Enum.PowerType.Energy
+    end
+    return false
 end
 
 local function SetupResourcePips()
@@ -472,7 +489,15 @@ local function SetupResourcePips()
     if not playerFrame then return end
 
     local db = GetDB("player")
-    local maxPips = cfg.maxPips
+    -- Derive the live pip count from the API; fall back to the cap if unavailable.
+    local maxPips = cfg.maxPips  -- cap: maximum frames we ever create
+    if not cfg.isRunes then
+        local livePips = cfg.powerType and UnitPowerMax("player", cfg.powerType)
+        if livePips and livePips > 0 then
+            maxPips = math.min(livePips, cfg.maxPips)
+        end
+    end
+    resourceMaxPips = maxPips
 
     if not resourceFrame then
         resourceFrame = CreateFrame("Frame", "UFL_ResourceFrame", UIParent)
@@ -480,8 +505,8 @@ local function SetupResourcePips()
         resourceFrame:EnableMouse(false)
     end
 
-    -- Build pips
-    for i = 1, maxPips do
+    -- Build pips — always create up to the class cap so frames exist for any talent configuration.
+    for i = 1, cfg.maxPips do
         if not resourcePips[i] then
             local pip = CreateFrame("StatusBar", nil, resourceFrame)
 
@@ -517,7 +542,7 @@ local function SetupResourcePips()
             resourcePips[i] = pip
         end
     end
-    -- Hide unused pips
+    -- Hide pips beyond the live count
     for i = maxPips + 1, #resourcePips do
         resourcePips[i]:Hide()
         if resourcePips[i].borderTex then resourcePips[i].borderTex:Hide() end
@@ -538,7 +563,7 @@ function UnitFramesLite_UpdateResourceLayout()
 
     if db.showResources == false then resourceFrame:Hide(); return end
 
-    local maxPips = cfg.maxPips
+    local maxPips = resourceMaxPips > 0 and resourceMaxPips or cfg.maxPips
     local pipW    = db.resourcePipWidth   or 18
     local pipH    = db.resourcePipHeight  or 6
     local pipGap  = db.resourcePipGap     or 3
@@ -748,7 +773,9 @@ function UnitFramesLite_UpdateResourceLayout()
                     pip.bgMask:SetAllPoints(pip)
                     pcall(function() sb:AddMaskTexture(pip.bgMask) end)
                 end
-                ApplyColourToTex(sf, i); sf:Show(); sb:Show()
+                ApplyColourToTex(sf, i)
+                sf:SetAlpha(0)  -- alpha set by UpdateResourcePips; default to empty
+                sf:Show(); sb:Show()
 
             elseif shape == "Diamond" then
                 -- Rotate a square texture 45°. A square of side s has diagonal s*√2.
@@ -766,7 +793,9 @@ function UnitFramesLite_UpdateResourceLayout()
                 sb:SetSize(s, s)
                 sb:ClearAllPoints(); sb:SetPoint("CENTER", pip, "CENTER", 0, 0)
                 sb:SetVertexColor(0.1, 0.1, 0.1, 0.8)
-                ApplyColourToTex(sf, i); sf:Show(); sb:Show()
+                ApplyColourToTex(sf, i)
+                sf:SetAlpha(0)  -- alpha set by UpdateResourcePips; default to empty
+                sf:Show(); sb:Show()
 
             end
 
@@ -786,7 +815,7 @@ UpdateResourcePips = function()
     local cfg = cls and CLASS_RESOURCES[cls]
     if not cfg then return end
 
-    local maxPips = cfg.maxPips
+    local maxPips = resourceMaxPips > 0 and resourceMaxPips or cfg.maxPips
 
     if cfg.isRunes then
         -- Death Knight runes: use GetRuneCooldown
@@ -816,36 +845,59 @@ UpdateResourcePips = function()
         end
     else
         -- All other class resources
+        local hideWhenEmpty = cfg.hideWhenEmpty
+        local isFractional  = cfg.fractional
+
+        -- UnitPower/UnitPowerMax can return secret numbers in 12.0 for some power types.
+        -- All comparisons involving these values must be inside pcall.
+        -- cur/max are captured by closure so pcall callbacks can write them.
         local cur = 0
-        pcall(function() cur = UnitPower("player", cfg.powerType) end)
         local max = maxPips
         pcall(function()
             local m = UnitPowerMax("player", cfg.powerType)
-            if m and m > 0 then max = m end
+            if m and m > 0 then max = math.min(m, maxPips) end
         end)
-        -- Clamp max to configured maxPips
-        max = math.min(max, maxPips)
+        if isFractional then
+            -- Soul Shards: unmodified 0-50 range; each 10 units = 1 full shard.
+            -- Arithmetic on secret values is also forbidden, so wrap in pcall.
+            pcall(function() cur = UnitPower("player", cfg.powerType, true) end)
+        else
+            pcall(function() cur = UnitPower("player", cfg.powerType) end)
+        end
 
-        -- Use safe comparison for secret numbers: pip is active if its index <= cur
-        -- We can't do `i <= cur` directly (secret number comparison error in 12.0+).
-        -- Use pcall per pip.
         for i = 1, maxPips do
             local pip = resourcePips[i]
             if pip then
-                if i > max then
+                local overMax = false
+                pcall(function() overMax = (i > max) end)
+                if overMax then
                     pip:Hide()
                 else
-                    pip:Show()
-                    local active = false
-                    pcall(function() active = (cur >= i) end)
-                    if pip.isShapedPip then
-                        -- Shaped pip: show/hide fill textures; bg always visible at dim
-                        local a = active and 1 or 0
-                        if pip.shapeFill  then pip.shapeFill:SetAlpha(a)  end
-                        if pip.shapeFill2 then pip.shapeFill2:SetAlpha(a) end
+                    -- Determine fill fraction for this pip (0–1) inside pcall since
+                    -- comparing/doing arithmetic with secret numbers throws.
+                    local fillFrac = 0
+                    if isFractional then
+                        pcall(function()
+                            local pipMin = (i - 1) * 10
+                            fillFrac = math.max(0, math.min(1, (cur - pipMin) / 10))
+                        end)
                     else
-                        pip:SetValue(active and 1 or 0)
-                        pip:SetAlpha(active and 1 or 0.35)
+                        pcall(function() fillFrac = (cur >= i) and 1 or 0 end)
+                    end
+
+                    local active = fillFrac > 0
+
+                    if hideWhenEmpty and not active then
+                        pip:Hide()
+                    else
+                        pip:Show()
+                        if pip.isShapedPip then
+                            if pip.shapeFill  then pip.shapeFill:SetAlpha(fillFrac)  end
+                            if pip.shapeFill2 then pip.shapeFill2:SetAlpha(fillFrac) end
+                        else
+                            pip:SetValue(fillFrac)
+                            pip:SetAlpha(active and 1 or 0.35)
+                        end
                     end
                 end
             end
@@ -1385,8 +1437,11 @@ function UnitFramesLite_UpdateResourceVisibility()
     local showOutCombat  = db.resourceShowOutCombat ~= false  -- default true
     local showWithTarget = db.resourceShowWithTarget or false
 
+    local cfg = resourceClass and CLASS_RESOURCES[resourceClass]
     local shouldShow = true
     if db.showResources == false then
+        shouldShow = false
+    elseif IsResourceGated(cfg) then
         shouldShow = false
     elseif inCombat then
         shouldShow = true
@@ -2158,6 +2213,7 @@ eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
 eventFrame:RegisterEvent("UNIT_PET")
 eventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
 eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+eventFrame:RegisterUnitEvent("UNIT_DISPLAYPOWER", "player")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 eventFrame:RegisterUnitEvent("UNIT_AURA", "player")
@@ -2242,6 +2298,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         UnitFramesLite_UpdateAlpha("pet")
     elseif event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER" then
         UpdateResourcePips()
+    elseif event == "UNIT_DISPLAYPOWER" then
+        -- Fires when the player's primary power type changes (e.g. Druid shifting forms).
+        -- catFormOnly resources (Druid combo points) should appear/disappear accordingly.
+        SetupResourcePips()
+        UnitFramesLite_UpdateResourceLayout()
+        UpdateResourcePips()
+        UnitFramesLite_UpdateResourceVisibility()
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" then
         SetupResourcePips()
         UnitFramesLite_UpdateResourceLayout()
