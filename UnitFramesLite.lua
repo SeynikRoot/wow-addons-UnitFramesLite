@@ -86,6 +86,9 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         debuffCurableOnly = false,
         auraTooltipEnabled = true,
         auraTooltipDelay   = 0,
+        hpLowEnabled    = false,
+        hpLowThreshold  = 35,
+        hpLowColor      = {1, 0, 0, 1},
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -305,7 +308,10 @@ function UnitFramesLite_UpdateAlpha(unit)
     if frame.hpPctText   then frame.hpPctText:SetAlpha(textAlpha)   end
     if frame.levelText   then frame.levelText:SetAlpha(textAlpha)   end
 
-    -- Aura containers are parented to UIParent so must be alpha'd explicitly
+    -- Portrait and aura containers are parented to UIParent so must be alpha'd explicitly
+    if frame.portraitFrame and frame.portraitFrame:IsShown() then
+        frame.portraitFrame:SetAlpha(alpha)
+    end
     local auraData = auraFrames[unit]
     if auraData then
         if auraData.buff   and auraData.buff.container   then auraData.buff.container:SetAlpha(alpha)   end
@@ -348,16 +354,21 @@ local function GetHealthText(hp, maxhp, isDead, content, format)
     return ok and text or nil
 end
 
+-- Returns a plain integer 0-100 HP percentage, or nil on error.
+-- CurveConstants.ScaleTo100 ensures the return value is a normal number.
+local function GetHPPercent(unit)
+    local ok, pct = pcall(function()
+        return UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100)
+    end)
+    return ok and pct or nil
+end
+
 local function GetHPPercentText(isDead, showSymbol, unit)
     if isDead then return nil end
     local sym = (showSymbol ~= false) and "%" or ""
-    -- UnitHealthPercent returns a secret 0-1 value in 12.x; arithmetic is blocked.
-    -- Passing CurveConstants.ScaleTo100 causes the API to return a plain 0-100 integer.
-    local ok, result = pcall(function()
-        local pct = UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100)
-        return string.format("%d", pct) .. sym
-    end)
-    return ok and result or nil
+    local pct = GetHPPercent(unit)
+    if pct then return string.format("%d", pct) .. sym end
+    return nil
 end
 
 -- Font resolution helper -----------------------------------------------------
@@ -385,30 +396,42 @@ end
 -- reversedGrad: used for the lower half of CENTRE mode — swaps gradient start/end
 -- vertically so the orb centre is always gradientStart (bright) with no seam.
 
-local function ApplyOrbFill(bar, db, circMask, reversedGrad)
+local function ApplyOrbFill(bar, db, circMask, reversedGrad, unit)
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    if db.orbUseSolidColor then
-        local c = db.orbSolidColor or {0.1, 0.3, 0.9, 1}
-        bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-    else
-        bar:SetStatusBarColor(1, 1, 1, 1)
-        local gs   = db.orbGradientStart or {0.2, 0.5, 0.9, 1}
-        local ge   = db.orbGradientEnd   or {0.05, 0.15, 0.6, 1}
-        local gDir = db.orbGradientDir   or "VERTICAL"
-        -- CENTRE gradient uses VERTICAL internally; the two-half split in
-        -- UpdateFrame creates the radial effect. reversedGrad flips the lower half
-        -- so both halves are bright at the orb centre with no visible seam.
-        local effectiveDir = (gDir == "CENTRE") and "VERTICAL" or gDir
-        local sbTex = bar:GetStatusBarTexture()
-        if sbTex then
-            if reversedGrad and effectiveDir == "VERTICAL" then
-                sbTex:SetGradient(effectiveDir,
-                    CreateColor(ge[1], ge[2], ge[3], ge[4]),
-                    CreateColor(gs[1], gs[2], gs[3], gs[4]))
-            else
-                sbTex:SetGradient(effectiveDir,
-                    CreateColor(gs[1], gs[2], gs[3], gs[4]),
-                    CreateColor(ge[1], ge[2], ge[3], ge[4]))
+    -- Low-health colour override (uses percentage — safe, not a secret number)
+    local lowOverride = false
+    if db.hpLowEnabled and unit then
+        local pct = GetHPPercent(unit)
+        if pct and pct <= (db.hpLowThreshold or 35) then
+            local c = db.hpLowColor or {1, 0, 0, 1}
+            bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            lowOverride = true
+        end
+    end
+    if not lowOverride then
+        if db.orbUseSolidColor then
+            local c = db.orbSolidColor or {0.1, 0.3, 0.9, 1}
+            bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        else
+            bar:SetStatusBarColor(1, 1, 1, 1)
+            local gs   = db.orbGradientStart or {0.2, 0.5, 0.9, 1}
+            local ge   = db.orbGradientEnd   or {0.05, 0.15, 0.6, 1}
+            local gDir = db.orbGradientDir   or "VERTICAL"
+            -- CENTRE gradient uses VERTICAL internally; the two-half split in
+            -- UpdateFrame creates the radial effect. reversedGrad flips the lower half
+            -- so both halves are bright at the orb centre with no visible seam.
+            local effectiveDir = (gDir == "CENTRE") and "VERTICAL" or gDir
+            local sbTex = bar:GetStatusBarTexture()
+            if sbTex then
+                if reversedGrad and effectiveDir == "VERTICAL" then
+                    sbTex:SetGradient(effectiveDir,
+                        CreateColor(ge[1], ge[2], ge[3], ge[4]),
+                        CreateColor(gs[1], gs[2], gs[3], gs[4]))
+                else
+                    sbTex:SetGradient(effectiveDir,
+                        CreateColor(gs[1], gs[2], gs[3], gs[4]),
+                        CreateColor(ge[1], ge[2], ge[3], ge[4]))
+                end
             end
         end
     end
@@ -1006,7 +1029,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.orbFill:SetSize(sz, halfSz)
             frame.orbFill:SetOrientation(fillDir)
             frame.orbFill:SetReverseFill(db.reverseFill or false)
-            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true)   -- reversed gradient
+            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true, unit)   -- reversed gradient
             if frame.orbFill2 then
                 -- Upper half (top of orb)
                 frame.orbFill2:ClearAllPoints()
@@ -1014,7 +1037,7 @@ function UnitFramesLite_UpdateFrame(unit)
                 frame.orbFill2:SetSize(sz, halfSz)
                 frame.orbFill2:SetOrientation(fillDir)
                 frame.orbFill2:SetReverseFill(db.reverseFill or false)
-                ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false)  -- normal gradient
+                ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false, unit)  -- normal gradient
                 frame.orbFill2:Show()
             end
         else
@@ -1022,7 +1045,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.orbFill:SetAllPoints(orbFrame)
             frame.orbFill:SetOrientation(fillDir)
             frame.orbFill:SetReverseFill(db.reverseFill or false)
-            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask)
+            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, nil, unit)
             if frame.orbFill2 then frame.orbFill2:Hide() end
         end
 
@@ -1172,7 +1195,20 @@ function UnitFramesLite_UpdateFrame(unit)
         frame.hp:Show()
         frame.hp:SetWidth(w)
 
-        if db.useSolidColor then
+        -- Low-health colour override check (uses percentage — safe, not a secret number)
+        local hpLowActive = false
+        if db.hpLowEnabled then
+            local pct = GetHPPercent(unit)
+            if pct and pct <= (db.hpLowThreshold or 35) then
+                hpLowActive = true
+            end
+        end
+
+        if hpLowActive then
+            frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+            local c = db.hpLowColor or {1, 0, 0, 1}
+            frame.hp:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        elseif db.useSolidColor then
             local texPath = "Interface\\TARGETINGFRAME\\UI-StatusBar"
             if LSM and db.statusbarTexture then
                 texPath = LSM:Fetch("statusbar", db.statusbarTexture) or texPath
@@ -1948,8 +1984,42 @@ local function SetupFrame(displayFrame, unit)
         end
     end
 
+    -- Re-apply HP bar colour on every health update so low-health colour
+    -- override transitions in real-time without a full UpdateFrame call.
+    local wasLowHP = false
+    local function UpdateHPColour()
+        local db = GetDB(unit)
+        if not db.hpLowEnabled then
+            if wasLowHP then wasLowHP = false; UnitFramesLite_UpdateFrame(unit) end
+            return
+        end
+        local pct   = GetHPPercent(unit)
+        local isLow = pct and pct <= (db.hpLowThreshold or 35)
+        -- Only act on transitions or when already low (colour may need refreshing)
+        if isLow == wasLowHP and not isLow then return end
+        wasLowHP = isLow or false
+        local frame = displayFrame
+        if db.sphereMode then
+            if frame.orbFill then
+                ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true, unit)
+                if frame.orbFill2 then
+                    ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false, unit)
+                end
+            end
+        else
+            if isLow then
+                frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+                local c = db.hpLowColor or {1, 0, 0, 1}
+                frame.hp:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            else
+                UnitFramesLite_UpdateFrame(unit)
+            end
+        end
+    end
+
     listener:SetScript("OnEvent", function(_, evt)
         Update()
+        if evt == "UNIT_HEALTH" or evt == "UNIT_MAXHEALTH" then UpdateHPColour() end
         if evt == "UNIT_AURA" then UnitFramesLite_UpdateAuras(unit) end
     end)
     displayFrame.OnUFLUpdate = Update

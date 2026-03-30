@@ -79,8 +79,15 @@ local function CreateNudgeSlider(parent, label, minV, maxV, step, x, y, sliderW,
     box:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 46 + sliderW, y - 15)
     box:SetAutoFocus(false)
 
-    -- Determine display format from step: step<1 → show 2 decimal places, else integer
-    local fmt = (step < 1) and "%.2f" or "%d"
+    -- Determine display format from step: integer step → %d, else match decimal places of step
+    local fmt
+    if step >= 1 then
+        fmt = "%d"
+    else
+        -- Count decimal places in step (e.g. 0.1 → 1, 0.01 → 2)
+        local dec = math.max(1, math.ceil(-math.log(step) / math.log(10)))
+        fmt = "%." .. dec .. "f"
+    end
     local function FmtVal(v) return string.format(fmt, v) end
 
     local updating = false
@@ -926,16 +933,21 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.appPortGroup = portGroup
 
     -- ── BAR section — right column beside Position/Size/Portrait ─────────────
-    local barSection = CreateGroupBox(content, "Bar", rx, -66, 268, 440, "GameFontNormal")
+    local barSection = CreateGroupBox(content, "Bar", rx, -66, 268, 524, "GameFontNormal")
     barSection:Hide()
     panel.barSection = barSection
 
     local bx = 8   -- x inside barSection
     local bSliderW = 140  -- slider width to fit 268px column
 
+    -- ── HP Bar Height — above colour group ───────────────────────────────────
+    s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full)",0,120,1, bx,-16,bSliderW,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
+
     -- ── Colour & Texture sub-group ────────────────────────────────────────────
     -- Stacked layout: BG colour, solid/gradient swatches, then texture below
-    local colGroup = CreateGroupBox(barSection, "Colour & Texture", bx, -16, 248, 212, "GameFontNormal")
+    -- colGroup starts at y=-56 (below HP Bar Height slider row which is ~40px tall)
+    local colGroup = CreateGroupBox(barSection, "Colour & Texture", bx, -56, 248, 308, "GameFontNormal")
 
     CreateLabel(colGroup, "Background", bx, -20)
     local bgBtn = CreateColorSwatch(colGroup, bx+80, -18, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
@@ -975,15 +987,26 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         if self.texDD    then self.texDD:SetShown(not isSolid)    end
     end
 
-    -- ── General bar controls (below colour group) ─────────────────────────────
-    -- colGroup top at -16, height 212 → bottom -228, +10 gap → genY=-238
-    local genY = -238
+    -- ── Low-health colour override (bar mode) ────────────────────────────────
+    -- Row 1 (y=-214): "Low Health Colour" label + "Enabled" checkbox
+    -- Row 2 (y=-242): "Threshold %" slider (full width)
+    -- Row 3 (y=-270): Colour swatch
+    local barLowY = -214
+    CreateLabel(colGroup, "Low Health Colour", bx, barLowY)
+    local barLowCheck = CreateCheckbox(colGroup, "Enabled", bx + 130, barLowY,
+        function() return getDB().hpLowEnabled or false end,
+        function(v) getDB().hpLowEnabled = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.barLowCheck = barLowCheck
+    local barLowSlider, barLowBox, barLowRefresh = CreateNudgeSlider(colGroup, "Threshold %", 1, 100, 1,
+        bx, barLowY - 28, bSliderW, "hpLowThreshold", getDB, function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.barLowThresholdRefresh = barLowRefresh
+    local barLowColorBtn = CreateColorSwatch(colGroup, bx, barLowY - 60, "Colour", getDB, "hpLowColor",
+        function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = barLowColorBtn
 
-    s,b,r = CreateNudgeSlider(barSection,"HP Bar Height (0 = full)",0,120,1, bx,genY,bSliderW,"hpBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.hpBarHeightSlider,panel.hpBarHeightBox,panel.hpBarHeightRefresh = s,b,r
-
-    -- ── Bar Border (collapsible sub-frame) ───────────────────────────────────
-    local borderY = genY - 80
+    -- ── Bar Border (below colour group) ──────────────────────────────────────
+    -- colGroup top at -56, height 308 → bottom -364, +10 gap → borderY=-374
+    local borderY = -374
     CreateLabel(barSection, "Bar Border", bx, borderY)
     local barBorderDetails
     panel.barBorderCheck = CreateCheckbox(barSection, "Enabled", bx+80, borderY,
@@ -1032,7 +1055,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         function(v) getDB().orbGradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     -- ── Orb Colour (left column, group box) ──────────────────────────────────
-    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -128, 290, 100, "GameFontNormal")
+    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -128, 290, 210, "GameFontNormal")
     panel.orbSolidCheck = CreateCheckbox(orbColGroup, "Use Solid Colour", gx, -20,
         function() return getDB().orbUseSolidColor or false end,
         function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
@@ -1050,8 +1073,26 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         for _, w in ipairs(self.orbGradientGroup or {}) do w:SetShown(not isSolid) end
     end
 
+    -- ── Low-health colour override (orb mode) ────────────────────────────────
+    -- Row 1 (y=-106): "Low Health Colour" label + "Enabled" checkbox
+    -- Row 2 (y=-134): "Threshold %" slider (full width)
+    -- Row 3 (y=-166): Colour swatch
+    local orbLowY = -106
+    CreateLabel(orbColGroup, "Low Health Colour", gx, orbLowY)
+    local orbLowCheck = CreateCheckbox(orbColGroup, "Enabled", gx + 130, orbLowY,
+        function() return getDB().hpLowEnabled or false end,
+        function(v) getDB().hpLowEnabled = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbLowCheck = orbLowCheck
+    local orbLowSlider, orbLowBox, orbLowRefresh = CreateNudgeSlider(orbColGroup, "Threshold %", 1, 100, 1,
+        gx, orbLowY - 28, 120, "hpLowThreshold", getDB, function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.orbLowThresholdRefresh = orbLowRefresh
+    local orbLowColorBtn = CreateColorSwatch(orbColGroup, gx, orbLowY - 60, "Colour", getDB, "hpLowColor",
+        function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.swatchButtons[#panel.swatchButtons+1] = orbLowColorBtn
+
     -- ── Orb Background (left column, group box) ───────────────────────────────
-    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -236, 290, 96, "GameFontNormal")
+    -- orbColGroup top at -128, height 210 → bottom -338, +8 gap → -346
+    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -346, 290, 96, "GameFontNormal")
     local orbBgBtn = CreateColorSwatch(orbBgGroup, gx, -20, "Colour", getDB, "orbBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbBgBtn
     local function orbBgAlphaDB()
@@ -1399,7 +1440,7 @@ local function BuildBuffsContent(content, unit, getDB, panel)
 
     -- ── Tooltip section (below both columns) ────────────────────────────────
     local ttY   = -(8 + GRP_H_DEB + 8)
-    local ttGrp = CreateGroupBox(content, "Tooltips", 8, ttY, GRP_W * 2 + 8, 72)
+    local ttGrp = CreateGroupBox(content, "Tooltips", 8, ttY, GRP_W * 2 + 8, 96)
     local ttgx  = 8
 
     local tooltipCheck = CreateCheckbox(ttGrp, "Show aura tooltips on mouseover", ttgx, -20,
@@ -1407,7 +1448,7 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         function(v) getDB().auraTooltipEnabled = v end)
 
     local _,_,rTTDelay = CreateNudgeSlider(ttGrp, "Tooltip delay (s)", 0, 2, 0.1,
-        ttgx + 220, -20, 120, "auraTooltipDelay", getDB, function() end)
+        ttgx, -50, 120, "auraTooltipDelay", getDB, function() end)
 
     refreshFns[#refreshFns+1] = function()
         tooltipCheck:Refresh()
@@ -1593,6 +1634,10 @@ local function BuildUnitPanel(panel, unit, tabSync)
         if self.orbPBarXRefresh      then self.orbPBarXRefresh()      end
         if self.orbPBarYRefresh      then self.orbPBarYRefresh()      end
         if self.orbPBarFillDirDD     then self.orbPBarFillDirDD:SetSelection(db.orbPowerBarFillDir or "HORIZONTAL") end
+        if self.barLowCheck             then self.barLowCheck:Refresh()             end
+        if self.orbLowCheck             then self.orbLowCheck:Refresh()             end
+        if self.barLowThresholdRefresh  then self.barLowThresholdRefresh()          end
+        if self.orbLowThresholdRefresh  then self.orbLowThresholdRefresh()          end
         if self.UpdateAppearanceMode then self:UpdateAppearanceMode() end
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
         if self.refreshAlpha then self:refreshAlpha() end
@@ -1629,6 +1674,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "orbPowerBarWidth","orbPowerBarHeight","orbPowerBarX","orbPowerBarY",
           "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor","orbPowerBarUseTypeColor",
           "orbPowerShowOutOfCombat",
+          "hpLowEnabled","hpLowThreshold","hpLowColor",
         },
         -- 3: Text
         { "font","nameFont","hpTextFont","hpPctFont","levelFont",
