@@ -354,21 +354,25 @@ local function GetHealthText(hp, maxhp, isDead, content, format)
     return ok and text or nil
 end
 
--- Returns a plain integer 0-100 HP percentage, or nil on error.
--- CurveConstants.ScaleTo100 ensures the return value is a normal number.
-local function GetHPPercent(unit)
-    local ok, pct = pcall(function()
-        return UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100)
+-- Returns true if unit HP is at or below threshold (0-100), false otherwise.
+-- The <= comparison stays inside pcall so secret numbers never escape to Lua.
+local function IsHPBelowThreshold(unit, threshold)
+    local ok, result = pcall(function()
+        return UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100) <= threshold
     end)
-    return ok and pct or nil
+    return ok and result or false
 end
 
+-- Returns a formatted HP% string by building it entirely inside pcall.
+-- string.format receives the result of pcall, which is always a plain string.
 local function GetHPPercentText(isDead, showSymbol, unit)
     if isDead then return nil end
     local sym = (showSymbol ~= false) and "%" or ""
-    local pct = GetHPPercent(unit)
-    if pct then return string.format("%d", pct) .. sym end
-    return nil
+    local ok, str = pcall(function()
+        local pct = UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100)
+        return string.format("%d", pct) .. sym
+    end)
+    return ok and str or nil
 end
 
 -- Font resolution helper -----------------------------------------------------
@@ -398,11 +402,9 @@ end
 
 local function ApplyOrbFill(bar, db, circMask, reversedGrad, unit)
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    -- Low-health colour override (uses percentage — safe, not a secret number)
     local lowOverride = false
     if db.hpLowEnabled and unit then
-        local pct = GetHPPercent(unit)
-        if pct and pct <= (db.hpLowThreshold or 35) then
+        if IsHPBelowThreshold(unit, db.hpLowThreshold or 35) then
             local c = db.hpLowColor or {1, 0, 0, 1}
             bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
             lowOverride = true
@@ -1195,14 +1197,8 @@ function UnitFramesLite_UpdateFrame(unit)
         frame.hp:Show()
         frame.hp:SetWidth(w)
 
-        -- Low-health colour override check (uses percentage — safe, not a secret number)
-        local hpLowActive = false
-        if db.hpLowEnabled then
-            local pct = GetHPPercent(unit)
-            if pct and pct <= (db.hpLowThreshold or 35) then
-                hpLowActive = true
-            end
-        end
+        local hpLowActive = db.hpLowEnabled and
+            IsHPBelowThreshold(unit, db.hpLowThreshold or 35)
 
         if hpLowActive then
             frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
@@ -1993,8 +1989,7 @@ local function SetupFrame(displayFrame, unit)
             if wasLowHP then wasLowHP = false; UnitFramesLite_UpdateFrame(unit) end
             return
         end
-        local pct   = GetHPPercent(unit)
-        local isLow = pct and pct <= (db.hpLowThreshold or 35)
+        local isLow = IsHPBelowThreshold(unit, db.hpLowThreshold or 35)
         -- Only act on transitions or when already low (colour may need refreshing)
         if isLow == wasLowHP and not isLow then return end
         wasLowHP = isLow or false
