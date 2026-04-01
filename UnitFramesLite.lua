@@ -2457,6 +2457,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_FOCUS_CHANGED" then
         UnitFramesLite_UpdateVisibility("focus")
         UnitFramesLite_UpdateAlpha("focus")
+        UnitFramesLite_UpdateAuras("focus")
     elseif event == "UNIT_PET" then
         UnitFramesLite_UpdateVisibility("pet")
         UnitFramesLite_UpdateAlpha("pet")

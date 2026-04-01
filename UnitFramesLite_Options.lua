@@ -364,8 +364,8 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         end
     end)
 
-    -- Left column continued: Blizzard Unit Frames (player-only) ---------------
-    if unit == "player" then
+    -- Left column continued: Blizzard Unit Frames --------------------------------
+    do
         local blizzGroup = CreateGroupBox(content, "Blizzard Unit Frames", x, -152, 320, 140)
         local function getGlobal() return UnitFramesLiteDB and UnitFramesLiteDB.global or {} end
         local blizzDefs = {
