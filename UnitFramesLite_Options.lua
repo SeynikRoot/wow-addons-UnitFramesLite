@@ -388,7 +388,33 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         local note = blizzGroup:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         note:SetPoint("BOTTOMLEFT", blizzGroup, "BOTTOMLEFT", 8, 10)
         note:SetText("|cffaaaaaa/reload to restore hidden Blizzard frames|r")
+    end
 
+    -- Interface Buttons -------------------------------------------------------
+    do
+        local function getGlobal() return UnitFramesLiteDB and UnitFramesLiteDB.global or {} end
+        local btnGroup = CreateGroupBox(content, "Interface Buttons", x, -304, 320, 72)
+
+        CreateCheckbox(btnGroup, "Show minimap button", 8, -16,
+            function() return getGlobal().showMinimapButton ~= false end,
+            function(v)
+                getGlobal().showMinimapButton = v
+                if UnitFramesLite and UnitFramesLite.ApplyMinimapButton then
+                    UnitFramesLite.ApplyMinimapButton()
+                end
+            end)
+
+        CreateCheckbox(btnGroup, "Show Bazooka plugin", 8, -40,
+            function() return getGlobal().showBazookaPlugin ~= false end,
+            function(v)
+                getGlobal().showBazookaPlugin = v
+                -- Bazooka plugins can't be removed at runtime; requires /reload
+                if v then
+                    print("|cffaaaaUnitFramesLite|r: Bazooka plugin will appear after |cffffffff/reload|r")
+                else
+                    print("|cffaaaaUnitFramesLite|r: Bazooka plugin will be hidden after |cffffffff/reload|r")
+                end
+            end)
     end
 end
 

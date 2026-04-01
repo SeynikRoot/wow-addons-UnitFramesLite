@@ -1558,6 +1558,67 @@ function UnitFramesLite_ApplyBlizzardFrames()
     end
 end
 
+-- Minimap button + Bazooka plugin (LibDataBroker / LibDBIcon) ----------------
+-- One LDB launcher object serves both purposes:
+--   • LibDBIcon-1.0  → minimap button (draggable, position saved in DB)
+--   • Bazooka / any LDB display addon → broker bar plugin
+
+local ldbObject  -- the shared LDB data object
+
+local function SetupLDB()
+    local LDB     = LibStub and LibStub("LibDataBroker-1.1", true)
+    if not LDB then return end
+
+    if ldbObject then return end  -- already created
+
+    ldbObject = LDB:NewDataObject("UnitFramesLite", {
+        type  = "launcher",
+        label = "UnitFramesLite",
+        icon  = "Interface\\Icons\\INV_Helmet_08",
+        OnClick = function(_, button)
+            if button == "LeftButton" then
+                if UnitFramesLite_ShowOptions then UnitFramesLite_ShowOptions() end
+            end
+        end,
+        OnEnter = function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            GameTooltip:AddLine("UnitFramesLite")
+            GameTooltip:AddLine("|cffaaaaaa(Left-click) Open options|r")
+            GameTooltip:Show()
+        end,
+        OnLeave = function() GameTooltip:Hide() end,
+    })
+end
+
+function UFL.ApplyMinimapButton()
+    local g = UnitFramesLiteDB and UnitFramesLiteDB.global
+    if not g then return end
+
+    local LDBIcon = LibStub and LibStub("LibDBIcon-1.0", true)
+    if not LDBIcon then return end
+
+    SetupLDB()
+    if not ldbObject then return end
+
+    -- minimapData is the saved-variable table LibDBIcon uses for position/hide state
+    if not UnitFramesLiteDB.minimapButton then
+        UnitFramesLiteDB.minimapButton = {}
+    end
+    LDBIcon:Register("UnitFramesLite", ldbObject, UnitFramesLiteDB.minimapButton)
+
+    if g.showMinimapButton then
+        LDBIcon:Show("UnitFramesLite")
+    else
+        LDBIcon:Hide("UnitFramesLite")
+    end
+end
+
+function UFL.ApplyBazookaPlugin()
+    local g = UnitFramesLiteDB and UnitFramesLiteDB.global
+    if not g or not g.showBazookaPlugin then return end
+    SetupLDB()  -- ensure the LDB object exists for display addons to pick up
+end
+
 -- Slash commands -------------------------------------------------------------
 
 SLASH_UNITFRAMESLITE1 = "/ufl"
@@ -2382,7 +2443,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             hideBlizzTarget   = false,
             hideBlizzFocus    = false,
             hideBlizzPet      = false,
+            showMinimapButton = true,
+            showBazookaPlugin = true,
         }
+        -- Migrate: ensure new global keys exist for older SavedVariables
+        local g = UnitFramesLiteDB.global
+        if g.showMinimapButton == nil then g.showMinimapButton = true end
+        if g.showBazookaPlugin == nil then g.showBazookaPlugin = true end
         -- Profiles table: { active="Default", profiles={ Default={player={...}, target={...}, ...} } }
         UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
         -- Migrate: showOrbPower (bool) → orbPowerMode (string)
@@ -2429,6 +2496,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             UnitFramesLite_UpdateFrame(unit)
         end
         UnitFramesLite_ApplyBlizzardFrames()
+        UFL.ApplyMinimapButton()
+        UFL.ApplyBazookaPlugin()
         SetupResourcePips()
         RegisterResourceOnUpdate(eventFrame)
         UnitFramesLite_UpdateResourceVisibility()
