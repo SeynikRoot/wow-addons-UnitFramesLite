@@ -99,6 +99,15 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         hpTextColor      = {1, 1, 1, 1},
         hpPctColor       = {1, 1, 1, 1},
         levelColor       = {1, 1, 1, 1},
+        -- Colour by reaction
+        nameColorByReaction     = false,
+        hpTextColorByReaction   = false,
+        hpPctColorByReaction    = false,
+        levelColorByReaction    = false,
+        reactionUseDefaultColors = true,
+        reactionFriendlyColor   = {0, 1, 0, 1},
+        reactionNeutralColor    = {1, 1, 0, 1},
+        reactionEnemyColor      = {1, 0, 0, 1},
         -- Per-element text alignments
         hpTextAlign      = "CENTER",
         levelTextAlign   = "CENTER",
@@ -382,6 +391,28 @@ local function ResolveFont(db, elemKey)
     local name = db[elemKey] or db.font
     if LSM and name then return LSM:Fetch("font", name) or STANDARD_TEXT_FONT end
     return STANDARD_TEXT_FONT
+end
+
+-- Reaction colour helper -----------------------------------------------------
+-- Returns the appropriate reaction colour table for `unit` if colorByReaction
+-- is enabled, otherwise returns nil (caller falls back to the static colour).
+
+local REACTION_FRIENDLY_DEFAULT = {0, 1, 0, 1}
+local REACTION_NEUTRAL_DEFAULT  = {1, 1, 0, 1}
+local REACTION_ENEMY_DEFAULT    = {1, 0, 0, 1}
+
+local function GetReactionColor(unit, db)
+    if unit == "player" then return nil end  -- player is always friendly to themselves
+    local reaction = UnitReaction(unit, "player")
+    if not reaction then return nil end
+    local useDefault = db.reactionUseDefaultColors ~= false
+    if reaction >= 5 then
+        return useDefault and REACTION_FRIENDLY_DEFAULT or (db.reactionFriendlyColor or REACTION_FRIENDLY_DEFAULT)
+    elseif reaction == 4 then
+        return useDefault and REACTION_NEUTRAL_DEFAULT  or (db.reactionNeutralColor  or REACTION_NEUTRAL_DEFAULT)
+    else
+        return useDefault and REACTION_ENEMY_DEFAULT    or (db.reactionEnemyColor    or REACTION_ENEMY_DEFAULT)
+    end
 end
 
 -- Text element helper --------------------------------------------------------
@@ -1145,7 +1176,7 @@ function UnitFramesLite_UpdateFrame(unit)
 
         -- Text (uses Text tab settings, positioned relative to orb centre)
         if frame.nameText then
-            local c = db.nameColor or {1, 1, 1, 1}
+            local c = (db.nameColorByReaction and GetReactionColor(unit, db)) or db.nameColor or {1, 1, 1, 1}
             frame.nameText:SetFont(ResolveFont(db, "nameFont"), db.nameTextFontSize or 12, "OUTLINE")
             frame.nameText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.nameText:ClearAllPoints()
@@ -1155,7 +1186,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.nameText:SetJustifyH(db.nameAlign or "CENTER")
         end
         if frame.hpText then
-            local c = db.hpTextColor or {1, 1, 1, 1}
+            local c = (db.hpTextColorByReaction and GetReactionColor(unit, db)) or db.hpTextColor or {1, 1, 1, 1}
             frame.hpText:SetFont(ResolveFont(db, "hpTextFont"), db.hpTextFontSize or 11, "OUTLINE")
             frame.hpText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.hpText:ClearAllPoints()
@@ -1165,7 +1196,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.hpText:SetJustifyH(db.hpTextAlign or "CENTER")
         end
         if frame.hpPctText then
-            local c = db.hpPctColor or {1, 1, 1, 1}
+            local c = (db.hpPctColorByReaction and GetReactionColor(unit, db)) or db.hpPctColor or {1, 1, 1, 1}
             frame.hpPctText:SetFont(ResolveFont(db, "hpPctFont"), db.hpPctFontSize or 11, "OUTLINE")
             frame.hpPctText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.hpPctText:ClearAllPoints()
@@ -1175,7 +1206,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.hpPctText:SetJustifyH(db.hpPctAlign or "CENTER")
         end
         if frame.levelText then
-            local c = db.levelColor or {1, 1, 1, 1}
+            local c = (db.levelColorByReaction and GetReactionColor(unit, db)) or db.levelColor or {1, 1, 1, 1}
             frame.levelText:SetFont(ResolveFont(db, "levelFont"), db.levelTextFontSize or 11, "OUTLINE")
             frame.levelText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.levelText:ClearAllPoints()
@@ -1264,16 +1295,20 @@ function UnitFramesLite_UpdateFrame(unit)
         end
 
         ApplyTextElement(frame.nameText,  frame, ResolveFont(db, "nameFont"),
-            db.nameTextFontSize  or 12, db.nameColor    or {1,1,1,1},
+            db.nameTextFontSize  or 12,
+            (db.nameColorByReaction  and GetReactionColor(unit, db)) or db.nameColor   or {1,1,1,1},
             db.nameTextX  or 0, db.nameTextY  or 0, db.nameAlign        or "LEFT")
         ApplyTextElement(frame.hpText,    frame, ResolveFont(db, "hpTextFont"),
-            db.hpTextFontSize    or 11, db.hpTextColor  or {1,1,1,1},
+            db.hpTextFontSize    or 11,
+            (db.hpTextColorByReaction and GetReactionColor(unit, db)) or db.hpTextColor or {1,1,1,1},
             db.hpTextX    or 0, db.hpTextY    or 0, db.hpTextAlign      or "CENTER")
         ApplyTextElement(frame.hpPctText, frame, ResolveFont(db, "hpPctFont"),
-            db.hpPctFontSize     or 11, db.hpPctColor   or {1,1,1,1},
+            db.hpPctFontSize     or 11,
+            (db.hpPctColorByReaction  and GetReactionColor(unit, db)) or db.hpPctColor  or {1,1,1,1},
             db.hpPctX     or 0, db.hpPctY     or -14,   db.hpPctAlign   or "CENTER")
         ApplyTextElement(frame.levelText, frame, ResolveFont(db, "levelFont"),
-            db.levelTextFontSize or 11, db.levelColor   or {1,1,1,1},
+            db.levelTextFontSize or 11,
+            (db.levelColorByReaction  and GetReactionColor(unit, db)) or db.levelColor  or {1,1,1,1},
             db.levelTextX or 0, db.levelTextY or 0, db.levelTextAlign   or "CENTER")
     end
 
@@ -1878,6 +1913,7 @@ local function SetupFrame(displayFrame, unit)
     listener:RegisterUnitEvent("UNIT_MAXHEALTH",       unit)
     listener:RegisterUnitEvent("UNIT_NAME_UPDATE",     unit)
     listener:RegisterUnitEvent("UNIT_FLAGS",           unit)
+    listener:RegisterUnitEvent("UNIT_FACTION",         unit)
     listener:RegisterUnitEvent("UNIT_LEVEL",           unit)
     listener:RegisterUnitEvent("UNIT_POWER_UPDATE",    unit)
     listener:RegisterUnitEvent("UNIT_POWER_FREQUENT",  unit)
@@ -2077,6 +2113,11 @@ local function SetupFrame(displayFrame, unit)
         Update()
         if evt == "UNIT_HEALTH" or evt == "UNIT_MAXHEALTH" then UpdateHPColour() end
         if evt == "UNIT_AURA" then UnitFramesLite_UpdateAuras(unit) end
+        -- Refresh frame (including reaction-based text colours) on target/unit change
+        if evt == "PLAYER_TARGET_CHANGED" or evt == "PLAYER_FOCUS_CHANGED"
+           or evt == "UNIT_PET" or evt == "UNIT_FACTION" then
+            UnitFramesLite_UpdateFrame(unit)
+        end
     end)
     displayFrame.OnUFLUpdate = Update
 

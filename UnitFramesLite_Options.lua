@@ -736,13 +736,67 @@ local function BuildTextContent(content, unit, getDB, panel)
 
     -- Inside each group box:
     --   y=-24: Show checkbox (below the group box title at y=-5)
-    --   y=-50: Colour swatch
-    --   y=-76: Collapsible container (font/align/position controls)
+    --   y=-54: Static colour swatch
+    --   y=-80: "Colour by Reaction" checkbox
+    --   y=-104: Reaction sub-frame (conditional, ~88px)
+    --   y=-196: Collapsible container (font/align/position controls)
     local GX      = 4    -- x padding inside group box
-    local CTR_TOP = -96  -- collapsible container top inside group box
+    local CTR_TOP = -196 -- collapsible container top inside group box (shifted for reaction section)
+
+    -- Helper: add reaction colour controls to a text group box.
+    -- byReactionKey: db key for the enable flag (e.g. "nameColorByReaction")
+    -- Returns the checkbox and sub-frame so callers can hook Refresh if needed.
+    local function AddReactionSection(box, byReactionKey)
+        -- Sub-frame (forward-declared so rxCb closure can reference it)
+        local rxSub = CreateFrame("Frame", nil, box)
+        rxSub:SetPoint("TOPLEFT", box, "TOPLEFT", GX, -104)
+        rxSub:SetSize(COL_W - GX * 2, 88)
+
+        local rxCb = CreateCheckbox(box, "Colour by Reaction", GX, -80,
+            function() return getDB()[byReactionKey] or false end,
+            function(v)
+                getDB()[byReactionKey] = v
+                rxSub:SetShown(v)
+                UnitFramesLite_UpdateFrame(unit)
+            end)
+        rxCb.Refresh = function(self)
+            local v = getDB()[byReactionKey] or false
+            self:SetChecked(v); rxSub:SetShown(v)
+        end
+
+        local defCb = CreateCheckbox(rxSub, "Use Default Colours", 0, -4,
+            function() return getDB().reactionUseDefaultColors ~= false end,
+            function(v)
+                getDB().reactionUseDefaultColors = v
+                rxSub.UpdateSwatchVis()
+                UnitFramesLite_UpdateFrame(unit)
+            end)
+        -- Swatches: Friendly, Neutral, Enemy (spaced to fit within COL_W - 8)
+        local friendlySwatch = CreateColorSwatch(rxSub, 0,   -30, "Friendly", getDB, "reactionFriendlyColor", function() UnitFramesLite_UpdateFrame(unit) end)
+        local neutralSwatch  = CreateColorSwatch(rxSub, 76,  -30, "Neutral",  getDB, "reactionNeutralColor",  function() UnitFramesLite_UpdateFrame(unit) end)
+        local enemySwatch    = CreateColorSwatch(rxSub, 152, -30, "Enemy",    getDB, "reactionEnemyColor",    function() UnitFramesLite_UpdateFrame(unit) end)
+
+        function rxSub.UpdateSwatchVis()
+            local useDefault = getDB().reactionUseDefaultColors ~= false
+            friendlySwatch:SetShown(not useDefault)
+            neutralSwatch:SetShown(not useDefault)
+            enemySwatch:SetShown(not useDefault)
+        end
+
+        rxSub.Refresh = function()
+            defCb:SetChecked(getDB().reactionUseDefaultColors ~= false)
+            friendlySwatch.RefreshSwatch(); neutralSwatch.RefreshSwatch(); enemySwatch.RefreshSwatch()
+            rxSub.UpdateSwatchVis()
+        end
+
+        rxSub:SetShown(getDB()[byReactionKey] or false)
+        rxSub.UpdateSwatchVis()
+
+        return rxCb, rxSub
+    end
 
     -- ── Column 1: Name Text ──────────────────────────────────────────────────
-    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 310)
+    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 420)
     local nameCtr  -- forward declaration so checkbox closure can reference it
     local function NameShown() return getDB().showName ~= false end
     panel.showNameCheck = CreateCheckbox(nameBox, "Show", GX, -24, NameShown,
@@ -751,6 +805,7 @@ local function BuildTextContent(content, unit, getDB, panel)
         self:SetChecked(NameShown()); nameCtr:SetShown(NameShown())
     end
     ColSwatch(nameBox, GX, -54, "nameColor", "Name Colour")
+    panel.nameRxCb, panel.nameRxSub = AddReactionSection(nameBox, "nameColorByReaction")
 
     nameCtr = CreateFrame("Frame", nil, nameBox)
     nameCtr:SetPoint("TOPLEFT", nameBox, "TOPLEFT", GX, CTR_TOP)
@@ -773,7 +828,7 @@ local function BuildTextContent(content, unit, getDB, panel)
     nameCtr:SetShown(NameShown())
 
     -- ── Column 2: HP Text ────────────────────────────────────────────────────
-    local hpTextBox = CreateGroupBox(content, "HP Text", c2, -50, COL_W, 420)
+    local hpTextBox = CreateGroupBox(content, "HP Text", c2, -50, COL_W, 520)
     local hpTextCtr
     local function HPTextShown() return getDB().showHPText ~= false end
     panel.showHPTextCheck = CreateCheckbox(hpTextBox, "Show", GX, -24, HPTextShown,
@@ -782,6 +837,7 @@ local function BuildTextContent(content, unit, getDB, panel)
         self:SetChecked(HPTextShown()); hpTextCtr:SetShown(HPTextShown())
     end
     ColSwatch(hpTextBox, GX, -54, "hpTextColor", "Text Colour")
+    panel.hpTextRxCb, panel.hpTextRxSub = AddReactionSection(hpTextBox, "hpTextColorByReaction")
 
     hpTextCtr = CreateFrame("Frame", nil, hpTextBox)
     hpTextCtr:SetPoint("TOPLEFT", hpTextBox, "TOPLEFT", GX, CTR_TOP)
@@ -812,7 +868,7 @@ local function BuildTextContent(content, unit, getDB, panel)
     hpTextCtr:SetShown(HPTextShown())
 
     -- ── Column 3: HP Percent ─────────────────────────────────────────────────
-    local hpPctBox = CreateGroupBox(content, "HP Percent", c3, -50, COL_W, 330)
+    local hpPctBox = CreateGroupBox(content, "HP Percent", c3, -50, COL_W, 440)
     local hpPctCtr
     local function HPPctShown() return getDB().showHPPct or false end
     panel.showHPPctCheck = CreateCheckbox(hpPctBox, "Show", GX, -24, HPPctShown,
@@ -821,6 +877,7 @@ local function BuildTextContent(content, unit, getDB, panel)
         self:SetChecked(HPPctShown()); hpPctCtr:SetShown(HPPctShown())
     end
     ColSwatch(hpPctBox, GX, -54, "hpPctColor", "Text Colour")
+    panel.hpPctRxCb, panel.hpPctRxSub = AddReactionSection(hpPctBox, "hpPctColorByReaction")
 
     hpPctCtr = CreateFrame("Frame", nil, hpPctBox)
     hpPctCtr:SetPoint("TOPLEFT", hpPctBox, "TOPLEFT", GX, CTR_TOP)
@@ -846,7 +903,7 @@ local function BuildTextContent(content, unit, getDB, panel)
     hpPctCtr:SetShown(HPPctShown())
 
     -- ── Column 4: Level Text ─────────────────────────────────────────────────
-    local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 310)
+    local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 420)
     local levelCtr
     local function LevelShown() return getDB().showLevel ~= false end
     panel.showLevelCheck = CreateCheckbox(levelBox, "Show", GX, -24, LevelShown,
@@ -855,6 +912,7 @@ local function BuildTextContent(content, unit, getDB, panel)
         self:SetChecked(LevelShown()); levelCtr:SetShown(LevelShown())
     end
     ColSwatch(levelBox, GX, -54, "levelColor", "Text Colour")
+    panel.levelRxCb, panel.levelRxSub = AddReactionSection(levelBox, "levelColorByReaction")
 
     levelCtr = CreateFrame("Frame", nil, levelBox)
     levelCtr:SetPoint("TOPLEFT", levelBox, "TOPLEFT", GX, CTR_TOP)
@@ -1669,6 +1727,15 @@ local function BuildUnitPanel(panel, unit, tabSync)
         if self.refreshAlpha then self:refreshAlpha() end
         if self.refreshBuffs then self:refreshBuffs() end
         for _, btn in ipairs(self.swatchButtons) do btn:RefreshSwatch() end
+        -- Reaction colour section refresh
+        if self.nameRxCb  then self.nameRxCb:Refresh()  end
+        if self.nameRxSub then self.nameRxSub.Refresh()  end
+        if self.hpTextRxCb  then self.hpTextRxCb:Refresh()  end
+        if self.hpTextRxSub then self.hpTextRxSub.Refresh()  end
+        if self.hpPctRxCb  then self.hpPctRxCb:Refresh()  end
+        if self.hpPctRxSub then self.hpPctRxSub.Refresh()  end
+        if self.levelRxCb  then self.levelRxCb:Refresh()  end
+        if self.levelRxSub then self.levelRxSub.Refresh()  end
         self:UpdateColourMode()
         self:UpdateOrbColourMode()
         self:UpdateRingColourMode()
@@ -1710,6 +1777,8 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "hpPctFontSize","hpPctX","hpPctY",
           "levelTextFontSize","levelTextX","levelTextY",
           "hpContent","hpFormat","hpPctSymbol",
+          "nameColorByReaction","hpTextColorByReaction","hpPctColorByReaction","levelColorByReaction",
+          "reactionUseDefaultColors","reactionFriendlyColor","reactionNeutralColor","reactionEnemyColor",
         },
         -- 4: Class Resources
         { "showResources","resourceShowOutCombat","resourceShowWithTarget","resourceAlpha",
