@@ -1,4 +1,20 @@
 {
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "$json = $input | Out-String | ConvertFrom-Json; $f = $json.tool_input.file_path; if ($f -match \"\\.(lua|xml|toc)$\") { powershell -ExecutionPolicy Bypass -File \"c:/Repos/UnitFramesLite/deploy-addon.ps1\" -WoWPath \"D:/Games/World of Warcraft\" -GameType retail }",
+            "timeout": 30,
+            "statusMessage": "Deploying addon to WoW..."
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Repos\\\\UnitFramesLite\\\\deploy-addon.ps1\" -WoWPath \"D:\\\\Games\\\\World of Warcraft\" -GameType retail)",

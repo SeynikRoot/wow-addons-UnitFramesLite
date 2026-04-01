@@ -39,13 +39,17 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showHPText    = true,
         showHPPct     = false,
         showLevel     = true,
-        showPowerBar  = false,
+        showPowerBar  = false,   -- legacy; superseded by orbPowerMode == "Bar"
+        powerBarAttach = true,  -- bar mode: attach power bar to bottom of health bar
         showPowerText = false,
         showResources           = true,
         resourcePipWidth        = 18,
         resourcePipHeight       = 6,
         resourcePipGap          = 3,
         resourcePipShape        = "Rectangle",  -- "Rectangle" | "Circle" | "Diamond"
+        resourcePipBorderEnabled   = false,
+        resourcePipBorderThickness = 1,
+        resourcePipBorderColor     = {0, 0, 0, 1},
         resourceX               = 0,
         resourceY               = 0,
         resourceAlpha           = 1.0,
@@ -80,6 +84,11 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         debuffShowDebuffs = true,
         debuffPlayerOnly  = false,
         debuffCurableOnly = false,
+        auraTooltipEnabled = true,
+        auraTooltipDelay   = 0,
+        hpLowEnabled    = false,
+        hpLowThreshold  = 35,
+        hpLowColor      = {1, 0, 0, 1},
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -90,6 +99,15 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         hpTextColor      = {1, 1, 1, 1},
         hpPctColor       = {1, 1, 1, 1},
         levelColor       = {1, 1, 1, 1},
+        -- Colour by reaction
+        nameColorByReaction     = false,
+        hpTextColorByReaction   = false,
+        hpPctColorByReaction    = false,
+        levelColorByReaction    = false,
+        reactionUseDefaultColors = true,
+        reactionFriendlyColor   = {0, 1, 0, 1},
+        reactionNeutralColor    = {1, 1, 0, 1},
+        reactionEnemyColor      = {1, 0, 0, 1},
         -- Per-element text alignments
         hpTextAlign      = "CENTER",
         levelTextAlign   = "CENTER",
@@ -104,9 +122,11 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         alphaAffects = "Everything",
         alphaCombat = 1.0, alphaOutCombat = 1.0,
         fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
+        fadeHostileTarget = false,
         barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
+        orbBgColor        = {0, 0, 0, 0.9},
         sphereMode        = false,
         sphereSize        = 80,
         sphereFillDir     = "VERTICAL",
@@ -119,13 +139,24 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showOrbBorder      = false,
         orbBorderThickness = 4,
         orbBorderColor     = {0, 0, 0, 1},
-        -- Power ring
-        showOrbPower             = false,
+        -- Power ring / bar (orbPowerMode replaces showOrbPower; NOT in defaults so migration can detect nil)
+        showOrbPower             = false,  -- kept for migration only
         orbPowerRingThickness    = 8,
         orbPowerRingCCW          = false,
         orbPowerRingUseTypeColor = true,
         orbPowerRingColor        = {0, 0.5, 1, 1},
         orbPowerRingBgColor      = {0, 0, 0, 0.9},
+        -- Power bar (used when orbPowerMode == "Bar")
+        orbPowerBarWidth         = 80,
+        orbPowerBarHeight        = 12,
+        orbPowerBarX             = 0,
+        orbPowerBarY             = 0,
+        orbPowerBarFillDir       = "HORIZONTAL",
+        orbPowerBarColor         = {0, 0.5, 1, 1},
+        orbPowerBarBgColor       = {0, 0, 0, 0.9},
+        orbPowerBarUseTypeColor  = false,
+        orbPowerBarCentreToScreen = false,
+        orbPowerShowOutOfCombat  = true,
     }
 end
 
@@ -169,6 +200,7 @@ defaults.target.debuffXOffset = 45
 defaults.target.debuffGrowX = "RIGHT"
 
 local frames = {}
+local auraFrames = {}  -- forward-declared; populated by GetAuraData below
 
 local function CopyDefaults(src, dest)
     if type(dest) ~= "table" then dest = {} end
@@ -219,6 +251,17 @@ function UnitFramesLite_UpdateVisibility(unit)
     frame:SetShown(CheckLoadConditions(unit))
 end
 
+-- Returns false when the unit has no meaningful power resource to display.
+-- WoW 12.0 secret numbers make UnitPowerMax unsafe to compare in Lua.
+-- We instead check whether the unit is a player or player-controlled unit
+-- (pets, player-controlled vehicles) — only these reliably have a power bar.
+-- Non-player enemies and dummies are excluded even if WoW assigns them a
+-- secret non-zero mana value.
+local function UnitHasPower(unit)
+    if not UnitExists(unit) then return false end
+    return UnitIsPlayer(unit) or UnitPlayerControlled(unit) or false
+end
+
 -- Alpha ----------------------------------------------------------------------
 
 function UnitFramesLite_UpdateAlpha(unit)
@@ -226,16 +269,19 @@ function UnitFramesLite_UpdateAlpha(unit)
     if not frame then return end
     local db = GetDB(unit)
 
-    local alphaDB = (unit == "target" and db.syncAlpha) and GetDB("player") or db
+    local alphaDB  = (db.syncAlpha) and GetDB("player") or db
     local inCombat = UnitAffectingCombat("player")
-    -- Out-of-combat alpha for the target is always driven by the player's setting
-    local outCombatAlpha = (unit == "target")
-        and (GetDB("player").alphaOutCombat or 1)
-        or  (alphaDB.alphaOutCombat or 1)
-    local alpha = inCombat and (alphaDB.alphaCombat or 1) or outCombatAlpha
+    local alpha    = inCombat and (alphaDB.alphaCombat or 1) or (alphaDB.alphaOutCombat or 1)
 
-    if unit == "player" and db.fadeNoTarget and not UnitExists("target") then
+    local hasTarget = UnitExists("target")
+    if db.fadeNoTarget and not hasTarget and not inCombat then
         alpha = db.fadeNoTargetAlpha or 0.4
+    elseif db.fadeHostileTarget and not inCombat then
+        -- Treat a non-hostile (or no) target the same as no target
+        local isHostile = hasTarget and (UnitReaction("target", "player") or 4) <= 3
+        if not isHostile then
+            alpha = db.fadeNoTargetAlpha or 0.4
+        end
     end
 
     local textAlpha = db.keepTextVisible and 1 or alpha
@@ -263,7 +309,11 @@ function UnitFramesLite_UpdateAlpha(unit)
         if frame.orbBg      then frame.orbBg:SetAlpha(alpha) end
     end
 
-    if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(alpha) end
+    local showPowerOOC = db.orbPowerShowOutOfCombat ~= false
+    local hasPower     = UnitHasPower(unit)
+    local powerAlpha   = hasPower and ((inCombat or showPowerOOC) and alpha or 0) or 0
+    if frame.powerRingFrame then frame.powerRingFrame:SetAlpha(powerAlpha) end
+    if frame.orbPowerBar    then frame.orbPowerBar:SetAlpha(powerAlpha)    end
     if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
     if frame.borderFrame     then frame.borderFrame:SetAlpha(alpha)     end
 
@@ -275,6 +325,25 @@ function UnitFramesLite_UpdateAlpha(unit)
     if frame.hpText      then frame.hpText:SetAlpha(textAlpha)      end
     if frame.hpPctText   then frame.hpPctText:SetAlpha(textAlpha)   end
     if frame.levelText   then frame.levelText:SetAlpha(textAlpha)   end
+
+    -- Portrait and aura containers are parented to UIParent so must be alpha'd explicitly
+    if frame.portraitFrame and frame.portraitFrame:IsShown() then
+        frame.portraitFrame:SetAlpha(alpha)
+    end
+    local auraData = auraFrames[unit]
+    if auraData then
+        if auraData.buff   and auraData.buff.container   then auraData.buff.container:SetAlpha(alpha)   end
+        if auraData.debuff and auraData.debuff.container then auraData.debuff.container:SetAlpha(alpha) end
+    end
+
+    -- Propagate to any other units that are syncing their alpha from this unit
+    if unit == "player" then
+        for otherUnit, _ in pairs(frames) do
+            if otherUnit ~= "player" and GetDB(otherUnit).syncAlpha then
+                UnitFramesLite_UpdateAlpha(otherUnit)
+            end
+        end
+    end
 end
 
 -- Health text ----------------------------------------------------------------
@@ -303,36 +372,25 @@ local function GetHealthText(hp, maxhp, isDead, content, format)
     return ok and text or nil
 end
 
+-- Returns true if unit HP is at or below threshold (0-100), false otherwise.
+-- The <= comparison stays inside pcall so secret numbers never escape to Lua.
+local function IsHPBelowThreshold(unit, threshold)
+    local ok, result = pcall(function()
+        return UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100) <= threshold
+    end)
+    return ok and result or false
+end
+
+-- Returns a formatted HP% string by building it entirely inside pcall.
+-- string.format receives the result of pcall, which is always a plain string.
 local function GetHPPercentText(isDead, showSymbol, unit)
     if isDead then return nil end
     local sym = (showSymbol ~= false) and "%" or ""
-    -- Every health API returns secret numbers in 12.x — arithmetic and comparison
-    -- all taint. string.format("%s") is the only safe extraction: it calls tostring
-    -- internally and returns a plain string for secret numbers.
-    -- We use string.find (returns plain number positions, never secret) to branch,
-    -- and string.sub/gsub to extract the percentage digits without comparison.
-    local ok, result = pcall(function()
-        local pct = UnitHealthPercent(unit)
-        -- %s on a secret number returns a plain string ("0.75", "1", "0", etc.)
-        local s = string.format("%s", pct)
-        -- Use string.find to check for a "." — returns plain numbers (positions) or nil.
-        local dot = string.find(s, ".", 1, true)
-        if not dot then
-            -- No decimal: "0" or "1" — use %d formatting on a known-plain string
-            -- to get "0" or "100" without any secret-number ops.
-            local n = string.find(s, "^1")  -- plain number result, safe
-            if n then return "100" .. sym end
-            return "0" .. sym
-        end
-        -- Has decimal: "0.75", "0.08", etc. Extract digits after the dot.
-        local frac = string.sub(s, dot + 1, dot + 2)  -- "75", "08"
-        -- Strip a leading zero via gsub pattern (no comparison)
-        frac = string.gsub(frac, "^0(%d)", "%1")       -- "08"->"8", "75"->"75"
-        -- Handle empty result from gsub (shouldn't happen but be safe)
-        frac = string.gsub(frac, "^$", "0")
-        return frac .. sym
+    local ok, str = pcall(function()
+        local pct = UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100)
+        return string.format("%d", pct) .. sym
     end)
-    return ok and result or nil
+    return ok and str or nil
 end
 
 -- Font resolution helper -----------------------------------------------------
@@ -342,6 +400,28 @@ local function ResolveFont(db, elemKey)
     local name = db[elemKey] or db.font
     if LSM and name then return LSM:Fetch("font", name) or STANDARD_TEXT_FONT end
     return STANDARD_TEXT_FONT
+end
+
+-- Reaction colour helper -----------------------------------------------------
+-- Returns the appropriate reaction colour table for `unit` if colorByReaction
+-- is enabled, otherwise returns nil (caller falls back to the static colour).
+
+local REACTION_FRIENDLY_DEFAULT = {0, 1, 0, 1}
+local REACTION_NEUTRAL_DEFAULT  = {1, 1, 0, 1}
+local REACTION_ENEMY_DEFAULT    = {1, 0, 0, 1}
+
+local function GetReactionColor(unit, db)
+    if unit == "player" then return nil end  -- player is always friendly to themselves
+    local reaction = UnitReaction(unit, "player")
+    if not reaction then return nil end
+    local useDefault = db.reactionUseDefaultColors ~= false
+    if reaction >= 5 then
+        return useDefault and REACTION_FRIENDLY_DEFAULT or (db.reactionFriendlyColor or REACTION_FRIENDLY_DEFAULT)
+    elseif reaction == 4 then
+        return useDefault and REACTION_NEUTRAL_DEFAULT  or (db.reactionNeutralColor  or REACTION_NEUTRAL_DEFAULT)
+    else
+        return useDefault and REACTION_ENEMY_DEFAULT    or (db.reactionEnemyColor    or REACTION_ENEMY_DEFAULT)
+    end
 end
 
 -- Text element helper --------------------------------------------------------
@@ -360,30 +440,40 @@ end
 -- reversedGrad: used for the lower half of CENTRE mode — swaps gradient start/end
 -- vertically so the orb centre is always gradientStart (bright) with no seam.
 
-local function ApplyOrbFill(bar, db, circMask, reversedGrad)
+local function ApplyOrbFill(bar, db, circMask, reversedGrad, unit)
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    if db.orbUseSolidColor then
-        local c = db.orbSolidColor or {0.1, 0.3, 0.9, 1}
-        bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-    else
-        bar:SetStatusBarColor(1, 1, 1, 1)
-        local gs   = db.orbGradientStart or {0.2, 0.5, 0.9, 1}
-        local ge   = db.orbGradientEnd   or {0.05, 0.15, 0.6, 1}
-        local gDir = db.orbGradientDir   or "VERTICAL"
-        -- CENTRE gradient uses VERTICAL internally; the two-half split in
-        -- UpdateFrame creates the radial effect. reversedGrad flips the lower half
-        -- so both halves are bright at the orb centre with no visible seam.
-        local effectiveDir = (gDir == "CENTRE") and "VERTICAL" or gDir
-        local sbTex = bar:GetStatusBarTexture()
-        if sbTex then
-            if reversedGrad and effectiveDir == "VERTICAL" then
-                sbTex:SetGradient(effectiveDir,
-                    CreateColor(ge[1], ge[2], ge[3], ge[4]),
-                    CreateColor(gs[1], gs[2], gs[3], gs[4]))
-            else
-                sbTex:SetGradient(effectiveDir,
-                    CreateColor(gs[1], gs[2], gs[3], gs[4]),
-                    CreateColor(ge[1], ge[2], ge[3], ge[4]))
+    local lowOverride = false
+    if db.hpLowEnabled and unit then
+        if IsHPBelowThreshold(unit, db.hpLowThreshold or 35) then
+            local c = db.hpLowColor or {1, 0, 0, 1}
+            bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            lowOverride = true
+        end
+    end
+    if not lowOverride then
+        if db.orbUseSolidColor then
+            local c = db.orbSolidColor or {0.1, 0.3, 0.9, 1}
+            bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        else
+            bar:SetStatusBarColor(1, 1, 1, 1)
+            local gs   = db.orbGradientStart or {0.2, 0.5, 0.9, 1}
+            local ge   = db.orbGradientEnd   or {0.05, 0.15, 0.6, 1}
+            local gDir = db.orbGradientDir   or "VERTICAL"
+            -- CENTRE gradient uses VERTICAL internally; the two-half split in
+            -- UpdateFrame creates the radial effect. reversedGrad flips the lower half
+            -- so both halves are bright at the orb centre with no visible seam.
+            local effectiveDir = (gDir == "CENTRE") and "VERTICAL" or gDir
+            local sbTex = bar:GetStatusBarTexture()
+            if sbTex then
+                if reversedGrad and effectiveDir == "VERTICAL" then
+                    sbTex:SetGradient(effectiveDir,
+                        CreateColor(ge[1], ge[2], ge[3], ge[4]),
+                        CreateColor(gs[1], gs[2], gs[3], gs[4]))
+                else
+                    sbTex:SetGradient(effectiveDir,
+                        CreateColor(gs[1], gs[2], gs[3], gs[4]),
+                        CreateColor(ge[1], ge[2], ge[3], ge[4]))
+                end
             end
         end
     end
@@ -407,16 +497,21 @@ SetPC(Enum.PowerType.Fury,        0.79, 0.26, 0.99)
 SetPC(Enum.PowerType.Pain,        1.00, 0.61, 0.00)
 SetPC(Enum.PowerType.Essence,     0.31, 1.00, 0.74)
 
--- Secondary resource (class resource) power types and max counts
+-- Secondary resource (class resource) power types and max counts.
+-- hideWhenEmpty: true  → pip hidden entirely when inactive (Soul Shards, Arcane Charges, Essence)
+--               false → pip shows a dim background when inactive (Combo Points, Holy Power, Chi, Runes)
+-- fractional:   true  → UnitPower unmodified=true; value is divided by 10 for per-pip fill fraction
+--                        (Warlock Soul Shards: 0-50 range, each 10 = one full shard)
+-- catFormOnly:  true  → bar only visible while player's primary power is Energy (Feral/cat form)
 local CLASS_RESOURCES = {
-    ROGUE       = { powerType = Enum.PowerType.ComboPoints, maxPips = 7 },
-    DRUID       = { powerType = Enum.PowerType.ComboPoints, maxPips = 7 },
-    PALADIN     = { powerType = Enum.PowerType.HolyPower,   maxPips = 5 },
-    MONK        = { powerType = Enum.PowerType.Chi,         maxPips = 6 },
-    WARLOCK     = { powerType = Enum.PowerType.SoulShards,  maxPips = 5 },
-    DEATHKNIGHT = { powerType = nil, isRunes = true,        maxPips = 6 },
-    MAGE        = { powerType = Enum.PowerType.ArcaneCharges, maxPips = 4 },
-    EVOKER      = { powerType = Enum.PowerType.Essence,     maxPips = 6 },
+    ROGUE       = { powerType = Enum.PowerType.ComboPoints,   maxPips = 7, hideWhenEmpty = false },
+    DRUID       = { powerType = Enum.PowerType.ComboPoints,   maxPips = 7, hideWhenEmpty = false, catFormOnly = true },
+    PALADIN     = { powerType = Enum.PowerType.HolyPower,     maxPips = 5, hideWhenEmpty = false },
+    MONK        = { powerType = Enum.PowerType.Chi,           maxPips = 6, hideWhenEmpty = false },
+    WARLOCK     = { powerType = Enum.PowerType.SoulShards,    maxPips = 5, hideWhenEmpty = true, fractional = true },
+    DEATHKNIGHT = { powerType = nil, isRunes = true,          maxPips = 6, hideWhenEmpty = false },
+    MAGE        = { powerType = Enum.PowerType.ArcaneCharges, maxPips = 4, hideWhenEmpty = true },
+    EVOKER      = { powerType = Enum.PowerType.Essence,       maxPips = 6, hideWhenEmpty = true },
 }
 
 local RESOURCE_COLORS = {
@@ -455,14 +550,26 @@ end
 
 -- Resource pips (class resources: combo points, holy power, etc.) ------------
 
-local resourceFrame = nil   -- created once on PLAYER_LOGIN
-local resourcePips  = {}
-local resourceClass = nil
+local resourceFrame   = nil   -- created once on PLAYER_LOGIN
+local resourcePips    = {}
+local resourceClass   = nil
+local resourceMaxPips = 0     -- live value from UnitPowerMax; updated in SetupResourcePips
 local UpdateResourcePips  -- forward declaration so SetupResourcePips can call it
 
 local function GetPlayerClass()
     local _, cls = UnitClass("player")
     return cls
+end
+
+-- Returns true if the resource bar should be suppressed due to a form/spec gate.
+-- catFormOnly: Druid combo points only appear in cat form (primary power = Energy).
+local function IsResourceGated(cfg)
+    if not cfg then return true end
+    if cfg.catFormOnly then
+        local pt = UnitPowerType("player")
+        return pt ~= Enum.PowerType.Energy
+    end
+    return false
 end
 
 local function SetupResourcePips()
@@ -478,7 +585,15 @@ local function SetupResourcePips()
     if not playerFrame then return end
 
     local db = GetDB("player")
-    local maxPips = cfg.maxPips
+    -- Derive the live pip count from the API; fall back to the cap if unavailable.
+    local maxPips = cfg.maxPips  -- cap: maximum frames we ever create
+    if not cfg.isRunes then
+        local livePips = cfg.powerType and UnitPowerMax("player", cfg.powerType)
+        if livePips and livePips > 0 then
+            maxPips = math.min(livePips, cfg.maxPips)
+        end
+    end
+    resourceMaxPips = maxPips
 
     if not resourceFrame then
         resourceFrame = CreateFrame("Frame", "UFL_ResourceFrame", UIParent)
@@ -486,14 +601,28 @@ local function SetupResourcePips()
         resourceFrame:EnableMouse(false)
     end
 
-    -- Build pips
-    for i = 1, maxPips do
+    -- Build pips — always create up to the class cap so frames exist for any talent configuration.
+    for i = 1, cfg.maxPips do
         if not resourcePips[i] then
             local pip = CreateFrame("StatusBar", nil, resourceFrame)
+
+            -- Border: a texture on pip at BACKGROUND sublevel -7.
+            -- pip.bg is at sublevel -8 (below border), StatusBar fill is above both.
+            -- Textures can be anchored/sized outside their parent frame's bounds.
+            local borderTex = pip:CreateTexture(nil, "BACKGROUND", nil, -7)
+            borderTex:SetAllPoints(pip)   -- default; resized in UpdateResourceLayout
+            borderTex:SetColorTexture(0, 0, 0, 1)
+            borderTex:Hide()
+            pip.borderTex = borderTex
+            -- Mask texture for Circle/Diamond shaped borders
+            local borderMask = pip:CreateMaskTexture()
+            borderMask:SetAllPoints(pip)
+            pip.borderMask = borderMask
+
             pip:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
             pip:SetMinMaxValues(0, 1)
             pip:SetValue(0)
-            local bg = pip:CreateTexture(nil, "BACKGROUND")
+            local bg = pip:CreateTexture(nil, "BACKGROUND", nil, -8)
             bg:SetAllPoints()
             bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
             pip.bg = bg
@@ -505,12 +634,14 @@ local function SetupResourcePips()
             local bgMask = pip:CreateMaskTexture()
             bgMask:SetAllPoints()
             pip.bgMask = bgMask
+            pip.borderFrame = borderFrame
             resourcePips[i] = pip
         end
     end
-    -- Hide unused pips
+    -- Hide pips beyond the live count
     for i = maxPips + 1, #resourcePips do
         resourcePips[i]:Hide()
+        if resourcePips[i].borderTex then resourcePips[i].borderTex:Hide() end
     end
 
     UnitFramesLite_UpdateResourceLayout()
@@ -528,7 +659,7 @@ function UnitFramesLite_UpdateResourceLayout()
 
     if db.showResources == false then resourceFrame:Hide(); return end
 
-    local maxPips = cfg.maxPips
+    local maxPips = resourceMaxPips > 0 and resourceMaxPips or cfg.maxPips
     local pipW    = db.resourcePipWidth   or 18
     local pipH    = db.resourcePipHeight  or 6
     local pipGap  = db.resourcePipGap     or 3
@@ -659,6 +790,52 @@ function UnitFramesLite_UpdateResourceLayout()
                 if not pip.shapeBg   then pip.shapeBg   = pip:CreateTexture(nil, "BACKGROUND") end
             end
 
+            -- ── Border ────────────────────────────────────────────────────────
+            -- pip.borderTex is at BACKGROUND sublevel -7 on the pip itself.
+            -- pip.bg  is at sublevel -8 (darkens background, below border tex).
+            -- StatusBar fill renders above all BACKGROUND sublevels.
+            local borderEnabled   = db.resourcePipBorderEnabled
+            local borderThickness = db.resourcePipBorderThickness or 1
+            local borderColor     = db.resourcePipBorderColor or {0, 0, 0, 1}
+            local bt = pip.borderTex
+            local bm = pip.borderMask
+            if bt then
+                pcall(function() bt:RemoveMaskTexture(bm) end)
+                if borderEnabled then
+                    local t  = borderThickness
+                    local bc = borderColor
+                    bt:SetTexture("Interface\\Buttons\\WHITE8X8")
+                    bt:SetVertexColor(bc[1], bc[2], bc[3], bc[4] or 1)
+                    if shape == "Circle" then
+                        local circSize = math.min(pipW, pipH) + t * 2
+                        bt:ClearAllPoints()
+                        bt:SetSize(circSize, circSize)
+                        bt:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                        bt:SetRotation(0)
+                        if bm then
+                            bm:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+                            bm:ClearAllPoints(); bm:SetSize(circSize, circSize)
+                            bm:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                            pcall(function() bt:AddMaskTexture(bm) end)
+                        end
+                    elseif shape == "Diamond" then
+                        local outerS = math.min(pipW, pipH) / math.sqrt(2) + t * math.sqrt(2)
+                        bt:ClearAllPoints()
+                        bt:SetSize(outerS, outerS)
+                        bt:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                        bt:SetRotation(math.pi / 4)
+                    else -- Rectangle
+                        bt:ClearAllPoints()
+                        bt:SetSize(pipW + t * 2, pipH + t * 2)
+                        bt:SetPoint("CENTER", pip, "CENTER", 0, 0)
+                        bt:SetRotation(0)
+                    end
+                    bt:Show()
+                else
+                    bt:Hide()
+                end
+            end
+
             if shape == "Rectangle" then
                 EnterStatusBarMode()
                 ApplyStatusBarColour()
@@ -692,7 +869,9 @@ function UnitFramesLite_UpdateResourceLayout()
                     pip.bgMask:SetAllPoints(pip)
                     pcall(function() sb:AddMaskTexture(pip.bgMask) end)
                 end
-                ApplyColourToTex(sf, i); sf:Show(); sb:Show()
+                ApplyColourToTex(sf, i)
+                sf:SetAlpha(0)  -- alpha set by UpdateResourcePips; default to empty
+                sf:Show(); sb:Show()
 
             elseif shape == "Diamond" then
                 -- Rotate a square texture 45°. A square of side s has diagonal s*√2.
@@ -710,7 +889,9 @@ function UnitFramesLite_UpdateResourceLayout()
                 sb:SetSize(s, s)
                 sb:ClearAllPoints(); sb:SetPoint("CENTER", pip, "CENTER", 0, 0)
                 sb:SetVertexColor(0.1, 0.1, 0.1, 0.8)
-                ApplyColourToTex(sf, i); sf:Show(); sb:Show()
+                ApplyColourToTex(sf, i)
+                sf:SetAlpha(0)  -- alpha set by UpdateResourcePips; default to empty
+                sf:Show(); sb:Show()
 
             end
 
@@ -730,7 +911,7 @@ UpdateResourcePips = function()
     local cfg = cls and CLASS_RESOURCES[cls]
     if not cfg then return end
 
-    local maxPips = cfg.maxPips
+    local maxPips = resourceMaxPips > 0 and resourceMaxPips or cfg.maxPips
 
     if cfg.isRunes then
         -- Death Knight runes: use GetRuneCooldown
@@ -760,36 +941,59 @@ UpdateResourcePips = function()
         end
     else
         -- All other class resources
+        local hideWhenEmpty = cfg.hideWhenEmpty
+        local isFractional  = cfg.fractional
+
+        -- UnitPower/UnitPowerMax can return secret numbers in 12.0 for some power types.
+        -- All comparisons involving these values must be inside pcall.
+        -- cur/max are captured by closure so pcall callbacks can write them.
         local cur = 0
-        pcall(function() cur = UnitPower("player", cfg.powerType) end)
         local max = maxPips
         pcall(function()
             local m = UnitPowerMax("player", cfg.powerType)
-            if m and m > 0 then max = m end
+            if m and m > 0 then max = math.min(m, maxPips) end
         end)
-        -- Clamp max to configured maxPips
-        max = math.min(max, maxPips)
+        if isFractional then
+            -- Soul Shards: unmodified 0-50 range; each 10 units = 1 full shard.
+            -- Arithmetic on secret values is also forbidden, so wrap in pcall.
+            pcall(function() cur = UnitPower("player", cfg.powerType, true) end)
+        else
+            pcall(function() cur = UnitPower("player", cfg.powerType) end)
+        end
 
-        -- Use safe comparison for secret numbers: pip is active if its index <= cur
-        -- We can't do `i <= cur` directly (secret number comparison error in 12.0+).
-        -- Use pcall per pip.
         for i = 1, maxPips do
             local pip = resourcePips[i]
             if pip then
-                if i > max then
+                local overMax = false
+                pcall(function() overMax = (i > max) end)
+                if overMax then
                     pip:Hide()
                 else
-                    pip:Show()
-                    local active = false
-                    pcall(function() active = (cur >= i) end)
-                    if pip.isShapedPip then
-                        -- Shaped pip: show/hide fill textures; bg always visible at dim
-                        local a = active and 1 or 0
-                        if pip.shapeFill  then pip.shapeFill:SetAlpha(a)  end
-                        if pip.shapeFill2 then pip.shapeFill2:SetAlpha(a) end
+                    -- Determine fill fraction for this pip (0–1) inside pcall since
+                    -- comparing/doing arithmetic with secret numbers throws.
+                    local fillFrac = 0
+                    if isFractional then
+                        pcall(function()
+                            local pipMin = (i - 1) * 10
+                            fillFrac = math.max(0, math.min(1, (cur - pipMin) / 10))
+                        end)
                     else
-                        pip:SetValue(active and 1 or 0)
-                        pip:SetAlpha(active and 1 or 0.35)
+                        pcall(function() fillFrac = (cur >= i) and 1 or 0 end)
+                    end
+
+                    local active = fillFrac > 0
+
+                    if hideWhenEmpty and not active then
+                        pip:Hide()
+                    else
+                        pip:Show()
+                        if pip.isShapedPip then
+                            if pip.shapeFill  then pip.shapeFill:SetAlpha(fillFrac)  end
+                            if pip.shapeFill2 then pip.shapeFill2:SetAlpha(fillFrac) end
+                        else
+                            pip:SetValue(fillFrac)
+                            pip:SetAlpha(active and 1 or 0.35)
+                        end
                     end
                 end
             end
@@ -829,7 +1033,7 @@ function UnitFramesLite_UpdateFrame(unit)
     local br, bg, bb, ba = unpack(db.barBG)
     frame.bg:SetColorTexture(br, bg, bb, ba)
 
-    local barH = (db.hpBarHeight and db.hpBarHeight > 0) and db.hpBarHeight or h
+    local barH = (db.hpBarHeight and db.hpBarHeight > 0) and math.min(db.hpBarHeight, h) or h
 
     if db.sphereMode then
         -- ── Orb / sphere mode ─────────────────────────────────────────────
@@ -848,8 +1052,11 @@ function UnitFramesLite_UpdateFrame(unit)
         orbFrame:Show()
 
         -- Background circle
-        local bc = db.barBG or {0, 0, 0, 0.9}
-        frame.orbBg:SetColorTexture(bc[1], bc[2], bc[3], math.max(0.7, bc[4]))
+        local bc = db.orbBgColor or {0, 0, 0, 0.9}
+        frame.orbBg:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+        if frame.powerRingCentreCover then
+            frame.powerRingCentreCover:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+        end
 
         -- Fill bars
         -- When Gradient Direction is CENTRE the orb is split into lower and upper
@@ -864,7 +1071,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.orbFill:SetSize(sz, halfSz)
             frame.orbFill:SetOrientation(fillDir)
             frame.orbFill:SetReverseFill(db.reverseFill or false)
-            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true)   -- reversed gradient
+            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true, unit)   -- reversed gradient
             if frame.orbFill2 then
                 -- Upper half (top of orb)
                 frame.orbFill2:ClearAllPoints()
@@ -872,7 +1079,7 @@ function UnitFramesLite_UpdateFrame(unit)
                 frame.orbFill2:SetSize(sz, halfSz)
                 frame.orbFill2:SetOrientation(fillDir)
                 frame.orbFill2:SetReverseFill(db.reverseFill or false)
-                ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false)  -- normal gradient
+                ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false, unit)  -- normal gradient
                 frame.orbFill2:Show()
             end
         else
@@ -880,7 +1087,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.orbFill:SetAllPoints(orbFrame)
             frame.orbFill:SetOrientation(fillDir)
             frame.orbFill:SetReverseFill(db.reverseFill or false)
-            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask)
+            ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, nil, unit)
             if frame.orbFill2 then frame.orbFill2:Hide() end
         end
 
@@ -898,8 +1105,10 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.orbBorderFrame:Hide()
         end
 
-        -- Power ring
-        if db.showOrbPower and frame.powerRingFrame then
+        -- Power ring / bar
+        local pMode = db.orbPowerMode or "None"
+
+        if pMode == "Ring" and frame.powerRingFrame then
             local thick    = math.max(4, db.orbPowerRingThickness or 8)
             local ringSz   = sz + thick * 2
             local prf      = frame.powerRingFrame
@@ -932,14 +1141,55 @@ function UnitFramesLite_UpdateFrame(unit)
             SetupRingBar(frame.powerRingFillR)
 
             ApplyPowerRingColor(frame, unit)
+
+            -- Size the centre cover to the orb and colour it with orbBgColor so the
+            -- ring BG is only visible in the ring band, not behind the health orb.
+            if frame.powerRingCentreCover then
+                frame.powerRingCentreCover:SetSize(sz, sz)
+                frame.powerRingCentreMask:SetSize(sz, sz)
+                frame.powerRingCentreMask:SetPoint("CENTER", prf, "CENTER", 0, 0)
+                local bc = db.orbBgColor or {0, 0, 0, 0.9}
+                frame.powerRingCentreCover:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+            end
+
             prf:Show()
         else
             if frame.powerRingFrame then frame.powerRingFrame:Hide() end
         end
 
+        if pMode == "Bar" and frame.orbPowerBar then
+            local pb  = frame.orbPowerBar
+            local bw  = db.orbPowerBarWidth    or 80
+            local bh  = db.orbPowerBarHeight   or 12
+            local bx  = db.orbPowerBarX        or 0
+            local by  = db.orbPowerBarY        or 0
+            local fd  = db.orbPowerBarFillDir  or "HORIZONTAL"
+            pb:SetSize(bw, bh)
+            pb:ClearAllPoints()
+            if db.orbPowerBarCentreToScreen then
+                pb:SetPoint("CENTER", UIParent, "CENTER", 0, by)
+            else
+                pb:SetPoint("CENTER", frame, "CENTER", bx, by)
+            end
+            pb:SetOrientation(fd)
+            pb:SetReverseFill(db.reverseFill or false)
+            local fc = db.orbPowerBarUseTypeColor and GetPowerColor(unit)
+                       or db.orbPowerBarColor or {0, 0.5, 1, 1}
+            pb:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
+            if frame.orbPowerBarBg then
+                local bc = db.orbPowerBarBgColor or {0, 0, 0, 0.9}
+                frame.orbPowerBarBg:SetColorTexture(bc[1], bc[2], bc[3], bc[4] or 0.9)
+            end
+            -- Ensure bar has valid range so it renders before first event fires
+            pb:SetMinMaxValues(0, 1); pb:SetValue(1)
+            pb:Show()
+        else
+            if frame.orbPowerBar then frame.orbPowerBar:Hide() end
+        end
+
         -- Text (uses Text tab settings, positioned relative to orb centre)
         if frame.nameText then
-            local c = db.nameColor or {1, 1, 1, 1}
+            local c = (db.nameColorByReaction and GetReactionColor(unit, db)) or db.nameColor or {1, 1, 1, 1}
             frame.nameText:SetFont(ResolveFont(db, "nameFont"), db.nameTextFontSize or 12, "OUTLINE")
             frame.nameText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.nameText:ClearAllPoints()
@@ -949,7 +1199,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.nameText:SetJustifyH(db.nameAlign or "CENTER")
         end
         if frame.hpText then
-            local c = db.hpTextColor or {1, 1, 1, 1}
+            local c = (db.hpTextColorByReaction and GetReactionColor(unit, db)) or db.hpTextColor or {1, 1, 1, 1}
             frame.hpText:SetFont(ResolveFont(db, "hpTextFont"), db.hpTextFontSize or 11, "OUTLINE")
             frame.hpText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.hpText:ClearAllPoints()
@@ -959,7 +1209,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.hpText:SetJustifyH(db.hpTextAlign or "CENTER")
         end
         if frame.hpPctText then
-            local c = db.hpPctColor or {1, 1, 1, 1}
+            local c = (db.hpPctColorByReaction and GetReactionColor(unit, db)) or db.hpPctColor or {1, 1, 1, 1}
             frame.hpPctText:SetFont(ResolveFont(db, "hpPctFont"), db.hpPctFontSize or 11, "OUTLINE")
             frame.hpPctText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.hpPctText:ClearAllPoints()
@@ -969,7 +1219,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.hpPctText:SetJustifyH(db.hpPctAlign or "CENTER")
         end
         if frame.levelText then
-            local c = db.levelColor or {1, 1, 1, 1}
+            local c = (db.levelColorByReaction and GetReactionColor(unit, db)) or db.levelColor or {1, 1, 1, 1}
             frame.levelText:SetFont(ResolveFont(db, "levelFont"), db.levelTextFontSize or 11, "OUTLINE")
             frame.levelText:SetTextColor(c[1], c[2], c[3], c[4])
             frame.levelText:ClearAllPoints()
@@ -985,12 +1235,20 @@ function UnitFramesLite_UpdateFrame(unit)
         if frame.orbFill2        then frame.orbFill2:Hide()       end
         if frame.orbBorderFrame  then frame.orbBorderFrame:Hide() end
         if frame.powerRingFrame  then frame.powerRingFrame:Hide() end
+        if frame.orbPowerBar     then frame.orbPowerBar:Hide()    end
         -- Portrait frame is hidden when sphere mode is active (handled in portrait block below)
 
         frame.hp:Show()
         frame.hp:SetWidth(w)
 
-        if db.useSolidColor then
+        local hpLowActive = db.hpLowEnabled and
+            IsHPBelowThreshold(unit, db.hpLowThreshold or 35)
+
+        if hpLowActive then
+            frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+            local c = db.hpLowColor or {1, 0, 0, 1}
+            frame.hp:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        elseif db.useSolidColor then
             local texPath = "Interface\\TARGETINGFRAME\\UI-StatusBar"
             if LSM and db.statusbarTexture then
                 texPath = LSM:Fetch("statusbar", db.statusbarTexture) or texPath
@@ -1014,12 +1272,46 @@ function UnitFramesLite_UpdateFrame(unit)
 
         if frame.power then
             frame.power:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-            frame.power:SetWidth(w)
-            if db.showPowerBar then
-                local hpH = math.max(10, barH - 8)
-                frame.hp:SetHeight(hpH)
-                frame.power:SetHeight(8)
-                frame.power:Show()
+            -- Bar mode power is enabled when orbPowerMode is "Bar" (or legacy showPowerBar)
+            local barPowerEnabled = (db.orbPowerMode == "Bar") or
+                                    (db.orbPowerMode == nil and db.showPowerBar)
+            if barPowerEnabled then
+                local attach = db.powerBarAttach ~= false  -- default true (attached)
+                local maxPH  = math.max(1, math.floor(h / 2))
+                local pH     = attach and math.max(1, math.min(db.orbPowerBarHeight or 8, maxPH))
+                               or math.max(1, db.orbPowerBarHeight or 8)
+                local pw     = attach and w or math.max(1, db.orbPowerBarWidth or w)
+                frame.power:SetWidth(pw)
+                frame.power:SetHeight(pH)
+                frame.power:ClearAllPoints()
+                if attach then
+                    -- Attached: shrink health bar, anchor power bar to frame bottom
+                    frame.hp:SetHeight(math.max(1, barH - pH))
+                    frame.power:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+                elseif db.orbPowerBarCentreToScreen then
+                    -- Free-floating, centred on screen
+                    frame.hp:SetHeight(barH)
+                    local by = db.orbPowerBarY or 0
+                    frame.power:SetPoint("CENTER", UIParent, "CENTER", 0, by)
+                else
+                    -- Free-floating with manual X/Y offset from frame centre
+                    frame.hp:SetHeight(barH)
+                    local bx = db.orbPowerBarX or 0
+                    local by = db.orbPowerBarY or 0
+                    frame.power:SetPoint("CENTER", frame, "CENTER", bx, by)
+                end
+                local fd = db.orbPowerBarFillDir or "HORIZONTAL"
+                frame.power:SetOrientation(fd)
+                frame.power:SetReverseFill(db.reverseFill or false)
+                local fc = db.orbPowerBarUseTypeColor and GetPowerColor(unit)
+                           or db.orbPowerBarColor or {0, 0.5, 1, 1}
+                frame.power:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
+                if UnitHasPower(unit) then
+                    frame.power:Show()
+                else
+                    frame.hp:SetHeight(barH)
+                    frame.power:Hide()
+                end
             else
                 frame.hp:SetHeight(barH)
                 frame.power:Hide()
@@ -1029,16 +1321,20 @@ function UnitFramesLite_UpdateFrame(unit)
         end
 
         ApplyTextElement(frame.nameText,  frame, ResolveFont(db, "nameFont"),
-            db.nameTextFontSize  or 12, db.nameColor    or {1,1,1,1},
+            db.nameTextFontSize  or 12,
+            (db.nameColorByReaction  and GetReactionColor(unit, db)) or db.nameColor   or {1,1,1,1},
             db.nameTextX  or 0, db.nameTextY  or 0, db.nameAlign        or "LEFT")
         ApplyTextElement(frame.hpText,    frame, ResolveFont(db, "hpTextFont"),
-            db.hpTextFontSize    or 11, db.hpTextColor  or {1,1,1,1},
+            db.hpTextFontSize    or 11,
+            (db.hpTextColorByReaction and GetReactionColor(unit, db)) or db.hpTextColor or {1,1,1,1},
             db.hpTextX    or 0, db.hpTextY    or 0, db.hpTextAlign      or "CENTER")
         ApplyTextElement(frame.hpPctText, frame, ResolveFont(db, "hpPctFont"),
-            db.hpPctFontSize     or 11, db.hpPctColor   or {1,1,1,1},
+            db.hpPctFontSize     or 11,
+            (db.hpPctColorByReaction  and GetReactionColor(unit, db)) or db.hpPctColor  or {1,1,1,1},
             db.hpPctX     or 0, db.hpPctY     or -14,   db.hpPctAlign   or "CENTER")
         ApplyTextElement(frame.levelText, frame, ResolveFont(db, "levelFont"),
-            db.levelTextFontSize or 11, db.levelColor   or {1,1,1,1},
+            db.levelTextFontSize or 11,
+            (db.levelColorByReaction  and GetReactionColor(unit, db)) or db.levelColor  or {1,1,1,1},
             db.levelTextX or 0, db.levelTextY or 0, db.levelTextAlign   or "CENTER")
     end
 
@@ -1180,8 +1476,14 @@ function UnitFramesLite_CopyUnit(srcUnit, destUnit, mirror)
         if dest.portraitSide == "Left" then dest.portraitSide = "Right"
         elseif dest.portraitSide == "Right" then dest.portraitSide = "Left" end
         dest.portraitX = -(dest.portraitX or 0)
+        -- Mirror aura Grow X: LEFT↔RIGHT for both buffs and debuffs
+        if dest.buffGrowX == "LEFT" then dest.buffGrowX = "RIGHT"
+        elseif dest.buffGrowX == "RIGHT" then dest.buffGrowX = "LEFT" end
+        if dest.debuffGrowX == "LEFT" then dest.debuffGrowX = "RIGHT"
+        elseif dest.debuffGrowX == "RIGHT" then dest.debuffGrowX = "LEFT" end
     end
     UnitFramesLite_UpdateFrame(destUnit)
+    UnitFramesLite_UpdateAuras(destUnit)
 end
 
 -- Profiles -------------------------------------------------------------------
@@ -1266,8 +1568,11 @@ function UnitFramesLite_UpdateResourceVisibility()
     local showOutCombat  = db.resourceShowOutCombat ~= false  -- default true
     local showWithTarget = db.resourceShowWithTarget or false
 
+    local cfg = resourceClass and CLASS_RESOURCES[resourceClass]
     local shouldShow = true
     if db.showResources == false then
+        shouldShow = false
+    elseif IsResourceGated(cfg) then
         shouldShow = false
     elseif inCombat then
         shouldShow = true
@@ -1314,6 +1619,67 @@ function UnitFramesLite_ApplyBlizzardFrames()
     end
 end
 
+-- Minimap button + Bazooka plugin (LibDataBroker / LibDBIcon) ----------------
+-- One LDB launcher object serves both purposes:
+--   • LibDBIcon-1.0  → minimap button (draggable, position saved in DB)
+--   • Bazooka / any LDB display addon → broker bar plugin
+
+local ldbObject  -- the shared LDB data object
+
+local function SetupLDB()
+    local LDB     = LibStub and LibStub("LibDataBroker-1.1", true)
+    if not LDB then return end
+
+    if ldbObject then return end  -- already created
+
+    ldbObject = LDB:NewDataObject("UnitFramesLite", {
+        type  = "launcher",
+        label = "UnitFramesLite",
+        icon  = "Interface\\Icons\\INV_Helmet_08",
+        OnClick = function(_, button)
+            if button == "LeftButton" then
+                if UnitFramesLite_ShowOptions then UnitFramesLite_ShowOptions() end
+            end
+        end,
+        OnEnter = function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            GameTooltip:AddLine("UnitFramesLite")
+            GameTooltip:AddLine("|cffaaaaaa(Left-click) Open options|r")
+            GameTooltip:Show()
+        end,
+        OnLeave = function() GameTooltip:Hide() end,
+    })
+end
+
+function UFL.ApplyMinimapButton()
+    local g = UnitFramesLiteDB and UnitFramesLiteDB.global
+    if not g then return end
+
+    local LDBIcon = LibStub and LibStub("LibDBIcon-1.0", true)
+    if not LDBIcon then return end
+
+    SetupLDB()
+    if not ldbObject then return end
+
+    -- minimapData is the saved-variable table LibDBIcon uses for position/hide state
+    if not UnitFramesLiteDB.minimapButton then
+        UnitFramesLiteDB.minimapButton = {}
+    end
+    LDBIcon:Register("UnitFramesLite", ldbObject, UnitFramesLiteDB.minimapButton)
+
+    if g.showMinimapButton then
+        LDBIcon:Show("UnitFramesLite")
+    else
+        LDBIcon:Hide("UnitFramesLite")
+    end
+end
+
+function UFL.ApplyBazookaPlugin()
+    local g = UnitFramesLiteDB and UnitFramesLiteDB.global
+    if not g or not g.showBazookaPlugin then return end
+    SetupLDB()  -- ensure the LDB object exists for display addons to pick up
+end
+
 -- Slash commands -------------------------------------------------------------
 
 SLASH_UNITFRAMESLITE1 = "/ufl"
@@ -1334,7 +1700,23 @@ SlashCmdList["UNITFRAMESLITE"] = function(msg)
         print("UnitFramesLite: settings reset to defaults.")
         return
     end
-    print("UnitFramesLite commands:  /ufl options  /ufl reset")
+    if cmd == "debug" then
+        local db = GetDB("player")
+        print("UFL debug: showHPPct=" .. tostring(db.showHPPct) .. " sphereMode=" .. tostring(db.sphereMode))
+        local ok, pct = pcall(UnitHealthPercent, "player", true, CurveConstants and CurveConstants.ScaleTo100)
+        print("UFL debug: UnitHealthPercent ok=" .. tostring(ok) .. " pct=" .. tostring(pct))
+        local pctStr = GetHPPercentText(false, true, "player")
+        print("UFL debug: GetHPPercentText=" .. tostring(pctStr))
+        local f = frames and frames["player"]
+        print("UFL debug: frames.player=" .. tostring(f ~= nil))
+        if f then
+            local hpPct = f.hpPctText
+            print("UFL debug: hpPctText exists=" .. tostring(hpPct ~= nil)
+                .. (hpPct and (" shown=" .. tostring(hpPct:IsShown()) .. " text=" .. tostring(hpPct:GetText())) or ""))
+        end
+        return
+    end
+    print("UnitFramesLite commands:  /ufl options  /ufl reset  /ufl debug")
 end
 
 -- Status flags ---------------------------------------------------------------
@@ -1390,6 +1772,8 @@ local function SetupFrame(displayFrame, unit)
     displayFrame:SetMovable(true)
     displayFrame:EnableMouse(true)
     displayFrame:RegisterForDrag("LeftButton")
+    -- Pass right-click through so camera rotation works when the cursor is over the frame
+    displayFrame:SetPropagateMouseClicks(true)
     displayFrame:SetScript("OnDragStart", function(self)
         if not GetDB(unit).locked then self:StartMoving() end
     end)
@@ -1413,12 +1797,15 @@ local function SetupFrame(displayFrame, unit)
     local borderFrame = CreateFrame("Frame", nil, displayFrame, "BackdropTemplate")
     borderFrame:SetAllPoints()
     borderFrame:SetFrameLevel(parentLevel + 5)
+    borderFrame:EnableMouse(false)
     borderFrame:Hide()
     displayFrame.borderFrame = borderFrame
 
     local textOverlay = CreateFrame("Frame", nil, displayFrame)
     textOverlay:SetAllPoints()
-    textOverlay:SetFrameStrata("HIGH")
+    textOverlay:SetFrameStrata("MEDIUM")
+    textOverlay:SetFrameLevel(parentLevel + 20)  -- above orb (+3), border (+5), orbPowerBar (+6)
+    textOverlay:EnableMouse(false)
     displayFrame.textOverlay = textOverlay
 
     displayFrame.nameText   = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1435,6 +1822,7 @@ local function SetupFrame(displayFrame, unit)
     local portraitFrame = CreateFrame("Frame", nil, UIParent)
     portraitFrame:Hide()
     portraitFrame:SetFrameLevel(displayFrame:GetFrameLevel() + 1)
+    portraitFrame:EnableMouse(false)
     displayFrame.portraitFrame = portraitFrame
 
     -- 2D portrait texture (used for "2D" mode)
@@ -1451,6 +1839,7 @@ local function SetupFrame(displayFrame, unit)
     -- ── Power ring (behind orb) ───────────────────────────────────────────
     local powerRingFrame = CreateFrame("Frame", nil, displayFrame)
     powerRingFrame:Hide()
+    powerRingFrame:EnableMouse(false)
     displayFrame.powerRingFrame = powerRingFrame
 
     local powerRingBg = powerRingFrame:CreateTexture(nil, "BACKGROUND")
@@ -1463,6 +1852,18 @@ local function SetupFrame(displayFrame, unit)
     powerRingBg:AddMaskTexture(powerRingCircMask)
     displayFrame.powerRingCircMask = powerRingCircMask
 
+    -- Centre cover: sits above powerRingBg (BORDER layer) on the same frame, sized to
+    -- the orb diameter and masked to a circle. Always coloured with orbBgColor so the
+    -- ring BG colour only shows in the ring band, not the orb centre.
+    local powerRingCentreCover = powerRingFrame:CreateTexture(nil, "BORDER")
+    powerRingCentreCover:SetPoint("CENTER", powerRingFrame, "CENTER", 0, 0)
+    displayFrame.powerRingCentreCover = powerRingCentreCover
+
+    local powerRingCentreMask = powerRingFrame:CreateMaskTexture()
+    powerRingCentreMask:SetTexture(ORB_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    powerRingCentreCover:AddMaskTexture(powerRingCentreMask)
+    displayFrame.powerRingCentreMask = powerRingCentreMask
+
     -- Radial sweep via Cooldown frame. SetCooldown(start, duration) is a C-function
     -- that accepts secret numbers directly as arguments — no Lua arithmetic needed.
     -- We pass: start = GetTime() - power,  duration = maxPower
@@ -1470,6 +1871,7 @@ local function SetupFrame(displayFrame, unit)
     -- Right half: fills the 3-o'clock side of the ring (CW: second 50%; CCW: first 50%)
     local prFillR = CreateFrame("StatusBar", nil, powerRingFrame)
     prFillR:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    prFillR:EnableMouse(false)
     displayFrame.powerRingFillR = prFillR
     local prStR = prFillR:GetStatusBarTexture()
     if prStR then prStR:AddMaskTexture(powerRingCircMask) end
@@ -1477,14 +1879,28 @@ local function SetupFrame(displayFrame, unit)
     -- Left half: fills the 9-o'clock side (CW: first 50%; CCW: second 50%)
     local prFillL = CreateFrame("StatusBar", nil, powerRingFrame)
     prFillL:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    prFillL:EnableMouse(false)
     displayFrame.powerRingFillL = prFillL
     local prStL = prFillL:GetStatusBarTexture()
     if prStL then prStL:AddMaskTexture(powerRingCircMask) end
+
+    -- ── Orb power bar (standalone bar, shown when orbPowerMode=="Bar") ─────
+    local orbPowerBar = CreateFrame("StatusBar", nil, displayFrame)
+    orbPowerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    orbPowerBar:SetFrameStrata("MEDIUM")
+    orbPowerBar:SetFrameLevel(parentLevel + 6)
+    orbPowerBar:EnableMouse(false)
+    orbPowerBar:Hide()
+    displayFrame.orbPowerBar = orbPowerBar
+    local orbPowerBarBg = orbPowerBar:CreateTexture(nil, "BACKGROUND")
+    orbPowerBarBg:SetAllPoints()
+    displayFrame.orbPowerBarBg = orbPowerBarBg
 
     -- ── Orb inner border (between power ring fills and health orb) ───────
     local orbBorderFrame = CreateFrame("Frame", nil, displayFrame)
     orbBorderFrame:Hide()
     orbBorderFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 2)
+    orbBorderFrame:EnableMouse(false)
     displayFrame.orbBorderFrame = orbBorderFrame
 
     local orbBorderTex = orbBorderFrame:CreateTexture(nil, "BACKGROUND")
@@ -1501,6 +1917,7 @@ local function SetupFrame(displayFrame, unit)
     local orbFrame = CreateFrame("Frame", nil, displayFrame)
     orbFrame:Hide()
     orbFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 3)
+    orbFrame:EnableMouse(false)
     displayFrame.orbFrame = orbFrame
 
     local orbBg = orbFrame:CreateTexture(nil, "BACKGROUND")
@@ -1516,12 +1933,14 @@ local function SetupFrame(displayFrame, unit)
     local orbFill = CreateFrame("StatusBar", nil, orbFrame)
     orbFill:SetAllPoints()
     orbFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    orbFill:EnableMouse(false)
     displayFrame.orbFill = orbFill
     local st = orbFill:GetStatusBarTexture()
     if st then st:AddMaskTexture(orbCircleMask) end
 
     local orbFill2 = CreateFrame("StatusBar", nil, orbFrame)
     orbFill2:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    orbFill2:EnableMouse(false)
     orbFill2:Hide()
     displayFrame.orbFill2 = orbFill2
     local st2 = orbFill2:GetStatusBarTexture()
@@ -1533,12 +1952,14 @@ local function SetupFrame(displayFrame, unit)
     listener:RegisterUnitEvent("UNIT_MAXHEALTH",       unit)
     listener:RegisterUnitEvent("UNIT_NAME_UPDATE",     unit)
     listener:RegisterUnitEvent("UNIT_FLAGS",           unit)
+    listener:RegisterUnitEvent("UNIT_FACTION",         unit)
     listener:RegisterUnitEvent("UNIT_LEVEL",           unit)
     listener:RegisterUnitEvent("UNIT_POWER_UPDATE",    unit)
     listener:RegisterUnitEvent("UNIT_POWER_FREQUENT",  unit)
     listener:RegisterUnitEvent("UNIT_DISPLAYPOWER",    unit)
     listener:RegisterUnitEvent("UNIT_PORTRAIT_UPDATE", unit)
     listener:RegisterUnitEvent("UNIT_MODEL_CHANGED",   unit)
+    listener:RegisterUnitEvent("UNIT_AURA",            unit)
     if unit == "target" then listener:RegisterEvent("PLAYER_TARGET_CHANGED") end
     if unit == "focus"  then listener:RegisterEvent("PLAYER_FOCUS_CHANGED")  end
     if unit == "pet"    then listener:RegisterEvent("UNIT_PET")               end
@@ -1596,7 +2017,8 @@ local function SetupFrame(displayFrame, unit)
         --                right → SetMinMaxValues(halfMax, max), SetValue(power)
         -- SetMinMaxValues and SetValue accept secret numbers just like StatusBar
         -- hp/power bars do — no taint error.
-        if displayFrame.powerRingFillR and displayFrame.powerRingFillL and db.showOrbPower then
+        local pMode = db.orbPowerMode or "None"
+        if pMode == "Ring" and displayFrame.powerRingFillR and displayFrame.powerRingFillL then
             local ccw   = db.orbPowerRingCCW or false
             local fillR = displayFrame.powerRingFillR
             local fillL = displayFrame.powerRingFillL
@@ -1614,6 +2036,10 @@ local function SetupFrame(displayFrame, unit)
                 fillL:SetValue(isDead and 0 or power)
             end
             ApplyPowerRingColor(displayFrame, unit)
+        end
+        if pMode == "Bar" and displayFrame.orbPowerBar then
+            displayFrame.orbPowerBar:SetMinMaxValues(0, maxPower)
+            displayFrame.orbPowerBar:SetValue(isDead and 0 or power)
         end
 
         -- Name
@@ -1690,8 +2116,69 @@ local function SetupFrame(displayFrame, unit)
         end
     end
 
-    listener:SetScript("OnEvent", function() Update() end)
+    -- Re-apply HP bar colour on every health update so low-health colour
+    -- override transitions in real-time without a full UpdateFrame call.
+    local wasLowHP = false
+    local function UpdateHPColour()
+        local db = GetDB(unit)
+        if not db.hpLowEnabled then
+            if wasLowHP then wasLowHP = false; UnitFramesLite_UpdateFrame(unit) end
+            return
+        end
+        local isLow = IsHPBelowThreshold(unit, db.hpLowThreshold or 35)
+        -- Only act on transitions or when already low (colour may need refreshing)
+        if isLow == wasLowHP and not isLow then return end
+        wasLowHP = isLow or false
+        local frame = displayFrame
+        if db.sphereMode then
+            if frame.orbFill then
+                ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true, unit)
+                if frame.orbFill2 then
+                    ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false, unit)
+                end
+            end
+        else
+            if isLow then
+                frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+                local c = db.hpLowColor or {1, 0, 0, 1}
+                frame.hp:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            else
+                UnitFramesLite_UpdateFrame(unit)
+            end
+        end
+    end
+
+    listener:SetScript("OnEvent", function(_, evt)
+        Update()
+        if evt == "UNIT_HEALTH" or evt == "UNIT_MAXHEALTH" then UpdateHPColour() end
+        if evt == "UNIT_AURA" then UnitFramesLite_UpdateAuras(unit) end
+        -- Refresh frame (including reaction-based text colours) on target/unit change
+        if evt == "PLAYER_TARGET_CHANGED" or evt == "PLAYER_FOCUS_CHANGED"
+           or evt == "UNIT_PET" or evt == "UNIT_FACTION" then
+            UnitFramesLite_UpdateFrame(unit)
+            -- If the target's faction changed, also refresh player alpha (fadeHostileTarget)
+            if evt == "UNIT_FACTION" and unit == "target" then
+                UnitFramesLite_UpdateAlpha("player")
+            end
+        end
+    end)
     displayFrame.OnUFLUpdate = Update
+
+    -- Orb HP% text: poll UnitHealthPercent on a throttle so the text stays in sync
+    -- with the fill without waiting for UNIT_HEALTH events. CurveConstants.ScaleTo100
+    -- returns a plain integer, avoiding all secret-number arithmetic.
+    local orbPctElapsed = 0
+    orbFill:SetScript("OnUpdate", function(self, elapsed)
+        orbPctElapsed = orbPctElapsed + elapsed
+        if orbPctElapsed < 0.05 then return end  -- ~20 Hz
+        orbPctElapsed = 0
+        local db = GetDB(unit)
+        if not (db.sphereMode and db.showHPPct) then return end
+        local hpPctText = displayFrame.hpPctText
+        if not hpPctText or not hpPctText:IsShown() then return end
+        local pctStr = GetHPPercentText(UnitIsDead(unit), db.hpPctShowSymbol ~= false, unit)
+        if pctStr then hpPctText:SetText(pctStr) end
+    end)
 end
 
 -- Aura display --------------------------------------------------------------
@@ -1699,7 +2186,7 @@ end
 -- Layout and filtering are recomputed on every UNIT_AURA event.
 
 -- auraFrames[unit] = { buff = {container, pool={}}, debuff = {container, pool={}} }
-local auraFrames = {}
+-- (auraFrames is forward-declared near the top of the file)
 
 local DISPEL_TYPES = { Magic=true, Curse=true, Disease=true, Poison=true }
 
@@ -1739,6 +2226,33 @@ local function GetOrCreateIcon(pool, idx, container)
     debuffBorder:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
     debuffBorder:SetAllPoints(); debuffBorder:Hide()
     btn.debuffBorder = debuffBorder
+
+    -- Tooltip: btn.auraUnit and btn.auraIndex are set by LayoutAuraStrip before Show()
+    local tooltipTimer = nil
+    btn:SetScript("OnEnter", function(self)
+        local db = self.auraUnit and GetDB(self.auraUnit)
+        if not db or not db.auraTooltipEnabled then return end
+        local delay = db.auraTooltipDelay or 0
+        local function showTip()
+            tooltipTimer = nil
+            if not self:IsMouseOver() then return end
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+            if self.auraUnit and self.auraIndex and self.auraFilter then
+                GameTooltip:SetUnitAura(self.auraUnit, self.auraIndex, self.auraFilter)
+            end
+            GameTooltip:Show()
+        end
+        if delay <= 0 then
+            showTip()
+        else
+            tooltipTimer = C_Timer.After(delay, showTip)
+        end
+    end)
+    btn:SetScript("OnLeave", function()
+        tooltipTimer = nil
+        GameTooltip:Hide()
+    end)
+
     pool[idx] = btn
     return btn
 end
@@ -1757,7 +2271,8 @@ local function GetFrameVerticalExtent(frame, db)
     if db.sphereMode then
         local sz    = math.max(20, db.sphereSize or 80)
         local extra = 0
-        if db.showOrbPower then
+        local pMode = db.orbPowerMode or "None"
+        if pMode == "Ring" then
             extra = math.max(4, db.orbPowerRingThickness or 8)
         end
         return sz / 2 + extra
@@ -1768,7 +2283,8 @@ end
 
 -- Lay out one aura strip (buffs or debuffs) given collected aura list + config.
 local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShown,
-                                growX, growY, xOffset, yOffset, anchorToFrame, extraVertPad)
+                                growX, growY, xOffset, yOffset, anchorToFrame, extraVertPad,
+                                unit, auraFilter)
     local container = slot.container
     local pool      = slot.pool
     local gap       = 2
@@ -1851,14 +2367,29 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
         btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + col * xStep, startY + row * yStep)
 
+        btn.auraUnit   = unit
+        btn.auraIndex  = i
+        btn.auraFilter = auraFilter
         btn.icon:SetTexture(aura.icon)
-        btn.stack:SetText((aura.applications and aura.applications > 1) and aura.applications or "")
-        if aura.duration and aura.duration > 0 and aura.expirationTime then
-            btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
-        else
-            btn.cd:SetCooldown(0, 0)
+        -- aura.applications and aura.duration can be secret numbers in 12.0 — comparisons must use pcall.
+        local showStack = false
+        pcall(function() showStack = aura.applications and aura.applications > 1 end)
+        btn.stack:SetText(showStack and aura.applications or "")
+        local cdSet = false
+        if aura.duration and aura.expirationTime then
+            pcall(function()
+                if aura.duration > 0 then
+                    btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
+                    cdSet = true
+                end
+            end)
         end
-        if aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] then
+        if not cdSet then btn.cd:SetCooldown(0, 0) end
+        local showBorder = false
+        pcall(function()
+            showBorder = aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] ~= nil
+        end)
+        if showBorder then
             local dc = DEBUFF_COLORS[aura.dispelName]
             btn.debuffBorder:SetVertexColor(dc[1], dc[2], dc[3])
             btn.debuffBorder:Show()
@@ -1904,7 +2435,9 @@ function UnitFramesLite_UpdateAuras(unit)
         while true do
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL")
             if not aura then break end
-            if db.debuffPlayerOnly and not aura.isFromPlayerOrPlayerPet then
+            local fromPlayer = false
+            pcall(function() fromPlayer = aura.isFromPlayerOrPlayerPet == true end)
+            if db.debuffPlayerOnly and not fromPlayer then
                 -- skip
             elseif db.debuffCurableOnly and not (aura.dispelName and DISPEL_TYPES[aura.dispelName]) then
                 -- skip
@@ -1926,7 +2459,7 @@ function UnitFramesLite_UpdateAuras(unit)
             db.buffXOffset   or 0,
             db.buffYOffset   or 0,
             db.buffAnchorToFrame ~= false,
-            0)
+            0, unit, "HELPFUL")
     else
         data.buff.container:Hide()
         for i = 1, #data.buff.pool do data.buff.pool[i]:Hide() end
@@ -1943,7 +2476,7 @@ function UnitFramesLite_UpdateAuras(unit)
             db.debuffXOffset   or 0,
             db.debuffYOffset   or 0,
             db.debuffAnchorToFrame ~= false,
-            0)
+            0, unit, "HARMFUL")
     else
         data.debuff.container:Hide()
         for i = 1, #data.debuff.pool do data.debuff.pool[i]:Hide() end
@@ -1978,6 +2511,7 @@ eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
 eventFrame:RegisterEvent("UNIT_PET")
 eventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
 eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+eventFrame:RegisterUnitEvent("UNIT_DISPLAYPOWER", "player")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 eventFrame:RegisterUnitEvent("UNIT_AURA", "player")
@@ -1993,9 +2527,29 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             hideBlizzTarget   = false,
             hideBlizzFocus    = false,
             hideBlizzPet      = false,
+            showMinimapButton = true,
+            showBazookaPlugin = true,
         }
+        -- Migrate: ensure new global keys exist for older SavedVariables
+        local g = UnitFramesLiteDB.global
+        if g.showMinimapButton == nil then g.showMinimapButton = true end
+        if g.showBazookaPlugin == nil then g.showBazookaPlugin = true end
         -- Profiles table: { active="Default", profiles={ Default={player={...}, target={...}, ...} } }
         UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
+        -- Migrate: showOrbPower (bool) → orbPowerMode (string)
+        -- Migrate: showPowerBar (bool) → orbPowerMode (string)
+        -- Runs before CopyDefaults. Also fixes saves where orbPowerMode was wrongly
+        -- set to "None" by a previous version that had it in defaults.
+        for _, unit in ipairs({"player", "target", "focus", "pet"}) do
+            local udb = UnitFramesLiteDB[unit]
+            if udb then
+                if udb.showOrbPower == true and (udb.orbPowerMode == nil or udb.orbPowerMode == "None") then
+                    udb.orbPowerMode = "Ring"
+                elseif udb.showPowerBar == true and udb.orbPowerMode == nil then
+                    udb.orbPowerMode = "Bar"
+                end
+            end
+        end
         for unit, def in pairs(defaults) do
             UnitFramesLiteDB[unit] = CopyDefaults(def, UnitFramesLiteDB[unit] or {})
         end
@@ -2026,28 +2580,49 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             UnitFramesLite_UpdateFrame(unit)
         end
         UnitFramesLite_ApplyBlizzardFrames()
+        UFL.ApplyMinimapButton()
+        UFL.ApplyBazookaPlugin()
         SetupResourcePips()
         RegisterResourceOnUpdate(eventFrame)
         UnitFramesLite_UpdateResourceVisibility()
         -- Initialise aura containers for all units
         for unit in pairs(defaults) do GetAuraContainer(unit) end
         UnitFramesLite_UpdateAllAuras()
+        for unit in pairs(defaults) do UnitFramesLite_UpdateAlpha(unit) end
     elseif event == "UNIT_AURA" then
         UnitFramesLite_UpdateAuras(arg1)
     elseif event == "PLAYER_TARGET_CHANGED" then
         UnitFramesLite_UpdateVisibility("target")
+        UnitFramesLite_UpdateFrame("target")
         UnitFramesLite_UpdateAlpha("player")
         UnitFramesLite_UpdateAlpha("target")
         UnitFramesLite_UpdateResourceVisibility()
+        -- Clear target auras immediately so stale icons from the previous target
+        -- don't flash before UNIT_AURA fires with the new target's data.
+        local td = auraFrames["target"]
+        if td then
+            td.buff.container:Hide()
+            td.debuff.container:Hide()
+            for _, btn in ipairs(td.buff.pool)   do btn:Hide() end
+            for _, btn in ipairs(td.debuff.pool) do btn:Hide() end
+        end
         UnitFramesLite_UpdateAuras("target")
     elseif event == "PLAYER_FOCUS_CHANGED" then
         UnitFramesLite_UpdateVisibility("focus")
         UnitFramesLite_UpdateAlpha("focus")
+        UnitFramesLite_UpdateAuras("focus")
     elseif event == "UNIT_PET" then
         UnitFramesLite_UpdateVisibility("pet")
         UnitFramesLite_UpdateAlpha("pet")
     elseif event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER" then
         UpdateResourcePips()
+    elseif event == "UNIT_DISPLAYPOWER" then
+        -- Fires when the player's primary power type changes (e.g. Druid shifting forms).
+        -- catFormOnly resources (Druid combo points) should appear/disappear accordingly.
+        SetupResourcePips()
+        UnitFramesLite_UpdateResourceLayout()
+        UpdateResourcePips()
+        UnitFramesLite_UpdateResourceVisibility()
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" then
         SetupResourcePips()
         UnitFramesLite_UpdateResourceLayout()
