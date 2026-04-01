@@ -1772,6 +1772,8 @@ local function SetupFrame(displayFrame, unit)
     displayFrame:SetMovable(true)
     displayFrame:EnableMouse(true)
     displayFrame:RegisterForDrag("LeftButton")
+    -- Pass right-click through so camera rotation works when the cursor is over the frame
+    displayFrame:SetPropagateMouseClicks(true)
     displayFrame:SetScript("OnDragStart", function(self)
         if not GetDB(unit).locked then self:StartMoving() end
     end)
@@ -1795,6 +1797,7 @@ local function SetupFrame(displayFrame, unit)
     local borderFrame = CreateFrame("Frame", nil, displayFrame, "BackdropTemplate")
     borderFrame:SetAllPoints()
     borderFrame:SetFrameLevel(parentLevel + 5)
+    borderFrame:EnableMouse(false)
     borderFrame:Hide()
     displayFrame.borderFrame = borderFrame
 
@@ -1802,6 +1805,7 @@ local function SetupFrame(displayFrame, unit)
     textOverlay:SetAllPoints()
     textOverlay:SetFrameStrata("MEDIUM")
     textOverlay:SetFrameLevel(parentLevel + 20)  -- above orb (+3), border (+5), orbPowerBar (+6)
+    textOverlay:EnableMouse(false)
     displayFrame.textOverlay = textOverlay
 
     displayFrame.nameText   = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1818,6 +1822,7 @@ local function SetupFrame(displayFrame, unit)
     local portraitFrame = CreateFrame("Frame", nil, UIParent)
     portraitFrame:Hide()
     portraitFrame:SetFrameLevel(displayFrame:GetFrameLevel() + 1)
+    portraitFrame:EnableMouse(false)
     displayFrame.portraitFrame = portraitFrame
 
     -- 2D portrait texture (used for "2D" mode)
@@ -1834,6 +1839,7 @@ local function SetupFrame(displayFrame, unit)
     -- ── Power ring (behind orb) ───────────────────────────────────────────
     local powerRingFrame = CreateFrame("Frame", nil, displayFrame)
     powerRingFrame:Hide()
+    powerRingFrame:EnableMouse(false)
     displayFrame.powerRingFrame = powerRingFrame
 
     local powerRingBg = powerRingFrame:CreateTexture(nil, "BACKGROUND")
@@ -1865,6 +1871,7 @@ local function SetupFrame(displayFrame, unit)
     -- Right half: fills the 3-o'clock side of the ring (CW: second 50%; CCW: first 50%)
     local prFillR = CreateFrame("StatusBar", nil, powerRingFrame)
     prFillR:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    prFillR:EnableMouse(false)
     displayFrame.powerRingFillR = prFillR
     local prStR = prFillR:GetStatusBarTexture()
     if prStR then prStR:AddMaskTexture(powerRingCircMask) end
@@ -1872,6 +1879,7 @@ local function SetupFrame(displayFrame, unit)
     -- Left half: fills the 9-o'clock side (CW: first 50%; CCW: second 50%)
     local prFillL = CreateFrame("StatusBar", nil, powerRingFrame)
     prFillL:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    prFillL:EnableMouse(false)
     displayFrame.powerRingFillL = prFillL
     local prStL = prFillL:GetStatusBarTexture()
     if prStL then prStL:AddMaskTexture(powerRingCircMask) end
@@ -1881,6 +1889,7 @@ local function SetupFrame(displayFrame, unit)
     orbPowerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     orbPowerBar:SetFrameStrata("MEDIUM")
     orbPowerBar:SetFrameLevel(parentLevel + 6)
+    orbPowerBar:EnableMouse(false)
     orbPowerBar:Hide()
     displayFrame.orbPowerBar = orbPowerBar
     local orbPowerBarBg = orbPowerBar:CreateTexture(nil, "BACKGROUND")
@@ -1891,6 +1900,7 @@ local function SetupFrame(displayFrame, unit)
     local orbBorderFrame = CreateFrame("Frame", nil, displayFrame)
     orbBorderFrame:Hide()
     orbBorderFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 2)
+    orbBorderFrame:EnableMouse(false)
     displayFrame.orbBorderFrame = orbBorderFrame
 
     local orbBorderTex = orbBorderFrame:CreateTexture(nil, "BACKGROUND")
@@ -1907,6 +1917,7 @@ local function SetupFrame(displayFrame, unit)
     local orbFrame = CreateFrame("Frame", nil, displayFrame)
     orbFrame:Hide()
     orbFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 3)
+    orbFrame:EnableMouse(false)
     displayFrame.orbFrame = orbFrame
 
     local orbBg = orbFrame:CreateTexture(nil, "BACKGROUND")
@@ -1922,12 +1933,14 @@ local function SetupFrame(displayFrame, unit)
     local orbFill = CreateFrame("StatusBar", nil, orbFrame)
     orbFill:SetAllPoints()
     orbFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    orbFill:EnableMouse(false)
     displayFrame.orbFill = orbFill
     local st = orbFill:GetStatusBarTexture()
     if st then st:AddMaskTexture(orbCircleMask) end
 
     local orbFill2 = CreateFrame("StatusBar", nil, orbFrame)
     orbFill2:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    orbFill2:EnableMouse(false)
     orbFill2:Hide()
     displayFrame.orbFill2 = orbFill2
     local st2 = orbFill2:GetStatusBarTexture()
