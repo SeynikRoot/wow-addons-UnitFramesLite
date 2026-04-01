@@ -734,35 +734,35 @@ local function BuildTextContent(content, unit, getDB, panel)
         return btn
     end
 
-    -- Inside each group box:
-    --   y=-24: Show checkbox (below the group box title at y=-5)
-    --   y=-54: Static colour swatch
-    --   y=-80: "Colour by Reaction" checkbox
-    --   y=-104: Reaction sub-frame (conditional, ~88px)
-    --   y=-196: Collapsible container (font/align/position controls)
-    local GX      = 4    -- x padding inside group box
-    local CTR_TOP = -196 -- collapsible container top inside group box (shifted for reaction section)
+    -- Layout per group box (all top-down, no blank gaps):
+    --   y=-24:  Show checkbox
+    --   y=-46:  Font/Align/Size/XOff/YOff controls (+ Content/Format/ShowPct where applicable)
+    --   y=-(46+ctrH+10): "Colour by Reaction" checkbox
+    --   y=-(46+ctrH+36): static colour swatch (hidden when reaction on)
+    --     OR, when reaction on:
+    --   y=-(46+ctrH+36): "Use Default Colours" checkbox
+    --   y=-(46+ctrH+66): Friendly / Neutral / Enemy swatches
+    -- Box height sized to reaction-on state (tallest).
+    local GX = 4  -- x padding inside group box
 
-    -- Helper: add reaction colour controls to a text group box.
-    -- byReactionKey: db key for the enable flag (e.g. "nameColorByReaction")
-    -- Returns the checkbox and sub-frame so callers can hook Refresh if needed.
-    local function AddReactionSection(box, byReactionKey)
-        -- Sub-frame (forward-declared so rxCb closure can reference it)
-        local rxSub = CreateFrame("Frame", nil, box)
-        rxSub:SetPoint("TOPLEFT", box, "TOPLEFT", GX, -104)
-        rxSub:SetSize(COL_W - GX * 2, 88)
-
-        local rxCb = CreateCheckbox(box, "Colour by Reaction", GX, -80,
+    -- Builds the colour section (reaction checkbox + swatch/sub-contents) at a fixed
+    -- y offset from the group box TOPLEFT.  colourY is the top of this section.
+    -- Returns rxCb, rxSub so the panel refresh loop can reach them.
+    local function AddColourSection(box, colourY, byReactionKey, colorKey, colorLabel)
+        -- "Colour by Reaction" checkbox
+        local rxCb = CreateCheckbox(box, "Colour by Reaction", GX, colourY,
             function() return getDB()[byReactionKey] or false end,
-            function(v)
-                getDB()[byReactionKey] = v
-                rxSub:SetShown(v)
-                UnitFramesLite_UpdateFrame(unit)
-            end)
-        rxCb.Refresh = function(self)
-            local v = getDB()[byReactionKey] or false
-            self:SetChecked(v); rxSub:SetShown(v)
-        end
+            function() end)  -- OnClick wired below after staticSwatch exists
+
+        -- Static colour swatch (shown when reaction is OFF)
+        local staticSwatch = ColSwatch(box, GX, colourY - 26, colorKey, colorLabel)
+        staticSwatch:SetShown(not (getDB()[byReactionKey] or false))
+
+        -- Reaction sub-contents (shown when reaction is ON):
+        --   "Use Default Colours" checkbox + Friendly/Neutral/Enemy swatches
+        local rxSub = CreateFrame("Frame", nil, box)
+        rxSub:SetPoint("TOPLEFT", box, "TOPLEFT", GX, colourY - 26)
+        rxSub:SetSize(COL_W - GX * 2, 56)
 
         local defCb = CreateCheckbox(rxSub, "Use Default Colours", 0, -4,
             function() return getDB().reactionUseDefaultColors ~= false end,
@@ -771,7 +771,6 @@ local function BuildTextContent(content, unit, getDB, panel)
                 rxSub.UpdateSwatchVis()
                 UnitFramesLite_UpdateFrame(unit)
             end)
-        -- Swatches: Friendly, Neutral, Enemy (spaced to fit within COL_W - 8)
         local friendlySwatch = CreateColorSwatch(rxSub, 0,   -30, "Friendly", getDB, "reactionFriendlyColor", function() UnitFramesLite_UpdateFrame(unit) end)
         local neutralSwatch  = CreateColorSwatch(rxSub, 76,  -30, "Neutral",  getDB, "reactionNeutralColor",  function() UnitFramesLite_UpdateFrame(unit) end)
         local enemySwatch    = CreateColorSwatch(rxSub, 152, -30, "Enemy",    getDB, "reactionEnemyColor",    function() UnitFramesLite_UpdateFrame(unit) end)
@@ -789,150 +788,151 @@ local function BuildTextContent(content, unit, getDB, panel)
             rxSub.UpdateSwatchVis()
         end
 
-        rxSub:SetShown(getDB()[byReactionKey] or false)
+        local function ApplyReactionState(on)
+            rxSub:SetShown(on)
+            staticSwatch:SetShown(not on)
+        end
+
+        -- Wire rxCb now that staticSwatch and rxSub exist
+        rxCb:SetScript("OnClick", function(self)
+            local v = self:GetChecked()
+            getDB()[byReactionKey] = v and true or false
+            ApplyReactionState(v)
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+        rxCb.Refresh = function(self)
+            local v = getDB()[byReactionKey] or false
+            self:SetChecked(v)
+            ApplyReactionState(v)
+        end
+
+        ApplyReactionState(getDB()[byReactionKey] or false)
         rxSub.UpdateSwatchVis()
 
         return rxCb, rxSub
     end
 
     -- ── Column 1: Name Text ──────────────────────────────────────────────────
-    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 420)
-    local nameCtr  -- forward declaration so checkbox closure can reference it
+    -- ctr: Font(38)+Align(38)+Size(38)+XOff(38)+YOff(38) = 190 → ends at y=-(46+190)=-236
+    -- colour section at y=-246; reaction sub ends at y=-(246+56)=-302; pad 8 → box h=310
+    local NAME_CTR_H   = 190
+    local NAME_COL_Y   = -(46 + NAME_CTR_H + 10)   -- -246
+    local NAME_BOX_H   = 46 + NAME_CTR_H + 10 + 24 + 8 + 56 + 8   -- 342 → use 350
+    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 350)
     local function NameShown() return getDB().showName ~= false end
     panel.showNameCheck = CreateCheckbox(nameBox, "Show", GX, -24, NameShown,
-        function(v) getDB().showName = v; nameCtr:SetShown(NameShown()); UnitFramesLite_UpdateFrame(unit) end)
-    panel.showNameCheck.Refresh = function(self)
-        self:SetChecked(NameShown()); nameCtr:SetShown(NameShown())
-    end
-    ColSwatch(nameBox, GX, -54, "nameColor", "Name Colour")
-    panel.nameRxCb, panel.nameRxSub = AddReactionSection(nameBox, "nameColorByReaction")
+        function(v) getDB().showName = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.showNameCheck.Refresh = function(self) self:SetChecked(NameShown()) end
 
-    nameCtr = CreateFrame("Frame", nil, nameBox)
-    nameCtr:SetPoint("TOPLEFT", nameBox, "TOPLEFT", GX, CTR_TOP)
-    nameCtr:SetSize(COL_W - GX * 2, 220)
-
-    CreateLabel(nameCtr, "Font",  0, -10)
-    panel.nameFontDD = CreateDropdown(nameCtr, 44, -8, 120, GetFontList(),
+    CreateLabel(nameBox, "Font",  GX, -46)
+    panel.nameFontDD = CreateDropdown(nameBox, GX+44, -44, 120, GetFontList(),
         function() return getDB().nameFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().nameFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(nameCtr, "Align", 0, -40)
-    panel.nameAlignDD = CreateDropdown(nameCtr, 44, -38, 100, alignOptions,
+    CreateLabel(nameBox, "Align", GX, -84)
+    panel.nameAlignDD = CreateDropdown(nameBox, GX+44, -82, 100, alignOptions,
         function() return getDB().nameAlign or "LEFT" end,
         function(v) getDB().nameAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(nameCtr,"Size",6,36,1, 0,-70,60,"nameTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameBox,"Size",6,36,1, GX,-114,60,"nameTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameFontSizeSlider, panel.nameFontSizeBox, panel.nameFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(nameCtr,"X Off",-500,500,1, 0,-110,60,"nameTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameBox,"X Off",-500,500,1, GX,-152,60,"nameTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameXSlider, panel.nameXBox, panel.nameXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(nameCtr,"Y Off",-500,500,1, 0,-150,60,"nameTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameBox,"Y Off",-500,500,1, GX,-190,60,"nameTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameYSlider, panel.nameYBox, panel.nameYRefresh = s,b,r
-    nameCtr:SetShown(NameShown())
+
+    panel.nameRxCb, panel.nameRxSub = AddColourSection(nameBox, NAME_COL_Y, "nameColorByReaction", "nameColor", "Name Colour")
 
     -- ── Column 2: HP Text ────────────────────────────────────────────────────
-    local hpTextBox = CreateGroupBox(content, "HP Text", c2, -50, COL_W, 520)
-    local hpTextCtr
+    -- ctr: +Content(38)+Format(38) = 266 → ends at y=-(46+266)=-312
+    -- colour section at y=-322; box h = 46+266+10+24+8+56+8 = 418 → use 420
+    local HPTXT_CTR_H  = 266
+    local HPTXT_COL_Y  = -(46 + HPTXT_CTR_H + 10)  -- -322
+    local hpTextBox = CreateGroupBox(content, "HP Text", c2, -50, COL_W, 420)
     local function HPTextShown() return getDB().showHPText ~= false end
     panel.showHPTextCheck = CreateCheckbox(hpTextBox, "Show", GX, -24, HPTextShown,
-        function(v) getDB().showHPText = v; hpTextCtr:SetShown(HPTextShown()); UnitFramesLite_UpdateFrame(unit) end)
-    panel.showHPTextCheck.Refresh = function(self)
-        self:SetChecked(HPTextShown()); hpTextCtr:SetShown(HPTextShown())
-    end
-    ColSwatch(hpTextBox, GX, -54, "hpTextColor", "Text Colour")
-    panel.hpTextRxCb, panel.hpTextRxSub = AddReactionSection(hpTextBox, "hpTextColorByReaction")
+        function(v) getDB().showHPText = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.showHPTextCheck.Refresh = function(self) self:SetChecked(HPTextShown()) end
 
-    hpTextCtr = CreateFrame("Frame", nil, hpTextBox)
-    hpTextCtr:SetPoint("TOPLEFT", hpTextBox, "TOPLEFT", GX, CTR_TOP)
-    hpTextCtr:SetSize(COL_W - GX * 2, 320)
-
-    CreateLabel(hpTextCtr, "Font",    0, -10)
-    panel.hpTextFontDD = CreateDropdown(hpTextCtr, 44, -8, 120, GetFontList(),
+    CreateLabel(hpTextBox, "Font",    GX, -46)
+    panel.hpTextFontDD = CreateDropdown(hpTextBox, GX+44, -44, 120, GetFontList(),
         function() return getDB().hpTextFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().hpTextFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(hpTextCtr, "Align",   0, -40)
-    panel.hpTextAlignDD = CreateDropdown(hpTextCtr, 44, -38, 100, alignOptions,
+    CreateLabel(hpTextBox, "Align",   GX, -84)
+    panel.hpTextAlignDD = CreateDropdown(hpTextBox, GX+44, -82, 100, alignOptions,
         function() return getDB().hpTextAlign or "CENTER" end,
         function(v) getDB().hpTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(hpTextCtr,"Size",6,36,1, 0,-70,60,"hpTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextBox,"Size",6,36,1, GX,-114,60,"hpTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpFontSizeSlider, panel.hpFontSizeBox, panel.hpFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpTextCtr,"X Off",-500,500,1, 0,-110,60,"hpTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextBox,"X Off",-500,500,1, GX,-152,60,"hpTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpXSlider, panel.hpXBox, panel.hpXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpTextCtr,"Y Off",-500,500,1, 0,-150,60,"hpTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextBox,"Y Off",-500,500,1, GX,-190,60,"hpTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpYSlider, panel.hpYBox, panel.hpYRefresh = s,b,r
-    CreateLabel(hpTextCtr, "Content", 0, -190)
-    panel.hpContentDD = CreateDropdown(hpTextCtr, 60, -188, 100, hpContentOptions,
+    CreateLabel(hpTextBox, "Content", GX, -228)
+    panel.hpContentDD = CreateDropdown(hpTextBox, GX+60, -226, 100, hpContentOptions,
         function() return getDB().hpContent or "Cur / Max" end,
         function(v) getDB().hpContent = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(hpTextCtr, "Format",  0, -220)
-    panel.hpFormatDD = CreateDropdown(hpTextCtr, 60, -218, 100, hpFormatOptions,
+    CreateLabel(hpTextBox, "Format",  GX, -266)
+    panel.hpFormatDD = CreateDropdown(hpTextBox, GX+60, -264, 100, hpFormatOptions,
         function() return getDB().hpFormat or "Full" end,
         function(v) getDB().hpFormat = v; UnitFramesLite_UpdateFrame(unit) end)
-    hpTextCtr:SetShown(HPTextShown())
+
+    panel.hpTextRxCb, panel.hpTextRxSub = AddColourSection(hpTextBox, HPTXT_COL_Y, "hpTextColorByReaction", "hpTextColor", "Text Colour")
 
     -- ── Column 3: HP Percent ─────────────────────────────────────────────────
-    local hpPctBox = CreateGroupBox(content, "HP Percent", c3, -50, COL_W, 440)
-    local hpPctCtr
+    -- ctr: +ShowPct(30) = 220 → ends at y=-(46+220)=-266
+    -- colour section at y=-276; box h = 46+220+10+24+8+56+8 = 372 → use 380
+    local HPPCT_CTR_H  = 220
+    local HPPCT_COL_Y  = -(46 + HPPCT_CTR_H + 10)  -- -276
+    local hpPctBox = CreateGroupBox(content, "HP Percent", c3, -50, COL_W, 380)
     local function HPPctShown() return getDB().showHPPct or false end
     panel.showHPPctCheck = CreateCheckbox(hpPctBox, "Show", GX, -24, HPPctShown,
-        function(v) getDB().showHPPct = v; hpPctCtr:SetShown(HPPctShown()); UnitFramesLite_UpdateFrame(unit) end)
-    panel.showHPPctCheck.Refresh = function(self)
-        self:SetChecked(HPPctShown()); hpPctCtr:SetShown(HPPctShown())
-    end
-    ColSwatch(hpPctBox, GX, -54, "hpPctColor", "Text Colour")
-    panel.hpPctRxCb, panel.hpPctRxSub = AddReactionSection(hpPctBox, "hpPctColorByReaction")
+        function(v) getDB().showHPPct = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.showHPPctCheck.Refresh = function(self) self:SetChecked(HPPctShown()) end
 
-    hpPctCtr = CreateFrame("Frame", nil, hpPctBox)
-    hpPctCtr:SetPoint("TOPLEFT", hpPctBox, "TOPLEFT", GX, CTR_TOP)
-    hpPctCtr:SetSize(COL_W - GX * 2, 230)
-
-    CreateLabel(hpPctCtr, "Font",  0, -10)
-    panel.hpPctFontDD = CreateDropdown(hpPctCtr, 44, -8, 120, GetFontList(),
+    CreateLabel(hpPctBox, "Font",  GX, -46)
+    panel.hpPctFontDD = CreateDropdown(hpPctBox, GX+44, -44, 120, GetFontList(),
         function() return getDB().hpPctFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().hpPctFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(hpPctCtr, "Align", 0, -40)
-    panel.hpPctAlignDD = CreateDropdown(hpPctCtr, 44, -38, 100, alignOptions,
+    CreateLabel(hpPctBox, "Align", GX, -84)
+    panel.hpPctAlignDD = CreateDropdown(hpPctBox, GX+44, -82, 100, alignOptions,
         function() return getDB().hpPctAlign or "CENTER" end,
         function(v) getDB().hpPctAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(hpPctCtr,"Size",6,36,1, 0,-70,60,"hpPctFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctBox,"Size",6,36,1, GX,-114,60,"hpPctFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctFontSizeSlider, panel.hpPctFontSizeBox, panel.hpPctFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpPctCtr,"X Off",-500,500,1, 0,-110,60,"hpPctX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctBox,"X Off",-500,500,1, GX,-152,60,"hpPctX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctXSlider, panel.hpPctXBox, panel.hpPctXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(hpPctCtr,"Y Off",-500,500,1, 0,-150,60,"hpPctY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctBox,"Y Off",-500,500,1, GX,-190,60,"hpPctY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctYSlider, panel.hpPctYBox, panel.hpPctYRefresh = s,b,r
-    panel.hpPctSymbolCheck = CreateCheckbox(hpPctCtr, "Show %", 0, -190,
+    panel.hpPctSymbolCheck = CreateCheckbox(hpPctBox, "Show %", GX, -228,
         function() return getDB().hpPctShowSymbol ~= false end,
         function(v) getDB().hpPctShowSymbol = v; UnitFramesLite_UpdateFrame(unit) end)
-    hpPctCtr:SetShown(HPPctShown())
+
+    panel.hpPctRxCb, panel.hpPctRxSub = AddColourSection(hpPctBox, HPPCT_COL_Y, "hpPctColorByReaction", "hpPctColor", "Text Colour")
 
     -- ── Column 4: Level Text ─────────────────────────────────────────────────
-    local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 420)
-    local levelCtr
+    -- Same as Name column: box h = 350
+    local LEVEL_COL_Y  = NAME_COL_Y  -- -246
+    local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 350)
     local function LevelShown() return getDB().showLevel ~= false end
     panel.showLevelCheck = CreateCheckbox(levelBox, "Show", GX, -24, LevelShown,
-        function(v) getDB().showLevel = v; levelCtr:SetShown(LevelShown()); UnitFramesLite_UpdateFrame(unit) end)
-    panel.showLevelCheck.Refresh = function(self)
-        self:SetChecked(LevelShown()); levelCtr:SetShown(LevelShown())
-    end
-    ColSwatch(levelBox, GX, -54, "levelColor", "Text Colour")
-    panel.levelRxCb, panel.levelRxSub = AddReactionSection(levelBox, "levelColorByReaction")
+        function(v) getDB().showLevel = v; UnitFramesLite_UpdateFrame(unit) end)
+    panel.showLevelCheck.Refresh = function(self) self:SetChecked(LevelShown()) end
 
-    levelCtr = CreateFrame("Frame", nil, levelBox)
-    levelCtr:SetPoint("TOPLEFT", levelBox, "TOPLEFT", GX, CTR_TOP)
-    levelCtr:SetSize(COL_W - GX * 2, 220)
-
-    CreateLabel(levelCtr, "Font",  0, -10)
-    panel.levelFontDD = CreateDropdown(levelCtr, 44, -8, 120, GetFontList(),
+    CreateLabel(levelBox, "Font",  GX, -46)
+    panel.levelFontDD = CreateDropdown(levelBox, GX+44, -44, 120, GetFontList(),
         function() return getDB().levelFont or getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().levelFont = v; UnitFramesLite_UpdateFrame(unit) end)
-    CreateLabel(levelCtr, "Align", 0, -40)
-    panel.levelTextAlignDD = CreateDropdown(levelCtr, 44, -38, 100, alignOptions,
+    CreateLabel(levelBox, "Align", GX, -84)
+    panel.levelTextAlignDD = CreateDropdown(levelBox, GX+44, -82, 100, alignOptions,
         function() return getDB().levelTextAlign or "CENTER" end,
         function(v) getDB().levelTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(levelCtr,"Size",6,36,1, 0,-70,60,"levelTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelBox,"Size",6,36,1, GX,-114,60,"levelTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelFontSizeSlider, panel.levelFontSizeBox, panel.levelFontSizeRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(levelCtr,"X Off",-500,500,1, 0,-110,60,"levelTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelBox,"X Off",-500,500,1, GX,-152,60,"levelTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelXSlider, panel.levelXBox, panel.levelXRefresh = s,b,r
-    s,b,r = CreateNudgeSlider(levelCtr,"Y Off",-500,500,1, 0,-150,60,"levelTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelBox,"Y Off",-500,500,1, GX,-190,60,"levelTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelYSlider, panel.levelYBox, panel.levelYRefresh = s,b,r
-    levelCtr:SetShown(LevelShown())
+
+    panel.levelRxCb, panel.levelRxSub = AddColourSection(levelBox, LEVEL_COL_Y, "levelColorByReaction", "levelColor", "Text Colour")
 end
 
 -- Tab 3: Appearance (Bar + Orb unified) -------------------------------------
@@ -1191,7 +1191,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
     -- ── Power group (right column, shared between Bar and Orb modes) ────────────
     -- Anchored to content so it can be shown in both bar and orb modes.
-    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 354, "GameFontNormal")
+    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 380, "GameFontNormal")
     powerGroup:Hide()
     panel.orbPowerGroup = powerGroup   -- kept for UpdateAppearanceMode compat
 
@@ -1213,6 +1213,9 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         if m == "Bar" then
             -- Attach checkbox: only in bar-frame mode
             panel.powerBarAttachCheck:SetShown(not isOrb)
+            -- Centre to screen: available in both bar-frame and orb modes, when not attached
+            local showCentre = not attach or isOrb
+            if panel.powerBarCentreCheck then panel.powerBarCentreCheck:SetShown(showCentre) end
             -- Width row: hidden when attached in bar-frame mode
             panel.powerBarWidthRow:SetShown(isOrb or not attach)
             -- Height slider: when attached, clamp max to frameHeight/2
@@ -1278,7 +1281,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     --   y=-182: Fill Direction label + dropdown
     --   y=-210: FG/BG colour swatches
     barDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -76)
-    barDetailsFrame:SetSize(260, 248)
+    barDetailsFrame:SetSize(260, 290)
 
     -- Attach checkbox (bar-frame mode only, at top)
     local attachCheck = CreateCheckbox(barDetailsFrame, "Attach to health bar", gx, 0,
@@ -1290,33 +1293,42 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         end)
     panel.powerBarAttachCheck = attachCheck
 
+    -- Centre to screen checkbox (bar-frame mode only, below attach)
+    local centreCheck = CreateCheckbox(barDetailsFrame, "Centre to screen", gx, -26,
+        function() return getDB().orbPowerBarCentreToScreen or false end,
+        function(v)
+            getDB().orbPowerBarCentreToScreen = v
+            UnitFramesLite_UpdateFrame(unit)
+        end)
+    panel.powerBarCentreCheck = centreCheck
+
     -- Width row (hidden when attached in bar-frame mode)
     local pBarWidthRow = CreateFrame("Frame", nil, barDetailsFrame)
-    pBarWidthRow:SetPoint("TOPLEFT", barDetailsFrame, "TOPLEFT", 0, -30)
+    pBarWidthRow:SetPoint("TOPLEFT", barDetailsFrame, "TOPLEFT", 0, -56)
     pBarWidthRow:SetSize(260, 38)
     local s5,b5,r5 = CreateNudgeSlider(pBarWidthRow,"Width",20,400,1, gx,-4,100,"orbPowerBarWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbPBarWidthSlider,panel.orbPBarWidthBox,panel.orbPBarWidthRefresh = s5,b5,r5
     panel.powerBarWidthRow = pBarWidthRow
 
-    local s6,b6,r6 = CreateNudgeSlider(barDetailsFrame,"Height",4,80,1,       gx,-68, 100,"orbPowerBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    local s6,b6,r6 = CreateNudgeSlider(barDetailsFrame,"Height",4,80,1,       gx,-94, 100,"orbPowerBarHeight",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbPBarHeightSlider,panel.orbPBarHeightBox,panel.orbPBarHeightRefresh = s6,b6,r6
-    local s7,b7,r7 = CreateNudgeSlider(barDetailsFrame,"X Offset",-500,500,1, gx,-106,100,"orbPowerBarX",     getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    local s7,b7,r7 = CreateNudgeSlider(barDetailsFrame,"X Offset",-500,500,1, gx,-132,100,"orbPowerBarX",     getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbPBarXSlider,panel.orbPBarXBox,panel.orbPBarXRefresh = s7,b7,r7
-    local s8,b8,r8 = CreateNudgeSlider(barDetailsFrame,"Y Offset",-500,500,1, gx,-144,100,"orbPowerBarY",     getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    local s8,b8,r8 = CreateNudgeSlider(barDetailsFrame,"Y Offset",-500,500,1, gx,-170,100,"orbPowerBarY",     getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbPBarYSlider,panel.orbPBarYBox,panel.orbPBarYRefresh = s8,b8,r8
-    CreateLabel(barDetailsFrame, "Fill Direction", gx, -184)
-    panel.orbPBarFillDirDD = CreateDropdown(barDetailsFrame, gx + 90, -182, 100, {"HORIZONTAL","VERTICAL"},
+    CreateLabel(barDetailsFrame, "Fill Direction", gx, -210)
+    panel.orbPBarFillDirDD = CreateDropdown(barDetailsFrame, gx + 90, -208, 100, {"HORIZONTAL","VERTICAL"},
         function() return getDB().orbPowerBarFillDir or "HORIZONTAL" end,
         function(v) getDB().orbPowerBarFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
-    panel.orbPBarTypeColorCheck = CreateCheckbox(barDetailsFrame, "Use power type colour", gx, -210,
+    panel.orbPBarTypeColorCheck = CreateCheckbox(barDetailsFrame, "Use power type colour", gx, -236,
         function() return getDB().orbPowerBarUseTypeColor or false end,
         function(v)
             getDB().orbPowerBarUseTypeColor = v
             panel:UpdateBarColourMode()
             UnitFramesLite_UpdateFrame(unit)
         end)
-    local orbPBarFgBtn = CreateColorSwatch(barDetailsFrame, gx,     -238, "Foreground", getDB, "orbPowerBarColor",   function() UnitFramesLite_UpdateFrame(unit) end)
-    local orbPBarBgBtn = CreateColorSwatch(barDetailsFrame, gx+130, -238, "Background", getDB, "orbPowerBarBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbPBarFgBtn = CreateColorSwatch(barDetailsFrame, gx,     -264, "Foreground", getDB, "orbPowerBarColor",   function() UnitFramesLite_UpdateFrame(unit) end)
+    local orbPBarBgBtn = CreateColorSwatch(barDetailsFrame, gx+130, -264, "Background", getDB, "orbPowerBarBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbPBarFgBtn
     panel.swatchButtons[#panel.swatchButtons+1] = orbPBarBgBtn
     panel.orbPBarFgBtn = orbPBarFgBtn
@@ -1599,17 +1611,21 @@ local function BuildConditionsContent(content, unit, getDB, panel)
     panel.syncAlphaCheck:SetShown(unit ~= "player")
 
     -- ── Fade Conditions group (right bottom) ─────────────────────────────────
-    local fadeBox = CreateGroupBox(content, "Fade Conditions", 346, -246, 310, 100)
+    local fadeBox = CreateGroupBox(content, "Fade Conditions", 346, -246, 310, 130)
 
     panel.fadeNoTargetCheck = CreateCheckbox(fadeBox, "Fade when no target selected", gx, -18,
         function() return getDB().fadeNoTarget or false end,
         function(v) getDB().fadeNoTarget = v; UnitFramesLite_UpdateAlpha(unit) end)
-    local _,_,rFade = CreateNudgeSlider(fadeBox, "Fade alpha", 0,1,0.01, gx,-46,140,"fadeNoTargetAlpha", getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
+    panel.fadeHostileTargetCheck = CreateCheckbox(fadeBox, "Show only with hostile target", gx, -46,
+        function() return getDB().fadeHostileTarget or false end,
+        function(v) getDB().fadeHostileTarget = v; UnitFramesLite_UpdateAlpha(unit) end)
+    local _,_,rFade = CreateNudgeSlider(fadeBox, "Fade alpha", 0,1,0.01, gx,-74,140,"fadeNoTargetAlpha", getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
 
     panel.refreshAlpha = function()
         rCombat(); rOutCombat(); rFade()
         panel.syncAlphaCheck:Refresh(); panel.keepTextVisCheck:Refresh()
         panel.fadeNoTargetCheck:Refresh()
+        panel.fadeHostileTargetCheck:Refresh()
         panel.alphaAffectsDD:SetSelection(getDB().alphaAffects or "Everything")
     end
 end
@@ -1709,7 +1725,8 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
         if self.powerTypeDD         then self.powerTypeDD:SetSelection(db.orbPowerMode or "None") end
-        if self.powerBarAttachCheck then self.powerBarAttachCheck:Refresh() end
+        if self.powerBarAttachCheck  then self.powerBarAttachCheck:Refresh()  end
+        if self.powerBarCentreCheck  then self.powerBarCentreCheck:Refresh()  end
         if self.orbPowerShowOutOfCombatCheck then self.orbPowerShowOutOfCombatCheck:Refresh() end
         if self.orbPBarTypeColorCheck then self.orbPBarTypeColorCheck:Refresh() end
         if self.UpdateBarColourMode then self:UpdateBarColourMode() end
@@ -1766,7 +1783,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "orbPowerRingBgColor","orbPowerRingColor","orbPowerRingUseTypeColor",
           "orbPowerBarWidth","orbPowerBarHeight","orbPowerBarX","orbPowerBarY",
           "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor","orbPowerBarUseTypeColor",
-          "orbPowerShowOutOfCombat",
+          "orbPowerBarCentreToScreen","orbPowerShowOutOfCombat",
           "hpLowEnabled","hpLowThreshold","hpLowColor",
         },
         -- 3: Text
@@ -1800,7 +1817,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         { "loadMounted","loadInVehicle","loadResting","loadStealthed","loadInCombat",
           "loadOutOfCombat","loadSolo","loadInGroup","loadInInstance",
           "syncAlpha","keepTextVisible","alphaAffects",
-          "alphaCombat","alphaOutCombat","fadeNoTarget","fadeNoTargetAlpha",
+          "alphaCombat","alphaOutCombat","fadeNoTarget","fadeNoTargetAlpha","fadeHostileTarget",
         },
     }
 

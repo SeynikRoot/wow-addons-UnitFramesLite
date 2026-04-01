@@ -122,6 +122,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         alphaAffects = "Everything",
         alphaCombat = 1.0, alphaOutCombat = 1.0,
         fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
+        fadeHostileTarget = false,
         barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
@@ -154,6 +155,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         orbPowerBarColor         = {0, 0.5, 1, 1},
         orbPowerBarBgColor       = {0, 0, 0, 0.9},
         orbPowerBarUseTypeColor  = false,
+        orbPowerBarCentreToScreen = false,
         orbPowerShowOutOfCombat  = true,
     }
 end
@@ -271,8 +273,15 @@ function UnitFramesLite_UpdateAlpha(unit)
     local inCombat = UnitAffectingCombat("player")
     local alpha    = inCombat and (alphaDB.alphaCombat or 1) or (alphaDB.alphaOutCombat or 1)
 
-    if unit == "player" and db.fadeNoTarget and not UnitExists("target") and not inCombat then
+    local hasTarget = UnitExists("target")
+    if db.fadeNoTarget and not hasTarget and not inCombat then
         alpha = db.fadeNoTargetAlpha or 0.4
+    elseif db.fadeHostileTarget and not inCombat then
+        -- Treat a non-hostile (or no) target the same as no target
+        local isHostile = hasTarget and (UnitReaction("target", "player") or 4) <= 3
+        if not isHostile then
+            alpha = db.fadeNoTargetAlpha or 0.4
+        end
     end
 
     local textAlpha = db.keepTextVisible and 1 or alpha
@@ -1157,7 +1166,11 @@ function UnitFramesLite_UpdateFrame(unit)
             local fd  = db.orbPowerBarFillDir  or "HORIZONTAL"
             pb:SetSize(bw, bh)
             pb:ClearAllPoints()
-            pb:SetPoint("CENTER", frame, "CENTER", bx, by)
+            if db.orbPowerBarCentreToScreen then
+                pb:SetPoint("CENTER", UIParent, "CENTER", 0, by)
+            else
+                pb:SetPoint("CENTER", frame, "CENTER", bx, by)
+            end
             pb:SetOrientation(fd)
             pb:SetReverseFill(db.reverseFill or false)
             local fc = db.orbPowerBarUseTypeColor and GetPowerColor(unit)
@@ -1268,12 +1281,25 @@ function UnitFramesLite_UpdateFrame(unit)
                 local pH     = attach and math.max(1, math.min(db.orbPowerBarHeight or 8, maxPH))
                                or math.max(1, db.orbPowerBarHeight or 8)
                 local pw     = attach and w or math.max(1, db.orbPowerBarWidth or w)
-                local hpH    = math.max(1, barH - pH)
-                frame.hp:SetHeight(hpH)
                 frame.power:SetWidth(pw)
                 frame.power:SetHeight(pH)
                 frame.power:ClearAllPoints()
-                frame.power:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+                if attach then
+                    -- Attached: shrink health bar, anchor power bar to frame bottom
+                    frame.hp:SetHeight(math.max(1, barH - pH))
+                    frame.power:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+                elseif db.orbPowerBarCentreToScreen then
+                    -- Free-floating, centred on screen
+                    frame.hp:SetHeight(barH)
+                    local by = db.orbPowerBarY or 0
+                    frame.power:SetPoint("CENTER", UIParent, "CENTER", 0, by)
+                else
+                    -- Free-floating with manual X/Y offset from frame centre
+                    frame.hp:SetHeight(barH)
+                    local bx = db.orbPowerBarX or 0
+                    local by = db.orbPowerBarY or 0
+                    frame.power:SetPoint("CENTER", frame, "CENTER", bx, by)
+                end
                 local fd = db.orbPowerBarFillDir or "HORIZONTAL"
                 frame.power:SetOrientation(fd)
                 frame.power:SetReverseFill(db.reverseFill or false)
@@ -2117,6 +2143,10 @@ local function SetupFrame(displayFrame, unit)
         if evt == "PLAYER_TARGET_CHANGED" or evt == "PLAYER_FOCUS_CHANGED"
            or evt == "UNIT_PET" or evt == "UNIT_FACTION" then
             UnitFramesLite_UpdateFrame(unit)
+            -- If the target's faction changed, also refresh player alpha (fadeHostileTarget)
+            if evt == "UNIT_FACTION" and unit == "target" then
+                UnitFramesLite_UpdateAlpha("player")
+            end
         end
     end)
     displayFrame.OnUFLUpdate = Update
