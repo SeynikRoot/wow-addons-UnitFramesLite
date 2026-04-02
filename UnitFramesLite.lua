@@ -123,6 +123,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         alphaCombat = 1.0, alphaOutCombat = 1.0,
         fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
         fadeHostileTarget = false,
+        showWhenHPBelow = false, showWhenHPBelowPct = 90,
         barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
@@ -281,6 +282,17 @@ function UnitFramesLite_UpdateAlpha(unit)
         local isHostile = hasTarget and (UnitReaction("target", "player") or 4) <= 3
         if not isHostile then
             alpha = db.fadeNoTargetAlpha or 0.4
+        end
+    end
+
+    -- Player-only: override alpha back to full when HP is below threshold
+    if unit == "player" and db.showWhenHPBelow then
+        local maxHP = UnitHealthMax("player")
+        if maxHP and maxHP > 0 then
+            local pct = (UnitHealth("player") / maxHP) * 100
+            if pct < (db.showWhenHPBelowPct or 90) then
+                alpha = inCombat and (alphaDB.alphaCombat or 1) or (alphaDB.alphaOutCombat or 1)
+            end
         end
     end
 
@@ -2208,7 +2220,7 @@ local function GetOrCreateIcon(pool, idx, container)
     if pool[idx] then return pool[idx] end
     local btn = CreateFrame("Button", nil, container)
     btn:SetSize(24, 24)
-    local icon = btn:CreateTexture(nil, "ARTWORK")
+    local icon = btn:CreateTexture(nil, "BACKGROUND", nil, 1)
     icon:SetAllPoints()
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     btn.icon = icon
@@ -2216,7 +2228,7 @@ local function GetOrCreateIcon(pool, idx, container)
     border:SetAllPoints()
     border:SetColorTexture(0, 0, 0, 1)
     local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
-    cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetHideCountdownNumbers(false)
+    cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(false)
     btn.cd = cd
     local stack = btn:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     stack:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 2, 0)
@@ -2375,16 +2387,15 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
         local showStack = false
         pcall(function() showStack = aura.applications and aura.applications > 1 end)
         btn.stack:SetText(showStack and aura.applications or "")
-        local cdSet = false
-        if aura.duration and aura.expirationTime then
-            pcall(function()
-                if aura.duration > 0 then
-                    btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
-                    cdSet = true
-                end
-            end)
+        -- Patch 12.0 (Midnight): duration/expirationTime are secret numbers.
+        -- Use C_UnitAuras.GetAuraDuration + SetCooldownFromDurationObject to avoid
+        -- any Lua-side arithmetic on secret values.
+        local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
+        if not durObj then
+            durObj = C_DurationUtil.CreateDuration()
+            durObj:SetTimeFromEnd(0, 0, 1)
         end
-        if not cdSet then btn.cd:SetCooldown(0, 0) end
+        btn.cd:SetCooldownFromDurationObject(durObj)
         local showBorder = false
         pcall(function()
             showBorder = aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] ~= nil

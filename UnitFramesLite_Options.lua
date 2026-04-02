@@ -1611,7 +1611,9 @@ local function BuildConditionsContent(content, unit, getDB, panel)
     panel.syncAlphaCheck:SetShown(unit ~= "player")
 
     -- ── Fade Conditions group (right bottom) ─────────────────────────────────
-    local fadeBox = CreateGroupBox(content, "Fade Conditions", 346, -246, 310, 130)
+    local isPlayer = (unit == "player")
+    local fadeBoxH = isPlayer and 190 or 130
+    local fadeBox = CreateGroupBox(content, "Fade Conditions", 346, -246, 310, fadeBoxH)
 
     panel.fadeNoTargetCheck = CreateCheckbox(fadeBox, "Fade when no target selected", gx, -18,
         function() return getDB().fadeNoTarget or false end,
@@ -1621,13 +1623,39 @@ local function BuildConditionsContent(content, unit, getDB, panel)
         function(v) getDB().fadeHostileTarget = v; UnitFramesLite_UpdateAlpha(unit) end)
     local _,_,rFade = CreateNudgeSlider(fadeBox, "Fade alpha", 0,1,0.01, gx,-74,140,"fadeNoTargetAlpha", getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
 
+    local rHPBelow, hpBelowWidgets
+    if isPlayer then
+        panel.showWhenHPBelowCheck = CreateCheckbox(fadeBox, "Show when health below threshold", gx, -118,
+            function() return getDB().showWhenHPBelow or false end,
+            function(v)
+                getDB().showWhenHPBelow = v
+                local show = v or false
+                for _, w in ipairs(hpBelowWidgets) do w:SetShown(show) end
+                UnitFramesLite_UpdateAlpha(unit)
+            end)
+
+        local sl,bx,r,lbl,minus,plus = CreateNudgeSlider(fadeBox, "Threshold %", 1,100,1, gx,-146,140,"showWhenHPBelowPct", getDB, function() UnitFramesLite_UpdateAlpha(unit) end)
+        rHPBelow = r
+        hpBelowWidgets = {sl, bx, lbl, minus, plus}
+    end
+
+    local function UpdateHPBelowVis()
+        if not isPlayer then return end
+        local show = getDB().showWhenHPBelow or false
+        for _, w in ipairs(hpBelowWidgets) do w:SetShown(show) end
+    end
+
     panel.refreshAlpha = function()
         rCombat(); rOutCombat(); rFade()
         panel.syncAlphaCheck:Refresh(); panel.keepTextVisCheck:Refresh()
         panel.fadeNoTargetCheck:Refresh()
         panel.fadeHostileTargetCheck:Refresh()
+        if panel.showWhenHPBelowCheck then panel.showWhenHPBelowCheck:Refresh() end
+        if rHPBelow then rHPBelow() end
+        UpdateHPBelowVis()
         panel.alphaAffectsDD:SetSelection(getDB().alphaAffects or "Everything")
     end
+    UpdateHPBelowVis()
 end
 
 -- Unit panel (5 tabs, buttons live on the main frame) -------------------------
@@ -1818,6 +1846,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "loadOutOfCombat","loadSolo","loadInGroup","loadInInstance",
           "syncAlpha","keepTextVisible","alphaAffects",
           "alphaCombat","alphaOutCombat","fadeNoTarget","fadeNoTargetAlpha","fadeHostileTarget",
+          "showWhenHPBelow","showWhenHPBelowPct",
         },
     }
 
