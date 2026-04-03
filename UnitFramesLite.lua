@@ -4,6 +4,10 @@ _G.UnitFramesLite = UFL
 
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 
+-- CurveConstants.ScaleTo100: when passed to UnitHealthPercent as the third arg,
+-- causes it to return a plain (non-secret) number in the 0-100 range.
+local SCALE_TO_100 = CurveConstants and CurveConstants.ScaleTo100
+
 local ORB_MASK = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
 
 -- Defaults -------------------------------------------------------------------
@@ -285,14 +289,15 @@ function UnitFramesLite_UpdateAlpha(unit)
         end
     end
 
-    -- Player-only: override alpha back to full when HP is below threshold
+    -- Player-only: force full alpha when HP is below threshold, overriding all fade conditions.
+    -- UnitHealth/UnitHealthMax for "player" are plain (non-secret) numbers, so we compute
+    -- the percentage ourselves rather than using UnitHealthPercent which returns a secret.
     if unit == "player" and db.showWhenHPBelow then
-        local maxHP = UnitHealthMax("player")
-        if maxHP and maxHP > 0 then
-            local pct = (UnitHealth("player") / maxHP) * 100
-            if pct < (db.showWhenHPBelowPct or 90) then
-                alpha = inCombat and (alphaDB.alphaCombat or 1) or (alphaDB.alphaOutCombat or 1)
-            end
+        local threshold = db.showWhenHPBelowPct or 90
+        local cur = UnitHealth("player")
+        local max = UnitHealthMax("player")
+        if not issecretvalue(cur) and not issecretvalue(max) and max > 0 then
+            if (cur / max * 100) <= threshold then alpha = 1 end
         end
     end
 
@@ -385,12 +390,13 @@ local function GetHealthText(hp, maxhp, isDead, content, format)
 end
 
 -- Returns true if unit HP is at or below threshold (0-100), false otherwise.
--- The <= comparison stays inside pcall so secret numbers never escape to Lua.
+-- Uses UnitHealth/UnitHealthMax directly to avoid UnitHealthPercent's secret return value.
+-- Falls back to false if either value is secret (e.g. enemy units in restricted encounters).
 local function IsHPBelowThreshold(unit, threshold)
-    local ok, result = pcall(function()
-        return UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100) <= threshold
-    end)
-    return ok and result or false
+    local cur = UnitHealth(unit)
+    local max = UnitHealthMax(unit)
+    if issecretvalue(cur) or issecretvalue(max) or max <= 0 then return false end
+    return (cur / max * 100) <= threshold
 end
 
 -- Returns a formatted HP% string by building it entirely inside pcall.
