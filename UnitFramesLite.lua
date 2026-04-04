@@ -127,7 +127,6 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         alphaCombat = 1.0, alphaOutCombat = 1.0,
         fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
         fadeHostileTarget = false,
-        showWhenHPBelow = false, showWhenHPBelowPct = 90,
         barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
@@ -219,6 +218,7 @@ local function CopyDefaults(src, dest)
     return dest
 end
 
+
 local function GetDB(unit)
     UnitFramesLiteDB = UnitFramesLiteDB or {}
     local def = defaults[unit] or defaults.player
@@ -289,17 +289,6 @@ function UnitFramesLite_UpdateAlpha(unit)
         end
     end
 
-    -- Player-only: force full alpha when HP is below threshold, overriding all fade conditions.
-    -- UnitHealth/UnitHealthMax for "player" are plain (non-secret) numbers, so we compute
-    -- the percentage ourselves rather than using UnitHealthPercent which returns a secret.
-    if unit == "player" and db.showWhenHPBelow then
-        local threshold = db.showWhenHPBelowPct or 90
-        local cur = UnitHealth("player")
-        local max = UnitHealthMax("player")
-        if not issecretvalue(cur) and not issecretvalue(max) and max > 0 then
-            if (cur / max * 100) <= threshold then alpha = 1 end
-        end
-    end
 
     local textAlpha = db.keepTextVisible and 1 or alpha
     local affects   = alphaDB.alphaAffects or "Everything"
@@ -390,13 +379,10 @@ local function GetHealthText(hp, maxhp, isDead, content, format)
 end
 
 -- Returns true if unit HP is at or below threshold (0-100), false otherwise.
--- Uses UnitHealth/UnitHealthMax directly to avoid UnitHealthPercent's secret return value.
--- Falls back to false if either value is secret (e.g. enemy units in restricted encounters).
+-- Note: in WoW 12.0, health values are secret numbers that cannot be compared in Lua.
+-- This function always returns false except for the dead check; HP low colour is disabled.
 local function IsHPBelowThreshold(unit, threshold)
-    local cur = UnitHealth(unit)
-    local max = UnitHealthMax(unit)
-    if issecretvalue(cur) or issecretvalue(max) or max <= 0 then return false end
-    return (cur / max * 100) <= threshold
+    return UnitIsDead(unit)
 end
 
 -- Returns a formatted HP% string by building it entirely inside pcall.
@@ -1786,6 +1772,7 @@ end
 local function SetupFrame(displayFrame, unit)
     if not displayFrame then return end
     frames[unit] = displayFrame
+
 
     displayFrame:SetMovable(true)
     displayFrame:EnableMouse(true)
