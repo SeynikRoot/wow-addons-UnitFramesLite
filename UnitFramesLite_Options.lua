@@ -279,6 +279,72 @@ local function DeepCopyDB(src)
     return t
 end
 
+-- Power type colour swatch builder -------------------------------------------
+-- Creates a compact grid of per-power-type colour swatches plus a Reset button.
+-- Reads/writes UnitFramesLiteDB.powerTypeColors[dbKey].
+-- onChange: called after any colour change (should rebuild POWER_COLORS + UpdateFrame).
+
+local function GetPTColorDB()
+    UnitFramesLiteDB = UnitFramesLiteDB or {}
+    UnitFramesLiteDB.powerTypeColors = UnitFramesLiteDB.powerTypeColors or {}
+    return UnitFramesLiteDB.powerTypeColors
+end
+
+local function BuildPowerTypeSwatches(parent, x, onChange)
+    local UFL         = _G.UnitFramesLite
+    local ptList      = UFL and UFL.POWER_TYPE_LIST     or {}
+    local ptDefaults  = UFL and UFL.POWER_TYPE_DEFAULTS or {}
+
+    local swatchW = 20
+    local colGap  = 130   -- columns are ~130px wide (swatch + label)
+    local rowH    = 24
+    local cols    = 2
+
+    local swatchRefs = {}  -- for Reset
+
+    for i, entry in ipairs(ptList) do
+        local col = (i - 1) % cols
+        local row = math.floor((i - 1) / cols)
+        local sx  = x + col * colGap
+        local sy  = -(row * rowH)
+
+        local function getEntryDB()
+            local ptDB = GetPTColorDB()
+            -- seed from defaults if missing
+            if not ptDB[entry.dbKey] then
+                local def = ptDefaults[entry.dbKey] or {0, 0, 1, 1}
+                ptDB[entry.dbKey] = {def[1], def[2], def[3], def[4] or 1}
+            end
+            return ptDB
+        end
+
+        local btn = CreateColorSwatch(parent, sx, sy, entry.label, getEntryDB, entry.dbKey, onChange)
+        swatchRefs[i] = btn
+    end
+
+    -- Reset button below the grid
+    local rows       = math.ceil(#ptList / cols)
+    local resetY     = -(rows * rowH + 6)
+    local resetBtn   = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    resetBtn:SetSize(140, 22)
+    resetBtn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, resetY)
+    resetBtn:SetText("Reset Type Colours")
+    resetBtn:SetScript("OnClick", function()
+        local ptDB = GetPTColorDB()
+        for _, entry in ipairs(ptList) do
+            local def = ptDefaults[entry.dbKey] or {0, 0, 1, 1}
+            ptDB[entry.dbKey] = {def[1], def[2], def[3], def[4] or 1}
+        end
+        for _, sw in ipairs(swatchRefs) do sw:RefreshSwatch() end
+        onChange()
+    end)
+
+    -- Expose a refresh so the parent panel can update swatches on DB load
+    parent.RefreshSwatches = function()
+        for _, sw in ipairs(swatchRefs) do sw:RefreshSwatch() end
+    end
+end
+
 -- Options lists --------------------------------------------------------------
 
 local alignOptions        = {"LEFT", "CENTER", "RIGHT"}
@@ -1191,7 +1257,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
     -- ── Power group (right column, shared between Bar and Orb modes) ────────────
     -- Anchored to content so it can be shown in both bar and orb modes.
-    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 380, "GameFontNormal")
+    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 530, "GameFontNormal")
     powerGroup:Hide()
     panel.orbPowerGroup = powerGroup   -- kept for UpdateAppearanceMode compat
 
@@ -1251,24 +1317,37 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
     -- Ring details sub-frame
     ringDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -76)
-    ringDetailsFrame:SetSize(260, 150)
+    ringDetailsFrame:SetSize(260, 260)
     local s3,b3,r3 = CreateNudgeSlider(ringDetailsFrame,"Thickness (px)",4,40,1, gx,-4,100,"orbPowerRingThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.ringThickSlider,panel.ringThickBox,panel.ringThickRefresh = s3,b3,r3
     panel.ringCCWCheck = CreateCheckbox(ringDetailsFrame, "Counter-clockwise", gx, -46,
         function() return getDB().orbPowerRingCCW or false end,
         function(v) getDB().orbPowerRingCCW = v; UnitFramesLite_UpdateFrame(unit) end)
-    panel.ringTypeColorCheck = CreateCheckbox(ringDetailsFrame, "Use power type colour", gx, -72,
-        function() return getDB().orbPowerRingUseTypeColor ~= false end,
+    panel.ringTypeColorCheck = CreateCheckbox(ringDetailsFrame, "Use fixed colour", gx, -72,
+        function() return getDB().orbPowerRingUseFixedColor or false end,
         function(v)
-            getDB().orbPowerRingUseTypeColor = v
+            getDB().orbPowerRingUseFixedColor = v
             panel:UpdateRingColourMode()
             UnitFramesLite_UpdateFrame(unit)
         end)
-    local ringColBtn = CreateColorSwatch(ringDetailsFrame, gx, -106, "Ring Colour", getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
+    local ringColBtn = CreateColorSwatch(ringDetailsFrame, gx, -106, "Fixed Colour", getDB, "orbPowerRingColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = ringColBtn
     panel.ringColBtn = ringColBtn
+
+    -- Power type colour swatches (shown when NOT using fixed colour)
+    local ringPTFrame = CreateFrame("Frame", nil, ringDetailsFrame)
+    ringPTFrame:SetPoint("TOPLEFT", ringDetailsFrame, "TOPLEFT", 0, -106)
+    ringPTFrame:SetSize(260, 200)
+    panel.ringPTFrame = ringPTFrame
+    BuildPowerTypeSwatches(ringPTFrame, gx, function()
+        UnitFramesLite_RebuildPowerColors()
+        UnitFramesLite_UpdateFrame(unit)
+    end)
+
     panel.UpdateRingColourMode = function(self)
-        ringColBtn:SetShown(getDB().orbPowerRingUseTypeColor == false)
+        local useFixed = getDB().orbPowerRingUseFixedColor or false
+        ringColBtn:SetShown(useFixed)
+        ringPTFrame:SetShown(not useFixed)
     end
 
     -- Bar details sub-frame (shared by bar-frame and orb Bar mode)
@@ -1281,7 +1360,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     --   y=-182: Fill Direction label + dropdown
     --   y=-210: FG/BG colour swatches
     barDetailsFrame:SetPoint("TOPLEFT", powerGroup, "TOPLEFT", 0, -76)
-    barDetailsFrame:SetSize(260, 290)
+    barDetailsFrame:SetSize(260, 430)
 
     -- Attach checkbox (bar-frame mode only, at top)
     local attachCheck = CreateCheckbox(barDetailsFrame, "Attach to health bar", gx, 0,
@@ -1320,10 +1399,10 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.orbPBarFillDirDD = CreateDropdown(barDetailsFrame, gx + 90, -208, 100, {"HORIZONTAL","VERTICAL"},
         function() return getDB().orbPowerBarFillDir or "HORIZONTAL" end,
         function(v) getDB().orbPowerBarFillDir = v; UnitFramesLite_UpdateFrame(unit) end)
-    panel.orbPBarTypeColorCheck = CreateCheckbox(barDetailsFrame, "Use power type colour", gx, -236,
-        function() return getDB().orbPowerBarUseTypeColor or false end,
+    panel.orbPBarTypeColorCheck = CreateCheckbox(barDetailsFrame, "Use fixed colour", gx, -236,
+        function() return getDB().orbPowerBarUseFixedColor or false end,
         function(v)
-            getDB().orbPowerBarUseTypeColor = v
+            getDB().orbPowerBarUseFixedColor = v
             panel:UpdateBarColourMode()
             UnitFramesLite_UpdateFrame(unit)
         end)
@@ -1332,8 +1411,21 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.swatchButtons[#panel.swatchButtons+1] = orbPBarFgBtn
     panel.swatchButtons[#panel.swatchButtons+1] = orbPBarBgBtn
     panel.orbPBarFgBtn = orbPBarFgBtn
+
+    -- Power type colour swatches (shown when NOT using fixed colour)
+    local barPTFrame = CreateFrame("Frame", nil, barDetailsFrame)
+    barPTFrame:SetPoint("TOPLEFT", barDetailsFrame, "TOPLEFT", 0, -264)
+    barPTFrame:SetSize(260, 200)
+    panel.barPTFrame = barPTFrame
+    BuildPowerTypeSwatches(barPTFrame, gx, function()
+        UnitFramesLite_RebuildPowerColors()
+        UnitFramesLite_UpdateFrame(unit)
+    end)
+
     panel.UpdateBarColourMode = function(self)
-        orbPBarFgBtn:SetShown(getDB().orbPowerBarUseTypeColor ~= true)
+        local useFixed = getDB().orbPowerBarUseFixedColor or false
+        orbPBarFgBtn:SetShown(useFixed)
+        barPTFrame:SetShown(not useFixed)
     end
 
     -- Init visibility
@@ -1342,7 +1434,8 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.showOrbPowerCheck = { Refresh = function() end }
 
     -- ── Inner Border (right column below Power group, anchored to content) ────
-    local orbBorderGroup = CreateGroupBox(content, "Inner Border", rx, -428, 268, 120, "GameFontNormal")
+    -- powerGroup starts at rx,-66 height=530 → bottom=-596; gap 8 → -604
+    local orbBorderGroup = CreateGroupBox(content, "Inner Border", rx, -604, 268, 120, "GameFontNormal")
     orbBorderGroup:Hide()
     panel.orbBorderGroup = orbBorderGroup
     local orbBorderDetails  -- declared before checkbox so closure captures the upvalue
@@ -1395,9 +1488,9 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         if not isOrb then
             barSection:ClearAllPoints()
             barSection:SetPoint("TOPLEFT", content, "TOPLEFT", x, -290)
-            barSection:SetSize(290, 440)
+            barSection:SetSize(290, 640)
             portGroup:ClearAllPoints()
-            portGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -428)
+            portGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -604)
             portGroup:SetSize(268, 180)
         end
         portGroup:SetShown(not isOrb)
@@ -1424,6 +1517,86 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         end
         UpdatePowerMode()
     end
+
+    -- ── Elite / Rare-Elite Dragon Border — inline helper ─────────────────────
+    -- Builds a compact elite border group inside `parent` at (ex, ey).
+    -- For player/pet the group is hidden. Returns the group frame.
+    -- storeRefs=true → writes panel.eliteBorder* refs (only do this for one instance)
+    local function BuildEliteGroup(parent, ex, ey, groupW, storeRefs)
+        local egx  = 8
+        local grp  = CreateGroupBox(parent, "Elite Dragon Border", ex, ey, groupW, 36, "GameFontNormal")
+
+        if unit == "player" or unit == "pet" then
+            grp:Hide()
+            if storeRefs then
+                panel.eliteBorderCheck        = CreateCheckbox(grp, "", -9999, 0, function() return false end, function() end)
+                panel.eliteBorderStyleDD      = CreateDropdown(grp, -9999, 0, 100, {"Auto","Gold","Silver"}, function() return "Auto" end, function() end)
+                panel.eliteBorderScaleRefresh = function() end
+                panel.eliteBorderXRefresh     = function() end
+                panel.eliteBorderYRefresh     = function() end
+            end
+            return grp
+        end
+
+        local function applyElite() UnitFramesLite_UpdateEliteBorder(unit) end
+
+        local eliteDetails = CreateFrame("Frame", nil, grp)
+        eliteDetails:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        eliteDetails:SetSize(groupW, 104)
+
+        -- Row 1: Style label + dropdown + note
+        CreateLabel(eliteDetails, "Style", egx, -8)
+        local styleDD = CreateDropdown(eliteDetails, egx + 46, -6, 90,
+            {"Auto", "Gold", "Silver"},
+            function() return getDB().eliteBorderStyle or "Auto" end,
+            function(v) getDB().eliteBorderStyle = v; applyElite() end)
+
+        local styleNote = eliteDetails:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        styleNote:SetPoint("TOPLEFT", eliteDetails, "TOPLEFT", egx + 170, -8)
+        styleNote:SetText("|cffaaaaaaAuto: gold for elite/boss,\nsilver for rare-elite, plain for rare|r")
+        styleNote:SetWidth(groupW - 170 - egx); styleNote:SetJustifyH("LEFT")
+
+        -- Row 2: Scale
+        local _, _, rScale = CreateNudgeSlider(eliteDetails, "Scale", 0.1, 5.0, 0.05, egx, -42, 100, "eliteBorderScale", getDB, applyElite)
+
+        -- Row 3: X/Y offsets side by side
+        local _, _, rElX = CreateNudgeSlider(eliteDetails, "X", -500, 500, 1, egx, -80, 80, "eliteBorderX", getDB, applyElite)
+        local _, _, rElY = CreateNudgeSlider(eliteDetails, "Y", -500, 500, 1, egx + 140, -80, 80, "eliteBorderY", getDB, applyElite)
+
+        local function setEliteSize(enabled)
+            grp:SetHeight(enabled and 148 or 36)
+            eliteDetails:SetShown(enabled)
+        end
+
+        local cb = CreateCheckbox(grp, "Show elite dragon border", egx, -18,
+            function() return getDB().showEliteBorder or false end,
+            function(v) getDB().showEliteBorder = v; setEliteSize(v); applyElite() end)
+        cb.Refresh = function(self)
+            local v = getDB().showEliteBorder or false
+            self:SetChecked(v); setEliteSize(v)
+        end
+        setEliteSize(getDB().showEliteBorder or false)
+
+        if storeRefs then
+            panel.eliteBorderCheck        = cb
+            panel.eliteBorderStyleDD      = styleDD
+            panel.eliteBorderScaleRefresh = rScale
+            panel.eliteBorderXRefresh     = rElX
+            panel.eliteBorderYRefresh     = rElY
+        end
+        return grp
+    end
+
+    -- Place elite group in orb section (left col, below Orb Background).
+    -- orbBgGroup: top=-346, height=96 → bottom=-442; gap 8 → y=-450.
+    -- storeRefs=true so panel:refresh() targets these controls.
+    local orbEliteGroup = BuildEliteGroup(orbSection, ox, -450, 290, true)
+    panel.orbEliteGroup = orbEliteGroup
+
+    -- Mirror in bar section (left col, below Bar Border). No extra refs needed.
+    -- barBorderDetails ends around y=-468; gap 8 → y=-476.
+    local barEliteGroup = BuildEliteGroup(barSection, 0, -476, 280, false)
+    panel.barEliteGroup = barEliteGroup
 end
 
 -- Tab 5: Buffs / Debuffs ------------------------------------------------------
@@ -1664,9 +1837,15 @@ local function BuildUnitPanel(panel, unit, tabSync)
 
         -- Scroll child: tall enough for all content; width synced with scroll frame
         local sc = CreateFrame("Frame", nil, sf)
-        sc:SetSize(620, 1000)
+        sc:SetSize(620, 1100)
         sf:SetScrollChild(sc)
         sf:HookScript("OnSizeChanged", function(self) sc:SetWidth(self:GetWidth()) end)
+        sf:EnableMouseWheel(true)
+        sf:SetScript("OnMouseWheel", function(self, delta)
+            local current = self:GetVerticalScroll()
+            local max     = self:GetVerticalScrollRange()
+            self:SetVerticalScroll(math.max(0, math.min(max, current - delta * 20)))
+        end)
         tabContents[i] = sc
     end
 
@@ -1726,12 +1905,15 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.showOrbBorderCheck:Refresh(); self.orbBorderThickRefresh()
         self.showOrbPowerCheck:Refresh(); self.ringThickRefresh()
         self.ringCCWCheck:Refresh(); self.ringTypeColorCheck:Refresh()
+        if self.UpdateRingColourMode then self:UpdateRingColourMode() end
+        if self.ringPTFrame and self.ringPTFrame.RefreshSwatches then self.ringPTFrame:RefreshSwatches() end
         if self.powerTypeDD         then self.powerTypeDD:SetSelection(db.orbPowerMode or "None") end
         if self.powerBarAttachCheck  then self.powerBarAttachCheck:Refresh()  end
         if self.powerBarCentreCheck  then self.powerBarCentreCheck:Refresh()  end
         if self.orbPowerShowOutOfCombatCheck then self.orbPowerShowOutOfCombatCheck:Refresh() end
         if self.orbPBarTypeColorCheck then self.orbPBarTypeColorCheck:Refresh() end
         if self.UpdateBarColourMode then self:UpdateBarColourMode() end
+        if self.barPTFrame and self.barPTFrame.RefreshSwatches then self.barPTFrame:RefreshSwatches() end
         if self.orbPBarWidthRefresh  then self.orbPBarWidthRefresh()  end
         if self.orbPBarHeightRefresh then self.orbPBarHeightRefresh() end
         if self.orbPBarXRefresh      then self.orbPBarXRefresh()      end
@@ -1741,6 +1923,12 @@ local function BuildUnitPanel(panel, unit, tabSync)
         if self.orbLowCheck             then self.orbLowCheck:Refresh()             end
         if self.barLowThresholdRefresh  then self.barLowThresholdRefresh()          end
         if self.orbLowThresholdRefresh  then self.orbLowThresholdRefresh()          end
+        -- Elite border
+        if self.eliteBorderCheck        then self.eliteBorderCheck:Refresh()        end
+        if self.eliteBorderStyleDD      then self.eliteBorderStyleDD:SetSelection(db.eliteBorderStyle or "Auto") end
+        if self.eliteBorderScaleRefresh then self.eliteBorderScaleRefresh()         end
+        if self.eliteBorderXRefresh     then self.eliteBorderXRefresh()             end
+        if self.eliteBorderYRefresh     then self.eliteBorderYRefresh()             end
         if self.UpdateAppearanceMode then self:UpdateAppearanceMode() end
         for _, cb in pairs(self.conditionChecks or {}) do cb:Refresh() end
         if self.refreshAlpha then self:refreshAlpha() end
@@ -1782,11 +1970,12 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "showOrbBorder","orbBorderThickness","orbBorderColor",
           "showOrbPower","orbPowerMode",
           "orbPowerRingThickness","orbPowerRingCCW",
-          "orbPowerRingBgColor","orbPowerRingColor","orbPowerRingUseTypeColor",
+          "orbPowerRingBgColor","orbPowerRingColor","orbPowerRingUseTypeColor","orbPowerRingUseFixedColor",
           "orbPowerBarWidth","orbPowerBarHeight","orbPowerBarX","orbPowerBarY",
-          "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor","orbPowerBarUseTypeColor",
+          "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor","orbPowerBarUseTypeColor","orbPowerBarUseFixedColor",
           "orbPowerBarCentreToScreen","orbPowerShowOutOfCombat",
           "hpLowEnabled","hpLowThreshold","hpLowColor",
+          "showEliteBorder","eliteBorderStyle","eliteBorderScale","eliteBorderX","eliteBorderY",
         },
         -- 3: Text
         { "font","nameFont","hpTextFont","hpPctFont","levelFont",
@@ -1945,6 +2134,7 @@ function CreateOptionsPanel()
     end)
     mainFrame:Hide()
     _G.UnitFramesLiteOptions = mainFrame
+    tinsert(UISpecialFrames, "UnitFramesLiteOptions")
 
     mainFrame:SetBackdrop({
         bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",

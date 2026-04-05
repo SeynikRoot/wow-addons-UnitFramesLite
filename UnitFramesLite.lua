@@ -127,6 +127,12 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         alphaCombat = 1.0, alphaOutCombat = 1.0,
         fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
         fadeHostileTarget = false,
+        -- Elite / rare-elite dragon border (target and focus only)
+        showEliteBorder    = false,
+        eliteBorderStyle   = "Auto",   -- "Auto" | "Gold" | "Silver"
+        eliteBorderScale   = 1.0,
+        eliteBorderX       = 0,
+        eliteBorderY       = 0,
         barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
@@ -147,7 +153,8 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         showOrbPower             = false,  -- kept for migration only
         orbPowerRingThickness    = 8,
         orbPowerRingCCW          = false,
-        orbPowerRingUseTypeColor = true,
+        orbPowerRingUseTypeColor = true,   -- legacy; superseded by orbPowerRingUseFixedColor
+        orbPowerRingUseFixedColor = false,  -- false = power type colours; true = fixed colour
         orbPowerRingColor        = {0, 0.5, 1, 1},
         orbPowerRingBgColor      = {0, 0, 0, 0.9},
         -- Power bar (used when orbPowerMode == "Bar")
@@ -158,7 +165,8 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         orbPowerBarFillDir       = "HORIZONTAL",
         orbPowerBarColor         = {0, 0.5, 1, 1},
         orbPowerBarBgColor       = {0, 0, 0, 0.9},
-        orbPowerBarUseTypeColor  = false,
+        orbPowerBarUseTypeColor  = false,   -- legacy; superseded by orbPowerBarUseFixedColor
+        orbPowerBarUseFixedColor = false,   -- false = power type colours; true = fixed colour
         orbPowerBarCentreToScreen = false,
         orbPowerShowOutOfCombat  = true,
     }
@@ -352,6 +360,89 @@ function UnitFramesLite_UpdateAlpha(unit)
     end
 end
 
+-- Elite / rare-elite dragon border -------------------------------------------
+-- Textures from the Blizzard TargetingFrame atlas.  The "Elite" texture shows
+-- gold dragon wings; "Rare-Elite" shows silver dragon wings with a purple tint;
+-- "Rare" shows a silver frame without wings.
+-- Only shown for target and focus units when showEliteBorder is enabled.
+
+local ELITE_TEX_GOLD   = "Interface\\TargetingFrame\\UI-TargetingFrame-Elite"
+local ELITE_TEX_SILVER = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare-Elite"
+local ELITE_TEX_RARE   = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare"
+
+-- Classification → texture lookup for "Auto" style.
+-- worldboss and elite get gold; rareelite gets silver; rare gets the rare (no dragon) frame.
+local ELITE_AUTO_TEX = {
+    worldboss = ELITE_TEX_GOLD,
+    elite     = ELITE_TEX_GOLD,
+    rareelite = ELITE_TEX_SILVER,
+    rare      = ELITE_TEX_RARE,
+}
+
+function UnitFramesLite_UpdateEliteBorder(unit)
+    local frame = frames[unit]
+    if not frame or not frame.eliteBorderFrame then return end
+
+    local db = GetDB(unit)
+
+    -- Feature only applies to target and focus
+    if unit ~= "target" and unit ~= "focus" then
+        frame.eliteBorderFrame:Hide()
+        return
+    end
+
+    if not db.showEliteBorder or not UnitExists(unit) then
+        frame.eliteBorderFrame:Hide()
+        return
+    end
+
+    local classification = UnitClassification(unit)
+    local style          = db.eliteBorderStyle or "Auto"
+
+    local texPath
+    if style == "Gold" then
+        -- Show gold dragon whenever the unit is elite/rare-elite/worldboss; hide for plain rare
+        if classification == "elite" or classification == "rareelite" or classification == "worldboss" then
+            texPath = ELITE_TEX_GOLD
+        end
+    elseif style == "Silver" then
+        if classification == "elite" or classification == "rareelite" or classification == "worldboss" then
+            texPath = ELITE_TEX_SILVER
+        elseif classification == "rare" then
+            texPath = ELITE_TEX_RARE
+        end
+    else  -- "Auto"
+        texPath = ELITE_AUTO_TEX[classification]
+    end
+
+    if not texPath then
+        frame.eliteBorderFrame:Hide()
+        return
+    end
+
+    frame.eliteBorderTex:SetTexture(texPath)
+
+    -- Size: scale the texture relative to the unit frame.
+    -- In bar mode use the frame width; in orb mode use the sphere size.
+    -- The Blizzard targeting-frame texture is roughly square (256×256 atlas tile),
+    -- so we keep a 1:1 aspect and let the user scale it.
+    local baseSize
+    if db.sphereMode then
+        baseSize = math.max(20, db.sphereSize or 80)
+    else
+        baseSize = math.max(db.frameWidth or 160, db.frameHeight or 35) * 1.4
+    end
+    local sz = math.max(20, baseSize * (db.eliteBorderScale or 1.0))
+
+    local ebf = frame.eliteBorderFrame
+    ebf:SetSize(sz, sz)
+    ebf:ClearAllPoints()
+    ebf:SetPoint("CENTER", frame, "CENTER",
+        db.eliteBorderX or 0,
+        db.eliteBorderY or 0)
+    ebf:Show()
+end
+
 -- Health text ----------------------------------------------------------------
 -- content: "Cur / Max" | "Current" | "Max"
 -- format:  "Full" (raw integers) | "Short" (÷1000, "k" suffix)
@@ -487,19 +578,42 @@ end
 
 -- Power ring fill helper -----------------------------------------------------
 
-local POWER_COLORS = {}
-local function SetPC(key, r, g, b)
-    if key ~= nil then POWER_COLORS[key] = {r, g, b} end
+-- Ordered list of primary power types used for the per-type colour UI.
+-- Each entry: { key = Enum.PowerType.X, label = "Name", dbKey = "ptc_<name>" }
+local POWER_TYPE_LIST = {}
+local POWER_TYPE_DEFAULTS = {}  -- dbKey → {r,g,b,1}
+
+local function RegPT(enumKey, label, r, g, b)
+    if enumKey == nil then return end
+    local dbKey = "ptc_" .. label:lower():gsub(" ", "_")
+    POWER_TYPE_LIST[#POWER_TYPE_LIST + 1] = { enumKey = enumKey, label = label, dbKey = dbKey }
+    POWER_TYPE_DEFAULTS[dbKey] = {r, g, b, 1}
 end
-SetPC(Enum.PowerType.Mana,        0.00, 0.00, 1.00)
-SetPC(Enum.PowerType.Rage,        1.00, 0.00, 0.00)
-SetPC(Enum.PowerType.Focus,       1.00, 0.50, 0.25)
-SetPC(Enum.PowerType.Energy,      1.00, 1.00, 0.00)
-SetPC(Enum.PowerType.ComboPoints, 1.00, 0.96, 0.41)
-SetPC(Enum.PowerType.RunicPower,  0.00, 0.82, 1.00)
-SetPC(Enum.PowerType.Fury,        0.79, 0.26, 0.99)
-SetPC(Enum.PowerType.Pain,        1.00, 0.61, 0.00)
-SetPC(Enum.PowerType.Essence,     0.31, 1.00, 0.74)
+RegPT(Enum.PowerType.Mana,        "Mana",        0.00, 0.00, 1.00)
+RegPT(Enum.PowerType.Rage,        "Rage",        1.00, 0.00, 0.00)
+RegPT(Enum.PowerType.Focus,       "Focus",       1.00, 0.50, 0.25)
+RegPT(Enum.PowerType.Energy,      "Energy",      1.00, 1.00, 0.00)
+RegPT(Enum.PowerType.RunicPower,  "Runic Power", 0.00, 0.82, 1.00)
+RegPT(Enum.PowerType.Fury,        "Fury",        0.79, 0.26, 0.99)
+RegPT(Enum.PowerType.Pain,        "Pain",        1.00, 0.61, 0.00)
+RegPT(Enum.PowerType.Essence,     "Essence",     0.31, 1.00, 0.74)
+
+-- Build the fast enumKey→colour lookup; reads from global SavedVariables when available.
+-- Called at PLAYER_LOGIN (after DB is loaded) and whenever the user edits a colour.
+local POWER_COLORS = {}
+function UnitFramesLite_RebuildPowerColors()
+    local ptDB = UnitFramesLiteDB and UnitFramesLiteDB.powerTypeColors
+    for _, entry in ipairs(POWER_TYPE_LIST) do
+        local c = (ptDB and ptDB[entry.dbKey]) or POWER_TYPE_DEFAULTS[entry.dbKey]
+        POWER_COLORS[entry.enumKey] = c
+    end
+end
+-- Seed with defaults so colours are available before PLAYER_LOGIN
+UnitFramesLite_RebuildPowerColors()
+
+-- Expose to options file
+UFL.POWER_TYPE_LIST     = POWER_TYPE_LIST
+UFL.POWER_TYPE_DEFAULTS = POWER_TYPE_DEFAULTS
 
 -- Secondary resource (class resource) power types and max counts.
 -- hideWhenEmpty: true  → pip hidden entirely when inactive (Soul Shards, Arcane Charges, Essence)
@@ -542,10 +656,10 @@ end
 local function ApplyPowerRingColor(frame, unit)
     local db = GetDB(unit)
     local c
-    if db.orbPowerRingUseTypeColor then
-        c = GetPowerColor(unit)
-    else
+    if db.orbPowerRingUseFixedColor then
         c = db.orbPowerRingColor or {0, 0.5, 1, 1}
+    else
+        c = GetPowerColor(unit)
     end
     local fa = (db.orbPowerRingColor and db.orbPowerRingColor[4]) or 1
     if frame.powerRingFillR then frame.powerRingFillR:SetStatusBarColor(c[1], c[2], c[3], fa) end
@@ -1177,7 +1291,7 @@ function UnitFramesLite_UpdateFrame(unit)
             end
             pb:SetOrientation(fd)
             pb:SetReverseFill(db.reverseFill or false)
-            local fc = db.orbPowerBarUseTypeColor and GetPowerColor(unit)
+            local fc = (not db.orbPowerBarUseFixedColor) and GetPowerColor(unit)
                        or db.orbPowerBarColor or {0, 0.5, 1, 1}
             pb:SetStatusBarColor(fc[1], fc[2], fc[3], fc[4] or 1)
             if frame.orbPowerBarBg then
@@ -1430,6 +1544,7 @@ function UnitFramesLite_UpdateFrame(unit)
 
     UnitFramesLite_UpdateVisibility(unit)
     UnitFramesLite_UpdateAlpha(unit)
+    UnitFramesLite_UpdateEliteBorder(unit)
     if frame.OnUFLUpdate then frame:OnUFLUpdate() end
     if unit == "player" then
         if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
@@ -1951,6 +2066,21 @@ local function SetupFrame(displayFrame, unit)
     local st2 = orbFill2:GetStatusBarTexture()
     if st2 then st2:AddMaskTexture(orbCircleMask) end
 
+    -- ── Elite / rare-elite dragon border ──────────────────────────────────
+    -- Parented to UIParent so the texture can be sized larger than the unit frame.
+    -- Only meaningful for target and focus; hidden for player/pet via UpdateEliteBorder.
+    local eliteBorderFrame = CreateFrame("Frame", nil, UIParent)
+    eliteBorderFrame:Hide()
+    eliteBorderFrame:EnableMouse(false)
+    eliteBorderFrame:SetFrameLevel(displayFrame:GetFrameLevel() + 25)
+    local eliteBorderTex = eliteBorderFrame:CreateTexture(nil, "OVERLAY")
+    eliteBorderTex:SetAllPoints()
+    displayFrame.eliteBorderFrame = eliteBorderFrame
+    displayFrame.eliteBorderTex   = eliteBorderTex
+
+    -- Hide the elite border when the unit frame is hidden/shown
+    displayFrame:HookScript("OnHide", function() eliteBorderFrame:Hide() end)
+
     -- ── Event listener ────────────────────────────────────────────────────
     local listener = CreateFrame("Frame")
     listener:RegisterUnitEvent("UNIT_HEALTH",          unit)
@@ -2157,6 +2287,8 @@ local function SetupFrame(displayFrame, unit)
         Update()
         if evt == "UNIT_HEALTH" or evt == "UNIT_MAXHEALTH" then UpdateHPColour() end
         if evt == "UNIT_AURA" then UnitFramesLite_UpdateAuras(unit) end
+        -- UNIT_FLAGS fires when unit classification changes (elite → normal, etc.)
+        if evt == "UNIT_FLAGS" then UnitFramesLite_UpdateEliteBorder(unit) end
         -- Refresh frame (including reaction-based text colours) on target/unit change
         if evt == "PLAYER_TARGET_CHANGED" or evt == "PLAYER_FOCUS_CHANGED"
            or evt == "UNIT_PET" or evt == "UNIT_FACTION" then
@@ -2573,6 +2705,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             print("|cffff4444UnitFramesLite|r: options panel error: " .. tostring(err))
         end
     elseif event == "PLAYER_LOGIN" then
+        -- Rebuild power type colour lookup from SavedVariables (DB now loaded)
+        UnitFramesLite_RebuildPowerColors()
         -- Player and Target are declared in XML; Focus and Pet are dynamic
         local focusFrame = CreateUFLDisplayFrame("UFL_FocusFrame", 0,    -220)
         local petFrame   = CreateUFLDisplayFrame("UFL_PetFrame",   -220, -240)
@@ -2613,6 +2747,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         UnitFramesLite_UpdateAuras("target")
     elseif event == "PLAYER_FOCUS_CHANGED" then
         UnitFramesLite_UpdateVisibility("focus")
+        UnitFramesLite_UpdateFrame("focus")
         UnitFramesLite_UpdateAlpha("focus")
         UnitFramesLite_UpdateAuras("focus")
     elseif event == "UNIT_PET" then
@@ -2623,6 +2758,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "UNIT_DISPLAYPOWER" then
         -- Fires when the player's primary power type changes (e.g. Druid shifting forms).
         -- catFormOnly resources (Druid combo points) should appear/disappear accordingly.
+        -- UpdateFrame also reapplies the orb power bar colour (orbPowerBarUseTypeColor)
+        -- which is only set during UpdateFrame, not in the per-frame Update() closure.
+        UnitFramesLite_UpdateFrame("player")
         SetupResourcePips()
         UnitFramesLite_UpdateResourceLayout()
         UpdateResourcePips()
