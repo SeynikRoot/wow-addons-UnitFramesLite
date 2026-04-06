@@ -41,7 +41,9 @@ $files = @(
     "UnitFramesLite.toc",
     "UnitFramesLite.lua",
     "UnitFramesLite.xml",
-    "UnitFramesLite_Options.lua"
+    "UnitFramesLite_Options.lua",
+    "Elite.tga",
+    "RareElite.tga"
 )
 
 foreach ($file in $files) {
@@ -52,6 +54,15 @@ foreach ($file in $files) {
     }
     Copy-Item -Path $src -Destination $target -Force
     Write-Host "Copied $file" -ForegroundColor Green
+}
+
+# Copy Textures folder
+$texSrc = Join-Path $source "Textures"
+if (Test-Path $texSrc) {
+    $texDst = Join-Path $target "Textures"
+    New-Item -ItemType Directory -Path $texDst -Force | Out-Null
+    Copy-Item -Path "$texSrc\*" -Destination $texDst -Recurse -Force
+    Write-Host "Copied Textures\" -ForegroundColor Green
 }
 
 Write-Host "Deployment complete. Start WoW and /reload to test." -ForegroundColor Yellow

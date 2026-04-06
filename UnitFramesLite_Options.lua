@@ -1083,7 +1083,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.appPortGroup = portGroup
 
     -- ── BAR section — right column beside Position/Size/Portrait ─────────────
-    local barSection = CreateGroupBox(content, "Bar", rx, -66, 268, 524, "GameFontNormal")
+    local barSection = CreateGroupBox(content, "Bar", rx, -66, 268, 640, "GameFontNormal")
     barSection:Hide()
     panel.barSection = barSection
 
@@ -1097,7 +1097,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     -- ── Colour & Texture sub-group ────────────────────────────────────────────
     -- Stacked layout: BG colour, solid/gradient swatches, then texture below
     -- colGroup starts at y=-56 (below HP Bar Height slider row which is ~40px tall)
-    local colGroup = CreateGroupBox(barSection, "Colour & Texture", bx, -56, 248, 308, "GameFontNormal")
+    local colGroup = CreateGroupBox(barSection, "Colour & Texture", bx, -56, 248, 214, "GameFontNormal")
 
     CreateLabel(colGroup, "Background", bx, -20)
     local bgBtn = CreateColorSwatch(colGroup, bx+80, -18, "Background Colour", getDB, "barBG", function() UnitFramesLite_UpdateFrame(unit) end)
@@ -1137,26 +1137,9 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         if self.texDD    then self.texDD:SetShown(not isSolid)    end
     end
 
-    -- ── Low-health colour override (bar mode) ────────────────────────────────
-    -- Row 1 (y=-214): "Low Health Colour" label + "Enabled" checkbox
-    -- Row 2 (y=-242): "Threshold %" slider (full width)
-    -- Row 3 (y=-270): Colour swatch
-    local barLowY = -214
-    CreateLabel(colGroup, "Low Health Colour", bx, barLowY)
-    local barLowCheck = CreateCheckbox(colGroup, "Enabled", bx + 130, barLowY,
-        function() return getDB().hpLowEnabled or false end,
-        function(v) getDB().hpLowEnabled = v; UnitFramesLite_UpdateFrame(unit) end)
-    panel.barLowCheck = barLowCheck
-    local barLowSlider, barLowBox, barLowRefresh = CreateNudgeSlider(colGroup, "Threshold %", 1, 100, 1,
-        bx, barLowY - 28, bSliderW, "hpLowThreshold", getDB, function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.barLowThresholdRefresh = barLowRefresh
-    local barLowColorBtn = CreateColorSwatch(colGroup, bx, barLowY - 60, "Colour", getDB, "hpLowColor",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons+1] = barLowColorBtn
-
     -- ── Bar Border (below colour group) ──────────────────────────────────────
-    -- colGroup top at -56, height 308 → bottom -364, +10 gap → borderY=-374
-    local borderY = -374
+    -- colGroup top at -56, height 214 → bottom -270, +10 gap → borderY=-280
+    local borderY = -280
     CreateLabel(barSection, "Bar Border", bx, borderY)
     local barBorderDetails
     panel.barBorderCheck = CreateCheckbox(barSection, "Enabled", bx+80, borderY,
@@ -1205,7 +1188,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         function(v) getDB().orbGradientDir = v; UnitFramesLite_UpdateFrame(unit) end)
 
     -- ── Orb Colour (left column, group box) ──────────────────────────────────
-    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -128, 290, 210, "GameFontNormal")
+    local orbColGroup = CreateGroupBox(orbSection, "Orb Colour", ox, -128, 290, 106, "GameFontNormal")
     panel.orbSolidCheck = CreateCheckbox(orbColGroup, "Use Solid Colour", gx, -20,
         function() return getDB().orbUseSolidColor or false end,
         function(v) getDB().orbUseSolidColor = v; panel:UpdateOrbColourMode(); UnitFramesLite_UpdateFrame(unit) end)
@@ -1223,26 +1206,9 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
         for _, w in ipairs(self.orbGradientGroup or {}) do w:SetShown(not isSolid) end
     end
 
-    -- ── Low-health colour override (orb mode) ────────────────────────────────
-    -- Row 1 (y=-106): "Low Health Colour" label + "Enabled" checkbox
-    -- Row 2 (y=-134): "Threshold %" slider (full width)
-    -- Row 3 (y=-166): Colour swatch
-    local orbLowY = -106
-    CreateLabel(orbColGroup, "Low Health Colour", gx, orbLowY)
-    local orbLowCheck = CreateCheckbox(orbColGroup, "Enabled", gx + 130, orbLowY,
-        function() return getDB().hpLowEnabled or false end,
-        function(v) getDB().hpLowEnabled = v; UnitFramesLite_UpdateFrame(unit) end)
-    panel.orbLowCheck = orbLowCheck
-    local orbLowSlider, orbLowBox, orbLowRefresh = CreateNudgeSlider(orbColGroup, "Threshold %", 1, 100, 1,
-        gx, orbLowY - 28, 120, "hpLowThreshold", getDB, function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.orbLowThresholdRefresh = orbLowRefresh
-    local orbLowColorBtn = CreateColorSwatch(orbColGroup, gx, orbLowY - 60, "Colour", getDB, "hpLowColor",
-        function() UnitFramesLite_UpdateFrame(unit) end)
-    panel.swatchButtons[#panel.swatchButtons+1] = orbLowColorBtn
-
     -- ── Orb Background (left column, group box) ───────────────────────────────
-    -- orbColGroup top at -128, height 210 → bottom -338, +8 gap → -346
-    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -346, 290, 96, "GameFontNormal")
+    -- orbColGroup top at -128, height 106 → bottom -234, +8 gap → -242
+    local orbBgGroup = CreateGroupBox(orbSection, "Orb Background", ox, -242, 290, 96, "GameFontNormal")
     local orbBgBtn = CreateColorSwatch(orbBgGroup, gx, -20, "Colour", getDB, "orbBgColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbBgBtn
     local function orbBgAlphaDB()
@@ -1257,7 +1223,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
     -- ── Power group (right column, shared between Bar and Orb modes) ────────────
     -- Anchored to content so it can be shown in both bar and orb modes.
-    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 530, "GameFontNormal")
+    local powerGroup = CreateGroupBox(content, "Power", rx, -66, 268, 560, "GameFontNormal")
     powerGroup:Hide()
     panel.orbPowerGroup = powerGroup   -- kept for UpdateAppearanceMode compat
 
@@ -1425,6 +1391,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.UpdateBarColourMode = function(self)
         local useFixed = getDB().orbPowerBarUseFixedColor or false
         orbPBarFgBtn:SetShown(useFixed)
+        orbPBarBgBtn:SetShown(useFixed)
         barPTFrame:SetShown(not useFixed)
     end
 
@@ -1434,29 +1401,33 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     panel.showOrbPowerCheck = { Refresh = function() end }
 
     -- ── Inner Border (right column below Power group, anchored to content) ────
-    -- powerGroup starts at rx,-66 height=530 → bottom=-596; gap 8 → -604
-    local orbBorderGroup = CreateGroupBox(content, "Inner Border", rx, -604, 268, 120, "GameFontNormal")
+    -- powerGroup starts at rx,-66 height=560 → bottom=-626; gap 8 → -634
+    local orbBorderGroup = CreateGroupBox(content, "Inner Border", rx, -634, 268, 44, "GameFontNormal")
     orbBorderGroup:Hide()
     panel.orbBorderGroup = orbBorderGroup
     local orbBorderDetails  -- declared before checkbox so closure captures the upvalue
-    panel.showOrbBorderCheck = CreateCheckbox(orbBorderGroup, "Enabled", gx, -20,
+    local function setOrbBorderSize(enabled)
+        orbBorderGroup:SetHeight(enabled and 128 or 44)
+        orbBorderDetails:SetShown(enabled)
+    end
+    panel.showOrbBorderCheck = CreateCheckbox(orbBorderGroup, "Enabled", gx, -24,
         function() return getDB().showOrbBorder or false end,
         function(v)
             getDB().showOrbBorder = v
-            orbBorderDetails:SetShown(v)
+            setOrbBorderSize(v)
             UnitFramesLite_UpdateFrame(unit)
         end)
     orbBorderDetails = CreateFrame("Frame", nil, orbBorderGroup)
-    orbBorderDetails:SetPoint("TOPLEFT", orbBorderGroup, "TOPLEFT", 0, -40)
+    orbBorderDetails:SetPoint("TOPLEFT", orbBorderGroup, "TOPLEFT", 0, -36)
     orbBorderDetails:SetSize(260, 80)
     local s2,b2,r2 = CreateNudgeSlider(orbBorderDetails,"Thickness (px)",1,40,1, gx,-4,100,"orbBorderThickness",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.orbBorderThickSlider,panel.orbBorderThickBox,panel.orbBorderThickRefresh = s2,b2,r2
     local orbBorderBtn = CreateColorSwatch(orbBorderDetails, gx, -42, "Border Colour", getDB, "orbBorderColor", function() UnitFramesLite_UpdateFrame(unit) end)
     panel.swatchButtons[#panel.swatchButtons+1] = orbBorderBtn
-    orbBorderDetails:SetShown(getDB().showOrbBorder or false)
+    setOrbBorderSize(getDB().showOrbBorder or false)
     panel.showOrbBorderCheck.Refresh = function(self)
         local v = getDB().showOrbBorder or false
-        self:SetChecked(v); orbBorderDetails:SetShown(v)
+        self:SetChecked(v); setOrbBorderSize(v)
     end
 
     -- ── Hidden sphereMode stub (panel:refresh calls self.sphereModeCheck:Refresh()) ──
@@ -1490,7 +1461,7 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
             barSection:SetPoint("TOPLEFT", content, "TOPLEFT", x, -290)
             barSection:SetSize(290, 640)
             portGroup:ClearAllPoints()
-            portGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -604)
+            portGroup:SetPoint("TOPLEFT", content, "TOPLEFT", rx, -634)
             portGroup:SetSize(268, 180)
         end
         portGroup:SetShown(not isOrb)
@@ -1519,52 +1490,66 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     end
 
     -- ── Elite / Rare-Elite Dragon Border — inline helper ─────────────────────
-    -- Builds a compact elite border group inside `parent` at (ex, ey).
-    -- For player/pet the group is hidden. Returns the group frame.
+    -- Builds an elite border group inside `parent` at (ex, ey).
+    -- Player/pet: texture choice + reversed checkbox + scale/offset controls.
+    -- Target/focus: reversed checkbox + scale/offset controls (auto texture from classification).
     -- storeRefs=true → writes panel.eliteBorder* refs (only do this for one instance)
     local function BuildEliteGroup(parent, ex, ey, groupW, storeRefs)
-        local egx  = 8
-        local grp  = CreateGroupBox(parent, "Elite Dragon Border", ex, ey, groupW, 36, "GameFontNormal")
+        local egx = 8
+        local isPlayerUnit = (unit == "player" or unit == "pet")
 
-        if unit == "player" or unit == "pet" then
-            grp:Hide()
-            if storeRefs then
-                panel.eliteBorderCheck        = CreateCheckbox(grp, "", -9999, 0, function() return false end, function() end)
-                panel.eliteBorderStyleDD      = CreateDropdown(grp, -9999, 0, 100, {"Auto","Gold","Silver"}, function() return "Auto" end, function() end)
-                panel.eliteBorderScaleRefresh = function() end
-                panel.eliteBorderXRefresh     = function() end
-                panel.eliteBorderYRefresh     = function() end
-            end
-            return grp
-        end
+        -- Row heights: texture row (player only) 34, checkboxes 26 each,
+        --             scale/X/Y 38 each, bottom pad 12
+        local texRowH   = isPlayerUnit and 34 or 0
+        local detailsH  = texRowH + 26 + 26 + 38 + 38 + 38 + 12
+        --                           ^autofit ^reversed  scale   X   Y
+        local expandedH = 36 + detailsH
+        local grp = CreateGroupBox(parent, "Elite Dragon Border", ex, ey, groupW, 36, "GameFontNormal")
 
         local function applyElite() UnitFramesLite_UpdateEliteBorder(unit) end
 
         local eliteDetails = CreateFrame("Frame", nil, grp)
         eliteDetails:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
-        eliteDetails:SetSize(groupW, 104)
+        eliteDetails:SetSize(groupW, detailsH)
 
-        -- Row 1: Style label + dropdown + note
-        CreateLabel(eliteDetails, "Style", egx, -8)
-        local styleDD = CreateDropdown(eliteDetails, egx + 46, -6, 90,
-            {"Auto", "Gold", "Silver"},
-            function() return getDB().eliteBorderStyle or "Auto" end,
-            function(v) getDB().eliteBorderStyle = v; applyElite() end)
+        local curY = -8
 
-        local styleNote = eliteDetails:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        styleNote:SetPoint("TOPLEFT", eliteDetails, "TOPLEFT", egx + 170, -8)
-        styleNote:SetText("|cffaaaaaaAuto: gold for elite/boss,\nsilver for rare-elite, plain for rare|r")
-        styleNote:SetWidth(groupW - 170 - egx); styleNote:SetJustifyH("LEFT")
+        -- Texture choice row (player/pet only) ──────────────────────────────
+        local texDD
+        if isPlayerUnit then
+            CreateLabel(eliteDetails, "Texture", egx, curY)
+            texDD = CreateDropdown(eliteDetails, egx + 56, curY + 2, 110,
+                {"Elite", "RareElite"},
+                function() return getDB().eliteBorderTexture or "Elite" end,
+                function(v) getDB().eliteBorderTexture = v; applyElite() end)
+            curY = curY - texRowH
+        end
 
-        -- Row 2: Scale
-        local _, _, rScale = CreateNudgeSlider(eliteDetails, "Scale", 0.1, 5.0, 0.05, egx, -42, 100, "eliteBorderScale", getDB, applyElite)
+        -- Auto-fit checkbox (orb mode only) ───────────────────────────────────
+        local autoFitCB = CreateCheckbox(eliteDetails, "Auto-fit to orb", egx, curY,
+            function() return getDB().eliteBorderAutoFit or false end,
+            function(v) getDB().eliteBorderAutoFit = v; applyElite() end)
+        autoFitCB.Refresh = function(self)
+            self:SetChecked(getDB().eliteBorderAutoFit or false)
+        end
+        curY = curY - 26
 
-        -- Row 3: X/Y offsets side by side
-        local _, _, rElX = CreateNudgeSlider(eliteDetails, "X", -500, 500, 1, egx, -80, 80, "eliteBorderX", getDB, applyElite)
-        local _, _, rElY = CreateNudgeSlider(eliteDetails, "Y", -500, 500, 1, egx + 140, -80, 80, "eliteBorderY", getDB, applyElite)
+        -- Reversed checkbox ───────────────────────────────────────────────────
+        local reversedCB = CreateCheckbox(eliteDetails, "Reversed", egx, curY,
+            function() return getDB().eliteBorderReversed or false end,
+            function(v) getDB().eliteBorderReversed = v; applyElite() end)
+        reversedCB.Refresh = function(self)
+            self:SetChecked(getDB().eliteBorderReversed or false)
+        end
+        curY = curY - 26
+
+        -- Scale (ignored in auto-fit mode) / X Offset / Y Offset ─────────────
+        local _, _, rScale = CreateNudgeSlider(eliteDetails, "Scale",    0.1, 5.0,  0.05, egx, curY,      120, "eliteBorderScale", getDB, applyElite)
+        local _, _, rElX   = CreateNudgeSlider(eliteDetails, "X Offset", -500, 500, 1,    egx, curY - 38, 120, "eliteBorderX",     getDB, applyElite)
+        local _, _, rElY   = CreateNudgeSlider(eliteDetails, "Y Offset", -500, 500, 1,    egx, curY - 76, 120, "eliteBorderY",     getDB, applyElite)
 
         local function setEliteSize(enabled)
-            grp:SetHeight(enabled and 148 or 36)
+            grp:SetHeight(enabled and expandedH or 36)
             eliteDetails:SetShown(enabled)
         end
 
@@ -1579,7 +1564,9 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
 
         if storeRefs then
             panel.eliteBorderCheck        = cb
-            panel.eliteBorderStyleDD      = styleDD
+            panel.eliteBorderTexDD        = texDD
+            panel.eliteBorderAutoFitCB    = autoFitCB
+            panel.eliteBorderReversedCB   = reversedCB
             panel.eliteBorderScaleRefresh = rScale
             panel.eliteBorderXRefresh     = rElX
             panel.eliteBorderYRefresh     = rElY
@@ -1588,14 +1575,14 @@ local function BuildAppearanceContent(content, unit, getDB, panel)
     end
 
     -- Place elite group in orb section (left col, below Orb Background).
-    -- orbBgGroup: top=-346, height=96 → bottom=-442; gap 8 → y=-450.
+    -- orbBgGroup: top=-242, height=96 → bottom=-338; gap 16 → y=-354.
     -- storeRefs=true so panel:refresh() targets these controls.
-    local orbEliteGroup = BuildEliteGroup(orbSection, ox, -450, 290, true)
+    local orbEliteGroup = BuildEliteGroup(orbSection, ox, -354, 290, true)
     panel.orbEliteGroup = orbEliteGroup
 
     -- Mirror in bar section (left col, below Bar Border). No extra refs needed.
-    -- barBorderDetails ends around y=-468; gap 8 → y=-476.
-    local barEliteGroup = BuildEliteGroup(barSection, 0, -476, 280, false)
+    -- barBorderDetails ends around y=-374; gap 16 → y=-390.
+    local barEliteGroup = BuildEliteGroup(barSection, 0, -390, 280, false)
     panel.barEliteGroup = barEliteGroup
 end
 
@@ -1919,13 +1906,11 @@ local function BuildUnitPanel(panel, unit, tabSync)
         if self.orbPBarXRefresh      then self.orbPBarXRefresh()      end
         if self.orbPBarYRefresh      then self.orbPBarYRefresh()      end
         if self.orbPBarFillDirDD     then self.orbPBarFillDirDD:SetSelection(db.orbPowerBarFillDir or "HORIZONTAL") end
-        if self.barLowCheck             then self.barLowCheck:Refresh()             end
-        if self.orbLowCheck             then self.orbLowCheck:Refresh()             end
-        if self.barLowThresholdRefresh  then self.barLowThresholdRefresh()          end
-        if self.orbLowThresholdRefresh  then self.orbLowThresholdRefresh()          end
         -- Elite border
         if self.eliteBorderCheck        then self.eliteBorderCheck:Refresh()        end
-        if self.eliteBorderStyleDD      then self.eliteBorderStyleDD:SetSelection(db.eliteBorderStyle or "Auto") end
+        if self.eliteBorderTexDD        then self.eliteBorderTexDD:SetSelection(db.eliteBorderTexture or "Elite") end
+        if self.eliteBorderAutoFitCB    then self.eliteBorderAutoFitCB:Refresh()    end
+        if self.eliteBorderReversedCB   then self.eliteBorderReversedCB:Refresh()   end
         if self.eliteBorderScaleRefresh then self.eliteBorderScaleRefresh()         end
         if self.eliteBorderXRefresh     then self.eliteBorderXRefresh()             end
         if self.eliteBorderYRefresh     then self.eliteBorderYRefresh()             end
@@ -1974,8 +1959,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "orbPowerBarWidth","orbPowerBarHeight","orbPowerBarX","orbPowerBarY",
           "orbPowerBarFillDir","orbPowerBarColor","orbPowerBarBgColor","orbPowerBarUseTypeColor","orbPowerBarUseFixedColor",
           "orbPowerBarCentreToScreen","orbPowerShowOutOfCombat",
-          "hpLowEnabled","hpLowThreshold","hpLowColor",
-          "showEliteBorder","eliteBorderStyle","eliteBorderScale","eliteBorderX","eliteBorderY",
+          "showEliteBorder","eliteBorderTexture","eliteBorderAutoFit","eliteBorderReversed","eliteBorderScale","eliteBorderX","eliteBorderY",
         },
         -- 3: Text
         { "font","nameFont","hpTextFont","hpPctFont","levelFont",

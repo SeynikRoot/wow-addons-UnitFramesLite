@@ -90,9 +90,6 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         debuffCurableOnly = false,
         auraTooltipEnabled = true,
         auraTooltipDelay   = 0,
-        hpLowEnabled    = false,
-        hpLowThreshold  = 35,
-        hpLowColor      = {1, 0, 0, 1},
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -127,12 +124,14 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         alphaCombat = 1.0, alphaOutCombat = 1.0,
         fadeNoTarget = false, fadeNoTargetAlpha = 0.4,
         fadeHostileTarget = false,
-        -- Elite / rare-elite dragon border (target and focus only)
-        showEliteBorder    = false,
-        eliteBorderStyle   = "Auto",   -- "Auto" | "Gold" | "Silver"
-        eliteBorderScale   = 1.0,
-        eliteBorderX       = 0,
-        eliteBorderY       = 0,
+        -- Elite / rare-elite dragon border
+        showEliteBorder     = false,
+        eliteBorderTexture  = "Elite",   -- "Elite" | "RareElite" (player/pet: fixed; target/focus: auto)
+        eliteBorderReversed = false,     -- flip texture horizontally
+        eliteBorderAutoFit  = false,     -- auto-size and position to hug the orb edge
+        eliteBorderScale    = 1.0,
+        eliteBorderX        = 0,
+        eliteBorderY        = 0,
         barBorderEnabled = true, barBorderThickness = 1,
         barBorderColor = {0, 0, 0, 1},
         -- Orb
@@ -203,7 +202,8 @@ local defaults = {
         {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1}),
 }
 
--- Apply per-unit aura direction defaults
+-- Apply per-unit defaults
+defaults.player.eliteBorderReversed = true   -- player dragon faces left by default
 defaults.player.buffGrowX   = "LEFT"
 defaults.player.debuffGrowX = "LEFT"
 defaults.target.buffGrowX   = "RIGHT"
@@ -330,6 +330,7 @@ function UnitFramesLite_UpdateAlpha(unit)
     if frame.orbPowerBar    then frame.orbPowerBar:SetAlpha(powerAlpha)    end
     if frame.orbBorderFrame  then frame.orbBorderFrame:SetAlpha(alpha)  end
     if frame.borderFrame     then frame.borderFrame:SetAlpha(alpha)     end
+    if frame.eliteBorderFrame then frame.eliteBorderFrame:SetAlpha(alpha) end
 
     -- Set alpha on the overlay frame AND directly on each FontString.
     -- The HIGH strata of textOverlay can cause alpha inheritance issues in WoW,
@@ -361,22 +362,19 @@ function UnitFramesLite_UpdateAlpha(unit)
 end
 
 -- Elite / rare-elite dragon border -------------------------------------------
--- Textures from the Blizzard TargetingFrame atlas.  The "Elite" texture shows
--- gold dragon wings; "Rare-Elite" shows silver dragon wings with a purple tint;
--- "Rare" shows a silver frame without wings.
--- Only shown for target and focus units when showEliteBorder is enabled.
+-- Custom textures in the addon folder.
+-- Elite.tga     → elite and worldboss units (or fixed choice for player/pet)
+-- RareElite.tga → rare-elite and rare units (or fixed choice for player/pet)
 
-local ELITE_TEX_GOLD   = "Interface\\TargetingFrame\\UI-TargetingFrame-Elite"
-local ELITE_TEX_SILVER = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare-Elite"
-local ELITE_TEX_RARE   = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare"
+local ELITE_TEX_ELITE     = "Interface\\AddOns\\UnitFramesLite\\Elite"
+local ELITE_TEX_RAREELITE = "Interface\\AddOns\\UnitFramesLite\\RareElite"
 
--- Classification → texture lookup for "Auto" style.
--- worldboss and elite get gold; rareelite gets silver; rare gets the rare (no dragon) frame.
-local ELITE_AUTO_TEX = {
-    worldboss = ELITE_TEX_GOLD,
-    elite     = ELITE_TEX_GOLD,
-    rareelite = ELITE_TEX_SILVER,
-    rare      = ELITE_TEX_RARE,
+-- Classification → texture for target/focus (auto mode).
+local ELITE_CLASS_TEX = {
+    worldboss = ELITE_TEX_ELITE,
+    elite     = ELITE_TEX_ELITE,
+    rareelite = ELITE_TEX_RAREELITE,
+    rare      = ELITE_TEX_RAREELITE,
 }
 
 function UnitFramesLite_UpdateEliteBorder(unit)
@@ -385,34 +383,22 @@ function UnitFramesLite_UpdateEliteBorder(unit)
 
     local db = GetDB(unit)
 
-    -- Feature only applies to target and focus
-    if unit ~= "target" and unit ~= "focus" then
+    if not db.showEliteBorder then
         frame.eliteBorderFrame:Hide()
         return
     end
 
-    if not db.showEliteBorder or not UnitExists(unit) then
-        frame.eliteBorderFrame:Hide()
-        return
-    end
-
-    local classification = UnitClassification(unit)
-    local style          = db.eliteBorderStyle or "Auto"
-
+    -- Player/pet: always show the configured texture (no classification check).
+    -- Target/focus: auto-select texture from unit classification; hide if not elite.
     local texPath
-    if style == "Gold" then
-        -- Show gold dragon whenever the unit is elite/rare-elite/worldboss; hide for plain rare
-        if classification == "elite" or classification == "rareelite" or classification == "worldboss" then
-            texPath = ELITE_TEX_GOLD
+    if unit == "player" or unit == "pet" then
+        texPath = (db.eliteBorderTexture == "RareElite") and ELITE_TEX_RAREELITE or ELITE_TEX_ELITE
+    else
+        if not UnitExists(unit) then
+            frame.eliteBorderFrame:Hide()
+            return
         end
-    elseif style == "Silver" then
-        if classification == "elite" or classification == "rareelite" or classification == "worldboss" then
-            texPath = ELITE_TEX_SILVER
-        elseif classification == "rare" then
-            texPath = ELITE_TEX_RARE
-        end
-    else  -- "Auto"
-        texPath = ELITE_AUTO_TEX[classification]
+        texPath = ELITE_CLASS_TEX[UnitClassification(unit)]
     end
 
     if not texPath then
@@ -422,24 +408,51 @@ function UnitFramesLite_UpdateEliteBorder(unit)
 
     frame.eliteBorderTex:SetTexture(texPath)
 
-    -- Size: scale the texture relative to the unit frame.
-    -- In bar mode use the frame width; in orb mode use the sphere size.
-    -- The Blizzard targeting-frame texture is roughly square (256×256 atlas tile),
-    -- so we keep a 1:1 aspect and let the user scale it.
-    local baseSize
-    if db.sphereMode then
-        baseSize = math.max(20, db.sphereSize or 80)
+    -- Horizontal flip for reversed orientation.
+    -- SetTexCoord(ULx,ULy, LLx,LLy, URx,URy, LRx,LRy)
+    if db.eliteBorderReversed then
+        frame.eliteBorderTex:SetTexCoord(1, 0, 1, 1, 0, 0, 0, 1)  -- mirrored horizontally
     else
-        baseSize = math.max(db.frameWidth or 160, db.frameHeight or 35) * 1.4
+        frame.eliteBorderTex:SetTexCoord(0, 0, 0, 1, 1, 0, 1, 1)  -- normal
     end
-    local sz = math.max(20, baseSize * (db.eliteBorderScale or 1.0))
 
+    -- Size and position the dragon border frame.
+    --
+    -- Auto-fit (orb mode only): scales the frame to match the orb diameter and
+    -- centres it so the dragon's arc aligns with the orb edge.
+    --
+    -- Calibrated from observed good fit: at sphereSize=80, sz=100 (scale×1.25),
+    -- offX=-3 (right/normal) places the dragon arc flush with the orb.
+    -- The reversed image mirrors horizontally, so the offX sign flips.
+    -- Both orientations sit on the right side of the orb; the flip just changes
+    -- which way the dragon faces (head up vs tail up).
     local ebf = frame.eliteBorderFrame
+    local sz, offX, offY
+
+    if db.eliteBorderAutoFit and db.sphereMode then
+        local orbDiam = math.max(20, db.sphereSize or 80)
+        sz   = orbDiam * 1.25                           -- empirically calibrated scale
+        offX = (db.eliteBorderReversed and 1 or -1) * orbDiam * 0.0375
+        offY = 0
+        -- User fine-tune offsets applied on top
+        offX = offX + (db.eliteBorderX or 0)
+        offY = offY + (db.eliteBorderY or 0)
+    else
+        -- Manual mode: scale relative to the unit frame size
+        local baseSize
+        if db.sphereMode then
+            baseSize = math.max(20, db.sphereSize or 80)
+        else
+            baseSize = math.max(db.frameWidth or 160, db.frameHeight or 35) * 1.4
+        end
+        sz   = math.max(20, baseSize * (db.eliteBorderScale or 1.0))
+        offX = db.eliteBorderX or 0
+        offY = db.eliteBorderY or 0
+    end
+
     ebf:SetSize(sz, sz)
     ebf:ClearAllPoints()
-    ebf:SetPoint("CENTER", frame, "CENTER",
-        db.eliteBorderX or 0,
-        db.eliteBorderY or 0)
+    ebf:SetPoint("CENTER", frame, "CENTER", offX, offY)
     ebf:Show()
 end
 
@@ -470,11 +483,6 @@ local function GetHealthText(hp, maxhp, isDead, content, format)
 end
 
 -- Returns true if unit HP is at or below threshold (0-100), false otherwise.
--- Note: in WoW 12.0, health values are secret numbers that cannot be compared in Lua.
--- This function always returns false except for the dead check; HP low colour is disabled.
-local function IsHPBelowThreshold(unit, threshold)
-    return UnitIsDead(unit)
-end
 
 -- Returns a formatted HP% string by building it entirely inside pcall.
 -- string.format receives the result of pcall, which is always a plain string.
@@ -537,38 +545,28 @@ end
 
 local function ApplyOrbFill(bar, db, circMask, reversedGrad, unit)
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    local lowOverride = false
-    if db.hpLowEnabled and unit then
-        if IsHPBelowThreshold(unit, db.hpLowThreshold or 35) then
-            local c = db.hpLowColor or {1, 0, 0, 1}
-            bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-            lowOverride = true
-        end
-    end
-    if not lowOverride then
-        if db.orbUseSolidColor then
-            local c = db.orbSolidColor or {0.1, 0.3, 0.9, 1}
-            bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-        else
-            bar:SetStatusBarColor(1, 1, 1, 1)
-            local gs   = db.orbGradientStart or {0.2, 0.5, 0.9, 1}
-            local ge   = db.orbGradientEnd   or {0.05, 0.15, 0.6, 1}
-            local gDir = db.orbGradientDir   or "VERTICAL"
-            -- CENTRE gradient uses VERTICAL internally; the two-half split in
-            -- UpdateFrame creates the radial effect. reversedGrad flips the lower half
-            -- so both halves are bright at the orb centre with no visible seam.
-            local effectiveDir = (gDir == "CENTRE") and "VERTICAL" or gDir
-            local sbTex = bar:GetStatusBarTexture()
-            if sbTex then
-                if reversedGrad and effectiveDir == "VERTICAL" then
-                    sbTex:SetGradient(effectiveDir,
-                        CreateColor(ge[1], ge[2], ge[3], ge[4]),
-                        CreateColor(gs[1], gs[2], gs[3], gs[4]))
-                else
-                    sbTex:SetGradient(effectiveDir,
-                        CreateColor(gs[1], gs[2], gs[3], gs[4]),
-                        CreateColor(ge[1], ge[2], ge[3], ge[4]))
-                end
+    if db.orbUseSolidColor then
+        local c = db.orbSolidColor or {0.1, 0.3, 0.9, 1}
+        bar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+    else
+        bar:SetStatusBarColor(1, 1, 1, 1)
+        local gs   = db.orbGradientStart or {0.2, 0.5, 0.9, 1}
+        local ge   = db.orbGradientEnd   or {0.05, 0.15, 0.6, 1}
+        local gDir = db.orbGradientDir   or "VERTICAL"
+        -- CENTRE gradient uses VERTICAL internally; the two-half split in
+        -- UpdateFrame creates the radial effect. reversedGrad flips the lower half
+        -- so both halves are bright at the orb centre with no visible seam.
+        local effectiveDir = (gDir == "CENTRE") and "VERTICAL" or gDir
+        local sbTex = bar:GetStatusBarTexture()
+        if sbTex then
+            if reversedGrad and effectiveDir == "VERTICAL" then
+                sbTex:SetGradient(effectiveDir,
+                    CreateColor(ge[1], ge[2], ge[3], ge[4]),
+                    CreateColor(gs[1], gs[2], gs[3], gs[4]))
+            else
+                sbTex:SetGradient(effectiveDir,
+                    CreateColor(gs[1], gs[2], gs[3], gs[4]),
+                    CreateColor(ge[1], ge[2], ge[3], ge[4]))
             end
         end
     end
@@ -1359,14 +1357,7 @@ function UnitFramesLite_UpdateFrame(unit)
         frame.hp:Show()
         frame.hp:SetWidth(w)
 
-        local hpLowActive = db.hpLowEnabled and
-            IsHPBelowThreshold(unit, db.hpLowThreshold or 35)
-
-        if hpLowActive then
-            frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-            local c = db.hpLowColor or {1, 0, 0, 1}
-            frame.hp:SetStatusBarColor(c[1], c[2], c[3], c[4])
-        elseif db.useSolidColor then
+        if db.useSolidColor then
             local texPath = "Interface\\TARGETINGFRAME\\UI-StatusBar"
             if LSM and db.statusbarTexture then
                 texPath = LSM:Fetch("statusbar", db.statusbarTexture) or texPath
@@ -2251,41 +2242,8 @@ local function SetupFrame(displayFrame, unit)
         end
     end
 
-    -- Re-apply HP bar colour on every health update so low-health colour
-    -- override transitions in real-time without a full UpdateFrame call.
-    local wasLowHP = false
-    local function UpdateHPColour()
-        local db = GetDB(unit)
-        if not db.hpLowEnabled then
-            if wasLowHP then wasLowHP = false; UnitFramesLite_UpdateFrame(unit) end
-            return
-        end
-        local isLow = IsHPBelowThreshold(unit, db.hpLowThreshold or 35)
-        -- Only act on transitions or when already low (colour may need refreshing)
-        if isLow == wasLowHP and not isLow then return end
-        wasLowHP = isLow or false
-        local frame = displayFrame
-        if db.sphereMode then
-            if frame.orbFill then
-                ApplyOrbFill(frame.orbFill, db, frame.orbCircleMask, true, unit)
-                if frame.orbFill2 then
-                    ApplyOrbFill(frame.orbFill2, db, frame.orbCircleMask, false, unit)
-                end
-            end
-        else
-            if isLow then
-                frame.hp:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-                local c = db.hpLowColor or {1, 0, 0, 1}
-                frame.hp:SetStatusBarColor(c[1], c[2], c[3], c[4])
-            else
-                UnitFramesLite_UpdateFrame(unit)
-            end
-        end
-    end
-
     listener:SetScript("OnEvent", function(_, evt)
         Update()
-        if evt == "UNIT_HEALTH" or evt == "UNIT_MAXHEALTH" then UpdateHPColour() end
         if evt == "UNIT_AURA" then UnitFramesLite_UpdateAuras(unit) end
         -- UNIT_FLAGS fires when unit classification changes (elite → normal, etc.)
         if evt == "UNIT_FLAGS" then UnitFramesLite_UpdateEliteBorder(unit) end
