@@ -2419,6 +2419,7 @@ local function GetOrCreateIcon(pool, idx, container)
     border:SetColorTexture(0, 0, 0, 1)
     local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
     cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(true)
+    cd:SetReverse(true)
     btn.cd = cd
     -- Custom timer FontString — gives full control over font and colour.
     local timerFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -2636,9 +2637,8 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
         local showStack = false
         pcall(function() showStack = aura.applications and aura.applications > 1 end)
         btn.stack:SetText(showStack and aura.applications or "")
-        -- Patch 12.0 (Midnight): duration/expirationTime are secret numbers.
-        -- Use C_UnitAuras.GetAuraDuration + SetCooldownFromDurationObject to avoid
-        -- any Lua-side arithmetic on secret values.
+        -- SetCooldownFromDurationObject handles secret numbers safely.
+        -- SetReverse(true) on the frame makes the swipe drain (bright→dim) rather than fill.
         local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
         if not durObj then
             durObj = C_DurationUtil.CreateDuration()
@@ -2713,6 +2713,7 @@ local function GetOrCreateBar(pool, idx, container)
 
     local cd = CreateFrame("Cooldown", nil, bar, "CooldownFrameTemplate")
     cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(true)
+    cd:SetReverse(true)
     bar.cd = cd
 
     local bg = bar:CreateTexture(nil, "BACKGROUND")
@@ -2781,13 +2782,13 @@ local function LayoutAuraBars(slot, auras, frame, db, prefix, unit, auraFilter)
         bar:SetStatusBarColor(r, g, b, 0.8)
 
         -- Duration: apply cooldown sweep + drive fill fraction.
-        -- WoW 12.0 durations are secret numbers — all arithmetic is in pcall.
+        -- SetCooldownFromDurationObject handles secret numbers safely.
+        -- SetReverse(true) on the frame makes the swipe drain (bright→dim) rather than fill.
         local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
         if not durObj then
             durObj = C_DurationUtil.CreateDuration()
             durObj:SetTimeFromEnd(0, 0, 1)
         end
-        -- Cooldown sweep (no countdown numbers — we use a custom FontString for the timer)
         bar.cd:SetAllPoints(bar)
         bar.cd:SetHideCountdownNumbers(true)
         bar.cd:SetCooldownFromDurationObject(durObj)
@@ -2855,6 +2856,7 @@ local function GetOrCreateRing(pool, idx, container)
     local cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
     cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetDrawSwipe(true)
     cd:SetHideCountdownNumbers(true)
+    cd:SetReverse(true)
     f.cd = cd
 
     -- Stack count label at top-right of the ring frame
@@ -2940,7 +2942,8 @@ local function LayoutAuraRings(slot, auras, frame, db, prefix, unit, auraFilter)
         pcall(function() showStack = aura.applications and aura.applications > 1 end)
         ring.stack:SetText(showStack and aura.applications or "")
 
-        -- Cooldown sweep
+        -- Cooldown sweep — SetCooldownFromDurationObject handles secret numbers safely.
+        -- SetReverse(true) on the frame makes the swipe drain (bright→dim) rather than fill.
         local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
         if not durObj then
             durObj = C_DurationUtil.CreateDuration()
@@ -2973,6 +2976,55 @@ local function LayoutAuraRings(slot, auras, frame, db, prefix, unit, auraFilter)
     container:Show()
 end
 
+-- ── Test Aura Mode ───────────────────────────────────────────────────────────
+-- Generates fake AuraData-like tables so the user can preview aura layouts
+-- without needing live buffs/debuffs active.
+-- 10 entries each for buffs and debuffs; durations stagger 60s→10s in 5s steps.
+
+local testAurasActive = false
+
+local TEST_ICONS_BUFF = {
+    136096, 136108, 136116, 135932, 136048,
+    132242, 135946, 135887, 136051, 135967,
+}
+local TEST_ICONS_DEBUFF = {
+    136139, 136107, 132114, 135829, 135902,
+    136183, 135818, 136154, 132336, 135991,
+}
+local TEST_DISPEL = { nil, nil, nil, "Magic", "Poison", nil, "Curse", nil, "Disease", nil }
+
+local function MakeTestAuras(isHarmful)
+    local icons   = isHarmful and TEST_ICONS_DEBUFF or TEST_ICONS_BUFF
+    local auras   = {}
+    local now     = GetTime()
+    for i = 1, 10 do
+        local dur = 65 - i * 5   -- 60, 55, 50 … 10
+        auras[i] = {
+            auraInstanceID          = 900000 + i + (isHarmful and 100 or 0),
+            spellId                 = 900000 + i,
+            name                    = isHarmful and ("Debuff "..i) or ("Buff "..i),
+            icon                    = icons[i],
+            applications            = (i == 3) and 3 or 0,
+            duration                = dur,
+            expirationTime          = now + dur,
+            isHelpful               = not isHarmful,
+            isHarmful               = isHarmful,
+            isFromPlayerOrPlayerPet = true,
+            dispelName              = isHarmful and TEST_DISPEL[i] or nil,
+            timeMod                 = 1,
+            charges                 = 0,
+        }
+    end
+    return auras
+end
+
+function UnitFramesLite_SetTestAuras(enable)
+    testAurasActive = enable
+    for u in pairs(frames) do
+        UnitFramesLite_UpdateAuras(u)
+    end
+end
+
 function UnitFramesLite_UpdateAuras(unit)
     local data = GetAuraData(unit)
 
@@ -2984,6 +3036,39 @@ function UnitFramesLite_UpdateAuras(unit)
     end
 
     local db = GetDB(unit)
+
+    -- Test aura mode: inject fake auras for visual preview
+    if testAurasActive then
+        local testBuffs   = (db.buffShowBuffs   ~= false) and MakeTestAuras(false) or {}
+        local testDebuffs = (db.debuffShowDebuffs ~= false) and MakeTestAuras(true)  or {}
+        local function layoutSlotTest(slot, auras, showKey, prefix, defaultGrowX, defaultGrowY, filter)
+            if db[showKey] == false or #auras == 0 then
+                slot.container:Hide()
+                HideAllPools(slot)
+                return
+            end
+            local mode = db[prefix.."DisplayMode"] or "Icons"
+            if mode == "Bars" then
+                LayoutAuraBars(slot, auras, frame, db, prefix, unit, filter)
+            elseif mode == "Rings" then
+                LayoutAuraRings(slot, auras, frame, db, prefix, unit, filter)
+            else
+                LayoutAuraStrip(slot, auras, frame, db,
+                    db[prefix.."IconSize"]  or 24,
+                    db[prefix.."PerRow"]    or 4,
+                    db[prefix.."MaxShown"]  or 8,
+                    db[prefix.."GrowX"]     or defaultGrowX,
+                    db[prefix.."GrowY"]     or defaultGrowY,
+                    db[prefix.."XOffset"]   or 0,
+                    db[prefix.."YOffset"]   or 0,
+                    db[prefix.."AnchorToFrame"] ~= false,
+                    0, unit, filter, prefix)
+            end
+        end
+        layoutSlotTest(data.buff,   testBuffs,   "buffShowBuffs",    "buff",   "RIGHT", "DOWN", "HELPFUL")
+        layoutSlotTest(data.debuff, testDebuffs, "debuffShowDebuffs", "debuff", "LEFT",  "UP",   "HARMFUL")
+        return
+    end
 
     -- Collect buffs
     local buffs = {}

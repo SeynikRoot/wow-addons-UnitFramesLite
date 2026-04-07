@@ -1889,6 +1889,20 @@ local function BuildBuffsContent(content, unit, getDB, panel)
     BuildSection("buff",   false, 8,             -8)
     BuildSection("debuff", true,  8 + GRP_W + 8, -8)
 
+    -- ── Test Auras toggle button ─────────────────────────────────────────────
+    local testBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    testBtn:SetSize(120, 24)
+    testBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 8, -782)
+    testBtn:SetText("Test Auras")
+    local testActive = false
+    testBtn:SetScript("OnClick", function()
+        testActive = not testActive
+        testBtn:SetText(testActive and "Stop Test" or "Test Auras")
+        if UnitFramesLite_SetTestAuras then
+            UnitFramesLite_SetTestAuras(testActive)
+        end
+    end)
+
     panel.refreshBuffs = function()
         for _, fn in ipairs(refreshFns) do fn() end
     end
