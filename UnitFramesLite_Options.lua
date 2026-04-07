@@ -238,7 +238,7 @@ local function CreateColorSwatch(parent, x, y, label, getDB, key, callback)
     fill:SetColorTexture(1, 1, 1, 1)
 
     -- Label to the right, parented to btn so it hides/shows with it
-    local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("LEFT", btn, "RIGHT", 6, 0)
     fs:SetText(label)
 
@@ -347,7 +347,7 @@ end
 
 -- Options lists --------------------------------------------------------------
 
-local alignOptions        = {"LEFT", "CENTER", "RIGHT"}
+local alignOptions        = {"Left", "Center", "Right"}
 local dirOptions          = {"HORIZONTAL", "VERTICAL"}
 local portraitOptions     = {"Portrait Off", "Portrait Left", "Portrait Right"}  -- legacy
 local portraitModeOptions = {"None", "2D", "3D", "Unit Type"}
@@ -755,7 +755,7 @@ local function BuildTextContent(content, unit, getDB, panel)
 
     -- Global default font (fallback when per-section font is nil)
     CreateLabel(content, "Default Font", c1, -8)
-    panel.fontDD = CreateDropdown(content, c1, -26, 200, GetFontList(),
+    panel.fontDD = CreateDropdown(content, c1 + 90, -6, 200, GetFontList(),
         function() return getDB().font or "Friz Quadrata TT" end,
         function(v) getDB().font = v; UnitFramesLite_UpdateFrame(unit) end)
 
@@ -879,12 +879,12 @@ local function BuildTextContent(content, unit, getDB, panel)
     end
 
     -- ── Column 1: Name Text ──────────────────────────────────────────────────
-    -- ctr: Font(38)+Align(38)+Size(38)+XOff(38)+YOff(38) = 190 → ends at y=-(46+190)=-236
-    -- colour section at y=-246; reaction sub ends at y=-(246+56)=-302; pad 8 → box h=310
-    local NAME_CTR_H   = 190
-    local NAME_COL_Y   = -(46 + NAME_CTR_H + 10)   -- -246
-    local NAME_BOX_H   = 46 + NAME_CTR_H + 10 + 24 + 8 + 56 + 8   -- 342 → use 350
-    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, 350)
+    -- ctr: Font(38)+Align(38)+Size(38)+XOff(38)+YOff(38)+Width(38)+WrapRow(26) = 254
+    -- colour section at y=-(46+254+10)=-310; reaction sub ends at y=-(310+56)=-366; pad 8 → box h=374
+    local NAME_CTR_H   = 254
+    local NAME_COL_Y   = -(46 + NAME_CTR_H + 10)   -- -310
+    local NAME_BOX_H   = 46 + NAME_CTR_H + 10 + 24 + 8 + 56 + 8   -- 406 → use 410
+    local nameBox = CreateGroupBox(content, "Name Text", c1, -50, COL_W, NAME_BOX_H)
     local function NameShown() return getDB().showName ~= false end
     panel.showNameCheck = CreateCheckbox(nameBox, "Show", GX, -24, NameShown,
         function(v) getDB().showName = v; UnitFramesLite_UpdateFrame(unit) end)
@@ -898,12 +898,24 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.nameAlignDD = CreateDropdown(nameBox, GX+44, -82, 100, alignOptions,
         function() return getDB().nameAlign or "LEFT" end,
         function(v) getDB().nameAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(nameBox,"Size",6,36,1, GX,-114,60,"nameTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(nameBox,"Font Size",6,36,1, GX,-114,60,"nameTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameFontSizeSlider, panel.nameFontSizeBox, panel.nameFontSizeRefresh = s,b,r
     s,b,r = CreateNudgeSlider(nameBox,"X Off",-500,500,1, GX,-152,60,"nameTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameXSlider, panel.nameXBox, panel.nameXRefresh = s,b,r
     s,b,r = CreateNudgeSlider(nameBox,"Y Off",-500,500,1, GX,-190,60,"nameTextY",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.nameYSlider, panel.nameYBox, panel.nameYRefresh = s,b,r
+    s,b,r = CreateNudgeSlider(nameBox,"Width",10,500,1, GX,-228,60,"nameWrapWidth",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    panel.nameWrapWidthSlider, panel.nameWrapWidthBox, panel.nameWrapWidthRefresh = s,b,r
+    -- Word wrap checkbox + grow direction dropdown on same row; dropdown hidden when wrap off
+    panel.nameWrapGrowDD = CreateDropdown(nameBox, GX+90, -264, 80, {"UP","DOWN"},
+        function() return getDB().nameWrapGrow or "DOWN" end,
+        function(v) getDB().nameWrapGrow = v; UnitFramesLite_UpdateFrame(unit) end)
+    local function RefreshWrapGrowVis() panel.nameWrapGrowDD:SetShown(getDB().nameWrap or false) end
+    panel.nameWrapCheck = CreateCheckbox(nameBox, "Word wrap", GX, -266,
+        function() return getDB().nameWrap or false end,
+        function(v) getDB().nameWrap = v; RefreshWrapGrowVis(); UnitFramesLite_UpdateFrame(unit) end)
+    panel.nameWrapCheck.Refresh = function(self) self:SetChecked(getDB().nameWrap or false); RefreshWrapGrowVis() end
+    RefreshWrapGrowVis()
 
     panel.nameRxCb, panel.nameRxSub = AddColourSection(nameBox, NAME_COL_Y, "nameColorByReaction", "nameColor", "Name Colour")
 
@@ -926,7 +938,7 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.hpTextAlignDD = CreateDropdown(hpTextBox, GX+44, -82, 100, alignOptions,
         function() return getDB().hpTextAlign or "CENTER" end,
         function(v) getDB().hpTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(hpTextBox,"Size",6,36,1, GX,-114,60,"hpTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpTextBox,"Font Size",6,36,1, GX,-114,60,"hpTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpFontSizeSlider, panel.hpFontSizeBox, panel.hpFontSizeRefresh = s,b,r
     s,b,r = CreateNudgeSlider(hpTextBox,"X Off",-500,500,1, GX,-152,60,"hpTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpXSlider, panel.hpXBox, panel.hpXRefresh = s,b,r
@@ -962,7 +974,7 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.hpPctAlignDD = CreateDropdown(hpPctBox, GX+44, -82, 100, alignOptions,
         function() return getDB().hpPctAlign or "CENTER" end,
         function(v) getDB().hpPctAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(hpPctBox,"Size",6,36,1, GX,-114,60,"hpPctFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(hpPctBox,"Font Size",6,36,1, GX,-114,60,"hpPctFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctFontSizeSlider, panel.hpPctFontSizeBox, panel.hpPctFontSizeRefresh = s,b,r
     s,b,r = CreateNudgeSlider(hpPctBox,"X Off",-500,500,1, GX,-152,60,"hpPctX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.hpPctXSlider, panel.hpPctXBox, panel.hpPctXRefresh = s,b,r
@@ -975,8 +987,9 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.hpPctRxCb, panel.hpPctRxSub = AddColourSection(hpPctBox, HPPCT_COL_Y, "hpPctColorByReaction", "hpPctColor", "Text Colour")
 
     -- ── Column 4: Level Text ─────────────────────────────────────────────────
-    -- Same as Name column: box h = 350
-    local LEVEL_COL_Y  = NAME_COL_Y  -- -246
+    -- ctr: Font(38)+Align(38)+Size(38)+XOff(38)+YOff(38) = 190
+    -- colour section at y=-(46+190+10)=-246; box h = 46+190+10+24+8+56+8 = 342 → use 350
+    local LEVEL_COL_Y  = -(46 + 190 + 10)  -- -246
     local levelBox = CreateGroupBox(content, "Level Text", c4, -50, COL_W, 350)
     local function LevelShown() return getDB().showLevel ~= false end
     panel.showLevelCheck = CreateCheckbox(levelBox, "Show", GX, -24, LevelShown,
@@ -991,7 +1004,7 @@ local function BuildTextContent(content, unit, getDB, panel)
     panel.levelTextAlignDD = CreateDropdown(levelBox, GX+44, -82, 100, alignOptions,
         function() return getDB().levelTextAlign or "CENTER" end,
         function(v) getDB().levelTextAlign = v; UnitFramesLite_UpdateFrame(unit) end)
-    s,b,r = CreateNudgeSlider(levelBox,"Size",6,36,1, GX,-114,60,"levelTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
+    s,b,r = CreateNudgeSlider(levelBox,"Font Size",6,36,1, GX,-114,60,"levelTextFontSize",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelFontSizeSlider, panel.levelFontSizeBox, panel.levelFontSizeRefresh = s,b,r
     s,b,r = CreateNudgeSlider(levelBox,"X Off",-500,500,1, GX,-152,60,"levelTextX",getDB,function() UnitFramesLite_UpdateFrame(unit) end)
     panel.levelXSlider, panel.levelXBox, panel.levelXRefresh = s,b,r
@@ -1599,28 +1612,35 @@ local function BuildBuffsContent(content, unit, getDB, panel)
 
     -- ── Per-section builder ──────────────────────────────────────────────────
     local function BuildSection(prefix, isDebuff, ox, oy)
-        local title   = isDebuff and "Debuffs" or "Buffs"
         local showKey = isDebuff and "debuffShowDebuffs" or "buffShowBuffs"
+        local label   = isDebuff and "Show Debuffs"      or "Show Buffs"
 
-        -- We build the group at a fixed height and resize it after we know the
-        -- expanded content height.  Start collapsed (header only = 36px).
-        local grp = CreateGroupBox(content, title, ox, oy, GRP_W, 36, "GameFontNormal")
+        -- Group box with no title — the Show checkbox acts as the header label.
+        local grp = CreateGroupBox(content, "", ox, oy, GRP_W, 36, "GameFontNormal")
         local gx  = 8
 
-        -- ── Mode-specific sub-frames (hidden by default) ──────────────────
-        -- Icons sub-frame
-        local iconsF = CreateFrame("Frame", nil, grp)
-        iconsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        -- Show checkbox lives in the header bar and acts as the section title.
+        local showCB = CreateCheckbox(grp, label, gx, -10,
+            function() return db()[showKey] ~= false end,
+            function(v) db()[showKey] = v; applyAuras() end)
+
+        -- ── Content frame: everything except the header checkbox ─────────
+        -- Shown/hidden as one unit when the checkbox is toggled.
+        local bodyF = CreateFrame("Frame", nil, grp)
+        bodyF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        bodyF:SetSize(GRP_W, 10)  -- height set dynamically below
+
+        -- ── Mode-specific sub-frames ──────────────────────────────────────
+        local iconsF = CreateFrame("Frame", nil, bodyF)
+        iconsF:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, -38)
         iconsF:SetSize(GRP_W, 320)
 
-        -- Bars sub-frame
-        local barsF = CreateFrame("Frame", nil, grp)
-        barsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        local barsF = CreateFrame("Frame", nil, bodyF)
+        barsF:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, -38)
         barsF:SetSize(GRP_W, 220)
 
-        -- Rings sub-frame
-        local ringsF = CreateFrame("Frame", nil, grp)
-        ringsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        local ringsF = CreateFrame("Frame", nil, bodyF)
+        ringsF:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, -38)
         ringsF:SetSize(GRP_W, 140)
 
         -- ── ICONS controls ────────────────────────────────────────────────
@@ -1677,103 +1697,105 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         local _,_,rMaxR    = CreateNudgeSlider(ringsF,"Max Shown",1,20,1,      gx,ry,SW, prefix.."MaxShown",db,applyAuras)
         ringsRefresh[#ringsRefresh+1] = rMaxR
 
-        -- Heights per mode (sub-frame height + header 36 + hideDur slider 38 + show 26 + debuff extras)
+        -- Heights: header(36) + Display-row(38) + mode-sub + hideDur(38) + debuffExtras
+        -- bodyF height = Display-row(38) + mode-sub + hideDur(38) + debuffExtras
         local debuffExtra = isDebuff and 52 or 0
-        local MODE_H = {
-            Icons = 36 + 320 + 38 + 26 + debuffExtra,
-            Bars  = 36 + 220 + 38 + 26 + debuffExtra,
-            Rings = 36 + 140 + 38 + 26 + debuffExtra,
+        local BODY_H = {
+            Icons = 38 + 320 + 38 + debuffExtra,
+            Bars  = 38 + 220 + 38 + debuffExtra,
+            Rings = 38 + 140 + 38 + debuffExtra,
         }
 
-        -- ── Always-visible footer controls (repositioned when mode changes) ──
-        -- Container for the hide-over-duration slider so all its widgets move together.
-        local hideDurContainer = CreateFrame("Frame", nil, grp)
+        -- ── Footer controls inside bodyF ──────────────────────────────────
+        -- Hide-over-duration slider, and debuff-only filters.
+        local hideDurContainer = CreateFrame("Frame", nil, bodyF)
         hideDurContainer:SetSize(GRP_W, 38)
         local _,_,rHideDur = CreateNudgeSlider(hideDurContainer, "Hide if duration over (0=off)", 0, 600, 1,
             0, 0, SW, prefix.."HideOverDuration", db, applyAuras)
 
-        local showCB = CreateCheckbox(grp, isDebuff and "Show Debuffs" or "Show Buffs", gx, -20,
-            function() return db()[showKey] ~= false end,
-            function(v) db()[showKey] = v; applyAuras() end)
-
         local playerOnlyCB, curableOnlyCB
         if isDebuff then
-            playerOnlyCB = CreateCheckbox(grp, "Only cast by player", gx, -20,
+            playerOnlyCB = CreateCheckbox(bodyF, "Only cast by player", gx, -20,
                 function() return db().debuffPlayerOnly or false end,
                 function(v) db().debuffPlayerOnly = v; applyAuras() end)
-            curableOnlyCB = CreateCheckbox(grp, "Only curable", gx, -20,
+            curableOnlyCB = CreateCheckbox(bodyF, "Only curable", gx, -20,
                 function() return db().debuffCurableOnly or false end,
                 function(v) db().debuffCurableOnly = v; applyAuras() end)
         end
 
-        -- Reposition footer controls below the active sub-frame content
-        local function RepositionFooter(modeH)
-            local subH = modeH - 36 - 38 - 26 - debuffExtra
-            local baseY = -(36 + subH + 4)
+        -- Position the footer controls at the bottom of bodyF.
+        local function RepositionFooter(bodyH)
+            local subH   = bodyH - 38 - 38 - debuffExtra  -- remove Display-row, hideDur, debuffExtras
+            local baseY  = -(38 + subH + 4)
             hideDurContainer:ClearAllPoints()
-            hideDurContainer:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY)
-            showCB:ClearAllPoints()
-            showCB:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY - 38)
+            hideDurContainer:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, baseY)
             if playerOnlyCB then
                 playerOnlyCB:ClearAllPoints()
-                playerOnlyCB:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY - 38 - 26)
+                playerOnlyCB:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, baseY - 38)
             end
             if curableOnlyCB then
                 curableOnlyCB:ClearAllPoints()
-                curableOnlyCB:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY - 38 - 52)
+                curableOnlyCB:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, baseY - 38 - 26)
             end
         end
 
-        -- ── Mode dropdown + "Show" toggle in the group header area ────────
-        -- Display Mode label + dropdown sit just below the group title,
-        -- sub-frames start below the dropdown row.
-        -- We shift sub-frames down by 36px more to make room.
-        local ddY = -22
-        CreateLabel(grp, "Display", gx, ddY)
-        local modeDD = CreateDropdown(grp, gx + 56, ddY - 18, 110, {"Icons","Bars","Rings"},
+        -- ── Display Mode dropdown (top of bodyF) ──────────────────────────
+        local ddY = -8
+        CreateLabel(bodyF, "Display", gx, ddY)
+        local modeDD = CreateDropdown(bodyF, gx + 56, ddY - 18, 110, {"Icons","Bars","Rings"},
             function() return db()[prefix.."DisplayMode"] or "Icons" end,
             function(v)
                 db()[prefix.."DisplayMode"] = v; applyAuras()
-                -- Rebuild visibility
-                local mh = MODE_H[v] or MODE_H.Icons
-                grp:SetHeight(mh)
+                local bh = BODY_H[v] or BODY_H.Icons
+                bodyF:SetHeight(bh)
+                grp:SetHeight(36 + bh)
                 iconsF:SetShown(v == "Icons")
                 barsF:SetShown(v == "Bars")
                 ringsF:SetShown(v == "Rings")
-                RepositionFooter(mh)
+                RepositionFooter(bh)
             end)
 
-        -- Shift sub-frames down past dropdown row (38px)
-        iconsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36 - 38)
-        barsF:SetPoint("TOPLEFT",  grp, "TOPLEFT", 0, -36 - 38)
-        ringsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36 - 38)
-
-        -- Recalculate heights with dropdown row factored in
-        for k, v in pairs(MODE_H) do MODE_H[k] = v + 38 end
-
-        -- Initialise visibility
-        local function ApplyMode(silent)
-            local v  = db()[prefix.."DisplayMode"] or "Icons"
-            local mh = MODE_H[v] or MODE_H.Icons
-            grp:SetHeight(mh)
-            iconsF:SetShown(v == "Icons")
-            barsF:SetShown(v  == "Bars")
-            ringsF:SetShown(v == "Rings")
-            RepositionFooter(mh)
+        -- ── Show/hide body when checkbox toggled ──────────────────────────
+        local function ApplyShowState()
+            local shown = db()[showKey] ~= false
+            bodyF:SetShown(shown)
+            if shown then
+                local v  = db()[prefix.."DisplayMode"] or "Icons"
+                local bh = BODY_H[v] or BODY_H.Icons
+                bodyF:SetHeight(bh)
+                grp:SetHeight(36 + bh)
+                iconsF:SetShown(v == "Icons")
+                barsF:SetShown(v == "Bars")
+                ringsF:SetShown(v == "Rings")
+                RepositionFooter(bh)
+            else
+                grp:SetHeight(36)
+            end
         end
-        ApplyMode()
+        -- Re-wire showCB to also call ApplyShowState
+        showCB:SetScript("OnClick", function(self)
+            db()[showKey] = self:GetChecked() and true or false
+            applyAuras()
+            ApplyShowState()
+        end)
+        showCB.Refresh = function(self)
+            self:SetChecked(db()[showKey] ~= false)
+            ApplyShowState()
+        end
+
+        ApplyShowState()
 
         refreshFns[#refreshFns+1] = function()
             modeDD:SetSelection(db()[prefix.."DisplayMode"] or "Icons")
             for _, fn in ipairs(iconsRefresh) do fn() end
             for _, fn in ipairs(barsRefresh)  do fn() end
             for _, fn in ipairs(ringsRefresh) do fn() end
-            anchorCB:Refresh(); showCB:Refresh(); timerCB:Refresh(); rHideDur()
+            anchorCB:Refresh(); timerCB:Refresh(); rHideDur()
             growXDD:SetSelection(db()[prefix.."GrowX"] or (isDebuff and "LEFT" or "RIGHT"))
             growYDD:SetSelection(db()[prefix.."GrowY"] or (isDebuff and "UP"   or "DOWN"))
             if playerOnlyCB  then playerOnlyCB:Refresh()  end
             if curableOnlyCB then curableOnlyCB:Refresh() end
-            ApplyMode()
+            showCB:Refresh()
         end
     end
 
@@ -1964,6 +1986,9 @@ local function BuildUnitPanel(panel, unit, tabSync)
         self.hpPctSymbolCheck:Refresh()
         self.levelTextAlignDD:SetSelection(db.levelTextAlign or "CENTER")
         self.nameFontSizeRefresh(); self.nameXRefresh(); self.nameYRefresh()
+        if self.nameWrapWidthRefresh then self.nameWrapWidthRefresh() end
+        if self.nameWrapCheck  then self.nameWrapCheck:Refresh() end  -- also calls RefreshWrapGrowVis
+        if self.nameWrapGrowDD then self.nameWrapGrowDD:SetSelection(db.nameWrapGrow or "DOWN") end
         self.hpFontSizeRefresh();   self.hpXRefresh();   self.hpYRefresh()
         self.hpPctFontSizeRefresh(); self.hpPctXRefresh(); self.hpPctYRefresh()
         self.levelFontSizeRefresh(); self.levelXRefresh(); self.levelYRefresh()
@@ -2051,7 +2076,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         -- 3: Text
         { "font","nameFont","hpTextFont","hpPctFont","levelFont",
           "nameColor","hpTextColor","hpPctColor","levelColor","hpColor",
-          "nameTextFontSize","nameTextX","nameTextY",
+          "nameTextFontSize","nameTextX","nameTextY","nameWrap","nameWrapWidth","nameWrapGrow",
           "hpTextFontSize","hpTextX","hpTextY",
           "hpPctFontSize","hpPctX","hpPctY",
           "levelTextFontSize","levelTextX","levelTextY",

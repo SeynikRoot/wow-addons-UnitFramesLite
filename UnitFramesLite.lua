@@ -16,7 +16,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
     return {
         x = x, y = y,
         font = "Friz Quadrata TT",
-        nameAlign = "LEFT",
+        nameAlign = "Left",
         hpColor = {1, 1, 1, 1},
         barBG = {0, 0, 0, 0.35},
         useSolidColor = false,
@@ -117,6 +117,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
+        nameWrap = false, nameWrapWidth = 80, nameWrapGrow = "DOWN",
         hpTextFontSize   = 11, hpTextX   = 0, hpTextY   = 0,
         levelTextFontSize= 11, levelTextX= 0, levelTextY= 0,
         -- Per-element text colors
@@ -134,12 +135,12 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         reactionNeutralColor    = {1, 1, 0, 1},
         reactionEnemyColor      = {1, 0, 0, 1},
         -- Per-element text alignments
-        hpTextAlign      = "CENTER",
-        levelTextAlign   = "CENTER",
+        hpTextAlign      = "Center",
+        levelTextAlign   = "Center",
         -- HP Percent (independent of HP text)
         hpPctShowSymbol  = true,
         hpPctFontSize    = 11, hpPctX = 0, hpPctY = -14,
-        hpPctAlign       = "CENTER",
+        hpPctAlign       = "Center",
         loadMounted = false, loadInVehicle = false, loadResting  = false,
         loadStealthed = false, loadInCombat = false, loadOutOfCombat = false,
         loadSolo = false, loadInGroup = false, loadInInstance = false,
@@ -584,7 +585,32 @@ local function ApplyTextElement(fs, anchorFrame, fontPath, fontSize, color, x, y
     fs:ClearAllPoints()
     fs:SetPoint("CENTER", anchorFrame, "CENTER", x or 0, y or 0)
     fs:SetWidth(anchorFrame:GetWidth() - 4)
-    fs:SetJustifyH(justifyH or "CENTER")
+    fs:SetJustifyH(string.upper(justifyH or "CENTER"))
+end
+
+-- Applies name text positioning, wrap, and width.
+-- In wrap mode the anchor point shifts to TOP/BOTTOM so rows grow in the
+-- chosen direction; the text width drives where words break.
+local function ApplyNameText(fs, anchorFrame, db, x, y)
+    if not fs then return end
+    local wrap     = db.nameWrap or false
+    local wrapW    = db.nameWrapWidth or 80
+    local grow     = db.nameWrapGrow or "DOWN"
+    fs:SetWordWrap(wrap)
+    if wrap then
+        fs:SetWidth(wrapW)
+        fs:ClearAllPoints()
+        if grow == "UP" then
+            fs:SetPoint("BOTTOM", anchorFrame, "CENTER", x, y)
+        else
+            fs:SetPoint("TOP", anchorFrame, "CENTER", x, y)
+        end
+    else
+        fs:SetWidth(wrapW > 0 and wrapW or (anchorFrame:GetWidth() - 4))
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", anchorFrame, "CENTER", x, y)
+    end
+    fs:SetJustifyH(string.upper(db.nameAlign or "CENTER"))
 end
 
 -- Orb fill helper ------------------------------------------------------------
@@ -1357,11 +1383,8 @@ function UnitFramesLite_UpdateFrame(unit)
             local c = (db.nameColorByReaction and GetReactionColor(unit, db)) or db.nameColor or {1, 1, 1, 1}
             frame.nameText:SetFont(ResolveFont(db, "nameFont"), db.nameTextFontSize or 12, "OUTLINE")
             frame.nameText:SetTextColor(c[1], c[2], c[3], c[4])
-            frame.nameText:ClearAllPoints()
-            frame.nameText:SetPoint("CENTER", frame, "CENTER",
+            ApplyNameText(frame.nameText, frame, db,
                 db.nameTextX or 0, (db.nameTextY or 0) + sz / 2 + 8)
-            frame.nameText:SetWidth(sz + 40)
-            frame.nameText:SetJustifyH(db.nameAlign or "CENTER")
         end
         if frame.hpText then
             local c = (db.hpTextColorByReaction and GetReactionColor(unit, db)) or db.hpTextColor or {1, 1, 1, 1}
@@ -1371,7 +1394,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.hpText:SetPoint("CENTER", frame, "CENTER",
                 db.hpTextX or 0, db.hpTextY or 0)
             frame.hpText:SetWidth(sz - 4)
-            frame.hpText:SetJustifyH(db.hpTextAlign or "CENTER")
+            frame.hpText:SetJustifyH(string.upper(db.hpTextAlign or "CENTER"))
         end
         if frame.hpPctText then
             local c = (db.hpPctColorByReaction and GetReactionColor(unit, db)) or db.hpPctColor or {1, 1, 1, 1}
@@ -1381,7 +1404,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.hpPctText:SetPoint("CENTER", frame, "CENTER",
                 db.hpPctX or 0, db.hpPctY or -14)
             frame.hpPctText:SetWidth(sz - 4)
-            frame.hpPctText:SetJustifyH(db.hpPctAlign or "CENTER")
+            frame.hpPctText:SetJustifyH(string.upper(db.hpPctAlign or "CENTER"))
         end
         if frame.levelText then
             local c = (db.levelColorByReaction and GetReactionColor(unit, db)) or db.levelColor or {1, 1, 1, 1}
@@ -1391,7 +1414,7 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.levelText:SetPoint("CENTER", frame, "CENTER",
                 db.levelTextX or 0, (db.levelTextY or 0) - sz / 2 - 8)
             frame.levelText:SetWidth(sz)
-            frame.levelText:SetJustifyH(db.levelTextAlign or "CENTER")
+            frame.levelText:SetJustifyH(string.upper(db.levelTextAlign or "CENTER"))
         end
 
     else
@@ -1478,10 +1501,12 @@ function UnitFramesLite_UpdateFrame(unit)
             frame.hp:SetHeight(barH)
         end
 
-        ApplyTextElement(frame.nameText,  frame, ResolveFont(db, "nameFont"),
-            db.nameTextFontSize  or 12,
-            (db.nameColorByReaction  and GetReactionColor(unit, db)) or db.nameColor   or {1,1,1,1},
-            db.nameTextX  or 0, db.nameTextY  or 0, db.nameAlign        or "LEFT")
+        if frame.nameText then
+            local c = (db.nameColorByReaction and GetReactionColor(unit, db)) or db.nameColor or {1,1,1,1}
+            frame.nameText:SetFont(ResolveFont(db, "nameFont"), db.nameTextFontSize or 12, "OUTLINE")
+            frame.nameText:SetTextColor(c[1], c[2], c[3], c[4])
+            ApplyNameText(frame.nameText, frame, db, db.nameTextX or 0, db.nameTextY or 0)
+        end
         ApplyTextElement(frame.hpText,    frame, ResolveFont(db, "hpTextFont"),
             db.hpTextFontSize    or 11,
             (db.hpTextColorByReaction and GetReactionColor(unit, db)) or db.hpTextColor or {1,1,1,1},
@@ -2813,11 +2838,21 @@ function UnitFramesLite_UpdateAuras(unit)
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
             if not aura then break end
             if threshold > 0 then
-                local dur = 0
-                pcall(function() dur = aura.duration or 0 end)
-                if dur > 0 and dur <= threshold then
-                    buffs[#buffs + 1] = aura
+                -- aura.duration is a secret number in WoW 12.x; comparisons throw.
+                -- Use DoesAuraHaveExpirationTime (takes spellId) to detect permanents.
+                -- For finite-duration auras, pcall the comparison: succeeds for plain
+                -- numbers (player's own auras), throws for secret numbers (enemy auras).
+                -- On throw we include conservatively so enemy debuffs always show.
+                local hasExpiry = C_UnitAuras and C_UnitAuras.DoesAuraHaveExpirationTime
+                    and C_UnitAuras.DoesAuraHaveExpirationTime(unit, aura.spellId)
+                if hasExpiry then
+                    local fits, ok = false, false
+                    ok = pcall(function()
+                        fits = aura.duration <= threshold
+                    end)
+                    if fits or not ok then buffs[#buffs + 1] = aura end
                 end
+                -- hasExpiry == false → permanent aura, exclude when threshold active
             else
                 buffs[#buffs + 1] = aura
             end
@@ -2840,10 +2875,14 @@ function UnitFramesLite_UpdateAuras(unit)
             elseif db.debuffCurableOnly and not (aura.dispelName and DISPEL_TYPES[aura.dispelName]) then
                 -- skip
             elseif threshold > 0 then
-                local dur = 0
-                pcall(function() dur = aura.duration or 0 end)
-                if dur > 0 and dur <= threshold then
-                    debuffs[#debuffs + 1] = aura
+                local hasExpiry = C_UnitAuras and C_UnitAuras.DoesAuraHaveExpirationTime
+                    and C_UnitAuras.DoesAuraHaveExpirationTime(unit, aura.spellId)
+                if hasExpiry then
+                    local fits, ok = false, false
+                    ok = pcall(function()
+                        fits = aura.duration <= threshold
+                    end)
+                    if fits or not ok then debuffs[#debuffs + 1] = aura end
                 end
             else
                 debuffs[#debuffs + 1] = aura
