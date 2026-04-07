@@ -525,8 +525,10 @@ end
 -- string.format("%d", secretNum) is safe and returns a secret string.
 -- secretNum / 1000 is arithmetic and throws — caught by pcall, returns nil.
 -- NEVER compare the return value to another string — only compare to nil.
+local DEAD_COLOR = {0.55, 0.55, 0.55, 1}
+
 local function GetHealthText(hp, maxhp, isDead, content, format)
-    if isDead then return nil end
+    if isDead then return "Dead" end
     local isShort = (format == "Short")
     local ok, text = pcall(function()
         if content == "Current" then
@@ -2180,6 +2182,8 @@ local function SetupFrame(displayFrame, unit)
         local maxPower = UnitPowerMax(unit)
         local name     = UnitName(unit) or unit
         local isDead   = UnitIsDead(unit)
+        local isTapped = UnitIsTapDenied(unit)
+        local useGrey  = isDead or isTapped
         local db       = GetDB(unit)
 
         displayFrame.hp:SetMinMaxValues(0, maxhp)
@@ -2255,6 +2259,12 @@ local function SetupFrame(displayFrame, unit)
         if db.showName ~= false then
             if displayFrame.nameText then
                 displayFrame.nameText:SetText(name)
+                if useGrey then
+                    displayFrame.nameText:SetTextColor(DEAD_COLOR[1], DEAD_COLOR[2], DEAD_COLOR[3], DEAD_COLOR[4])
+                else
+                    local c = (db.nameColorByReaction and GetReactionColor(unit, db)) or db.nameColor or {1,1,1,1}
+                    displayFrame.nameText:SetTextColor(c[1], c[2], c[3], c[4])
+                end
                 displayFrame.nameText:Show()
             end
         else
@@ -2272,6 +2282,12 @@ local function SetupFrame(displayFrame, unit)
                 -- statStr is always a plain string (our own literals), safe to compare.
                 if hpStr ~= nil or statStr ~= "" then
                     displayFrame.hpText:SetText((hpStr or "") .. statStr)
+                    if useGrey then
+                        displayFrame.hpText:SetTextColor(DEAD_COLOR[1], DEAD_COLOR[2], DEAD_COLOR[3], DEAD_COLOR[4])
+                    else
+                        local c = (db.hpTextColorByReaction and GetReactionColor(unit, db)) or db.hpTextColor or {1,1,1,1}
+                        displayFrame.hpText:SetTextColor(c[1], c[2], c[3], c[4])
+                    end
                     displayFrame.hpText:Show()
                 else
                     displayFrame.hpText:Hide()
@@ -2308,6 +2324,14 @@ local function SetupFrame(displayFrame, unit)
                     displayFrame.levelText:Show()
                 else
                     displayFrame.levelText:Hide()
+                end
+                if displayFrame.levelText:IsShown() then
+                    if useGrey then
+                        displayFrame.levelText:SetTextColor(DEAD_COLOR[1], DEAD_COLOR[2], DEAD_COLOR[3], DEAD_COLOR[4])
+                    else
+                        local c = (db.levelColorByReaction and GetReactionColor(unit, db)) or db.levelColor or {1,1,1,1}
+                        displayFrame.levelText:SetTextColor(c[1], c[2], c[3], c[4])
+                    end
                 end
             else
                 displayFrame.levelText:Hide()
