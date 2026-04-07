@@ -1637,11 +1637,11 @@ local function BuildBuffsContent(content, unit, getDB, panel)
 
         local barsF = CreateFrame("Frame", nil, bodyF)
         barsF:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, -38)
-        barsF:SetSize(GRP_W, 220)
+        barsF:SetSize(GRP_W, 200)
 
         local ringsF = CreateFrame("Frame", nil, bodyF)
         ringsF:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, -38)
-        ringsF:SetSize(GRP_W, 140)
+        ringsF:SetSize(GRP_W, 148)
 
         -- ── ICONS controls ────────────────────────────────────────────────
         local iconsRefresh = {}
@@ -1695,10 +1695,10 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         ringsRefresh[#ringsRefresh+1] = rMaxR
 
         local debuffExtra        = isDebuff and 52 or 0
-        local MODE_SUB_H = { Icons = 320, Bars = 184, Rings = 140 }
-        local TIMER_GRP_BODY_H   = 106  -- font row(38) + font-size row(38) + colour row(20) + gap(10)
+        local MODE_SUB_H = { Icons = 320, Bars = 200, Rings = 148 }
+        local TIMER_GRP_BODY_H   = 120  -- font row(38) + font-size row(38) + colour row(24) + padding(20)
         local TIMER_GRP_TOTAL_H  = 36 + TIMER_GRP_BODY_H
-        local TOOLTIP_GRP_H      = 78   -- group border(title 16) + checkbox(26) + delay slider(36)
+        local TOOLTIP_GRP_H      = 90   -- title(16) + checkbox(26) + delay slider(38) + padding(10)
 
         local function TimerGrpH()
             return (db()[prefix.."ShowTimer"] ~= false) and TIMER_GRP_TOTAL_H or 36
@@ -1718,7 +1718,7 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         --   bottom pad:   8
         local function CalcBodyH(mode)
             local subH = MODE_SUB_H[mode] or MODE_SUB_H.Icons
-            return 38 + subH + 4 + 38 + debuffExtra + 4 + TimerGrpH() + 4 + TOOLTIP_GRP_H + 8
+            return 38 + subH + 8 + 38 + debuffExtra + 8 + TimerGrpH() + 8 + TOOLTIP_GRP_H + 12
         end
 
         -- ── Footer controls inside bodyF ──────────────────────────────────
@@ -1753,15 +1753,15 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         timerBodyF:SetSize(GRP_W - 6, TIMER_GRP_BODY_H)
 
         local fontList = GetFontList()
-        local ty = -8
+        local ty = -10
         CreateLabel(timerBodyF, "Font", gx, ty)
         local timerFontDD = CreateDropdown(timerBodyF, gx + 40, ty - 18, 170, fontList,
             function() return db()[prefix.."TimerFont"] or fontList[1] end,
             function(v) db()[prefix.."TimerFont"] = v; applyAuras() end)
-        ty = ty - 38
+        ty = ty - 42
         local _,_,rTimerSize = CreateNudgeSlider(timerBodyF, "Font Size", 6, 32, 1,
             gx, ty, SW, prefix.."TimerFontSize", db, applyAuras)
-        ty = ty - 28
+        ty = ty - 38
         local timerColorSwatch = CreateColorSwatch(timerBodyF, gx, ty, "Timer Colour",
             db, prefix.."TimerColor",
             function() applyAuras() end)
@@ -1788,17 +1788,16 @@ local function BuildBuffsContent(content, unit, getDB, panel)
 
         -- ── Tooltip controls (below timer group) ─────────────────────────
         local tooltipGrp = CreateGroupBox(bodyF, "Tooltips", 0, 0, GRP_W - 6, TOOLTIP_GRP_H)
-        local tooltipCB = CreateCheckbox(tooltipGrp, "Show tooltips on mouseover", gx, -20,
+        local tooltipCB = CreateCheckbox(tooltipGrp, "Show tooltips on mouseover", gx, -22,
             function() return db()[prefix.."TooltipEnabled"] ~= false end,
             function(v) db()[prefix.."TooltipEnabled"] = v end)
         local _,_,rTTDelay = CreateNudgeSlider(tooltipGrp, "Tooltip delay (s)", 0, 2, 0.1,
-            gx, -50, SW, prefix.."TooltipDelay", db, function() end)
+            gx, -54, SW, prefix.."TooltipDelay", db, function() end)
 
         -- Position all footer controls — mirrors CalcBodyH arithmetic exactly.
         RepositionFooter = function(mode)
             local subH  = MODE_SUB_H[mode] or MODE_SUB_H.Icons
-            -- hideDur sits 4px below the mode sub
-            local y = -(38 + subH + 4)
+            local y = -(38 + subH + 8)   -- hideDur sits 8px below the mode sub
             hideDurContainer:ClearAllPoints()
             hideDurContainer:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, y)
             y = y - 38   -- below hideDur
@@ -1812,10 +1811,10 @@ local function BuildBuffsContent(content, unit, getDB, panel)
                 curableOnlyCB:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, y)
                 y = y - 26
             end
-            y = y - 4   -- gap before timer group
+            y = y - 8   -- gap before timer group
             timerGrp:ClearAllPoints()
             timerGrp:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, y)
-            y = y - TimerGrpH() - 4   -- gap before tooltip group
+            y = y - TimerGrpH() - 8   -- gap before tooltip group
             tooltipGrp:ClearAllPoints()
             tooltipGrp:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, y)
         end
