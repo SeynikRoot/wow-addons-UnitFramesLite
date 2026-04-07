@@ -2482,7 +2482,7 @@ local function FormatAuraTimer(aura)
     elseif remaining >= 60 then
         return string.format("%dm", math.floor(remaining / 60))
     else
-        return string.format("%ds", math.ceil(remaining))
+        return string.format("%d", math.ceil(remaining))
     end
 end
 
