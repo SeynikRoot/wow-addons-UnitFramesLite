@@ -1593,101 +1593,187 @@ local function BuildBuffsContent(content, unit, getDB, panel)
     local db = getDB
 
     -- Two equal-width columns side by side.
-    -- Content width ≈ 620px; each column 300px wide with 8px gap between.
-    local GRP_W      = 295
-    local GRP_H_BUFF = 390    -- buffs: no filter checkboxes
-    local GRP_H_DEB  = 440    -- debuffs: two extra filter checkboxes
-    local SW         = 140   -- slider width inside group box (fits in GRP_W with all chrome)
+    local GRP_W = 295
+    local SW    = 140  -- slider width inside group box
     local refreshFns = {}
 
+    -- ── Per-section builder ──────────────────────────────────────────────────
     local function BuildSection(prefix, isDebuff, ox, oy)
-        local title  = isDebuff and "Debuffs" or "Buffs"
-        local grpH   = isDebuff and GRP_H_DEB or GRP_H_BUFF
-        local grp    = CreateGroupBox(content, title, ox, oy, GRP_W, grpH)
-        local gx    = 8
-        local gy    = -24
-        local refreshList = {}
+        local title   = isDebuff and "Debuffs" or "Buffs"
+        local showKey = isDebuff and "debuffShowDebuffs" or "buffShowBuffs"
 
-        local function gdb(k)   return db()[prefix .. k] end
-        local function sdb(k,v) db()[prefix .. k] = v; applyAuras() end
+        -- We build the group at a fixed height and resize it after we know the
+        -- expanded content height.  Start collapsed (header only = 36px).
+        local grp = CreateGroupBox(content, title, ox, oy, GRP_W, 36, "GameFontNormal")
+        local gx  = 8
 
-        -- Row 1: Icon Size
-        local _,_,rIconSize = CreateNudgeSlider(grp, "Icon Size", 12, 64, 1,
-            gx, gy, SW, prefix.."IconSize", db, applyAuras)
-        refreshList[#refreshList+1] = rIconSize
-        gy = gy - 38
+        -- ── Mode-specific sub-frames (hidden by default) ──────────────────
+        -- Icons sub-frame
+        local iconsF = CreateFrame("Frame", nil, grp)
+        iconsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        iconsF:SetSize(GRP_W, 320)
 
-        -- Row 2: Per Row
-        local _,_,rPerRow = CreateNudgeSlider(grp, "Per Row", 1, 16, 1,
-            gx, gy, SW, prefix.."PerRow", db, applyAuras)
-        refreshList[#refreshList+1] = rPerRow
-        gy = gy - 38
+        -- Bars sub-frame
+        local barsF = CreateFrame("Frame", nil, grp)
+        barsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        barsF:SetSize(GRP_W, 220)
 
-        -- Row 3: Max Shown
-        local _,_,rMaxShown = CreateNudgeSlider(grp, "Max Shown", 1, 64, 1,
-            gx, gy, SW, prefix.."MaxShown", db, applyAuras)
-        refreshList[#refreshList+1] = rMaxShown
-        gy = gy - 40
+        -- Rings sub-frame
+        local ringsF = CreateFrame("Frame", nil, grp)
+        ringsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36)
+        ringsF:SetSize(GRP_W, 140)
 
-        -- Row 4: Grow X dropdown
-        CreateLabel(grp, "Grow X", gx, gy)
-        local growXDD = CreateDropdown(grp, gx + 60, gy - 18, 100, {"RIGHT","LEFT"},
-            function() return gdb("GrowX") or (isDebuff and "LEFT" or "RIGHT") end,
-            function(v) sdb("GrowX", v) end)
-        gy = gy - 44
-
-        -- Row 5: Grow Y dropdown
-        CreateLabel(grp, "Grow Y", gx, gy)
-        local growYDD = CreateDropdown(grp, gx + 60, gy - 18, 100, {"DOWN","UP"},
-            function() return gdb("GrowY") or (isDebuff and "UP" or "DOWN") end,
-            function(v) sdb("GrowY", v) end)
-        gy = gy - 44
-
-        -- Row 6: X Offset
-        local _,_,rXOfs = CreateNudgeSlider(grp, "X Offset", -500, 500, 1,
-            gx, gy, SW, prefix.."XOffset", db, applyAuras)
-        refreshList[#refreshList+1] = rXOfs
-        gy = gy - 38
-
-        -- Row 7: Y Offset
-        local _,_,rYOfs = CreateNudgeSlider(grp, "Y Offset", -500, 500, 1,
-            gx, gy, SW, prefix.."YOffset", db, applyAuras)
-        refreshList[#refreshList+1] = rYOfs
-        gy = gy - 32
-
-        -- Row 8: Anchor checkbox
-        local anchorCB = CreateCheckbox(grp, "Anchor to unit frame", gx, gy,
+        -- ── ICONS controls ────────────────────────────────────────────────
+        local iconsRefresh = {}
+        local iy = -8
+        local _,_,rIconSize = CreateNudgeSlider(iconsF,"Icon Size",12,64,1, gx,iy,SW, prefix.."IconSize",db,applyAuras)
+        iconsRefresh[#iconsRefresh+1] = rIconSize; iy = iy - 38
+        local _,_,rPerRow   = CreateNudgeSlider(iconsF,"Per Row",1,16,1,   gx,iy,SW, prefix.."PerRow",db,applyAuras)
+        iconsRefresh[#iconsRefresh+1] = rPerRow;   iy = iy - 38
+        local _,_,rMaxI     = CreateNudgeSlider(iconsF,"Max Shown",1,64,1, gx,iy,SW, prefix.."MaxShown",db,applyAuras)
+        iconsRefresh[#iconsRefresh+1] = rMaxI;     iy = iy - 40
+        CreateLabel(iconsF, "Grow X", gx, iy)
+        local growXDD = CreateDropdown(iconsF, gx+60, iy-18, 100, {"RIGHT","LEFT"},
+            function() return db()[prefix.."GrowX"] or (isDebuff and "LEFT" or "RIGHT") end,
+            function(v) db()[prefix.."GrowX"] = v; applyAuras() end)
+        iy = iy - 44
+        CreateLabel(iconsF, "Grow Y", gx, iy)
+        local growYDD = CreateDropdown(iconsF, gx+60, iy-18, 100, {"DOWN","UP"},
+            function() return db()[prefix.."GrowY"] or (isDebuff and "UP" or "DOWN") end,
+            function(v) db()[prefix.."GrowY"] = v; applyAuras() end)
+        iy = iy - 44
+        local _,_,rXOfs = CreateNudgeSlider(iconsF,"X Offset",-500,500,1, gx,iy,SW, prefix.."XOffset",db,applyAuras)
+        iconsRefresh[#iconsRefresh+1] = rXOfs; iy = iy - 38
+        local _,_,rYOfs = CreateNudgeSlider(iconsF,"Y Offset",-500,500,1, gx,iy,SW, prefix.."YOffset",db,applyAuras)
+        iconsRefresh[#iconsRefresh+1] = rYOfs; iy = iy - 32
+        local anchorCB = CreateCheckbox(iconsF,"Anchor to unit frame",gx,iy,
             function() return db()[prefix.."AnchorToFrame"] ~= false end,
             function(v) db()[prefix.."AnchorToFrame"] = v; applyAuras() end)
-        gy = gy - 26
 
-        -- Row 9: Show checkbox
-        local showKey = isDebuff and "debuffShowDebuffs" or "buffShowBuffs"
-        local showLabel = isDebuff and "Show Debuffs" or "Show Buffs"
-        local showCB = CreateCheckbox(grp, showLabel, gx, gy,
+        -- ── BARS controls ─────────────────────────────────────────────────
+        local barsRefresh = {}
+        local by = -8
+        local _,_,rBarW  = CreateNudgeSlider(barsF,"Bar Width",40,600,1, gx,by,SW, prefix.."BarWidth",db,applyAuras)
+        barsRefresh[#barsRefresh+1] = rBarW;  by = by - 38
+        local _,_,rBarH  = CreateNudgeSlider(barsF,"Bar Height",8,60,1,  gx,by,SW, prefix.."BarHeight",db,applyAuras)
+        barsRefresh[#barsRefresh+1] = rBarH;  by = by - 38
+        local _,_,rMaxB  = CreateNudgeSlider(barsF,"Max Shown",1,32,1,   gx,by,SW, prefix.."MaxShown",db,applyAuras)
+        barsRefresh[#barsRefresh+1] = rMaxB;  by = by - 38
+        local _,_,rBarX  = CreateNudgeSlider(barsF,"X Position",-2000,2000,1, gx,by,SW, prefix.."BarX",db,applyAuras)
+        barsRefresh[#barsRefresh+1] = rBarX;  by = by - 38
+        local _,_,rBarY  = CreateNudgeSlider(barsF,"Y Position",-2000,2000,1, gx,by,SW, prefix.."BarY",db,applyAuras)
+        barsRefresh[#barsRefresh+1] = rBarY;  by = by - 32
+        local timerCB = CreateCheckbox(barsF,"Show timer text",gx,by,
+            function() return db()[prefix.."BarShowTimer"] ~= false end,
+            function(v) db()[prefix.."BarShowTimer"] = v; applyAuras() end)
+
+        -- ── RINGS controls ────────────────────────────────────────────────
+        local ringsRefresh = {}
+        local ry = -8
+        local _,_,rRingRad = CreateNudgeSlider(ringsF,"Start Radius",10,300,1, gx,ry,SW, prefix.."RingRadius",db,applyAuras)
+        ringsRefresh[#ringsRefresh+1] = rRingRad; ry = ry - 38
+        local _,_,rRingGap = CreateNudgeSlider(ringsF,"Ring Gap",1,100,1,      gx,ry,SW, prefix.."RingGap",db,applyAuras)
+        ringsRefresh[#ringsRefresh+1] = rRingGap; ry = ry - 38
+        local _,_,rMaxR    = CreateNudgeSlider(ringsF,"Max Shown",1,20,1,      gx,ry,SW, prefix.."MaxShown",db,applyAuras)
+        ringsRefresh[#ringsRefresh+1] = rMaxR
+
+        -- Heights per mode (sub-frame height + header 36 + hideDur slider 38 + show 26 + debuff extras)
+        local debuffExtra = isDebuff and 52 or 0
+        local MODE_H = {
+            Icons = 36 + 320 + 38 + 26 + debuffExtra,
+            Bars  = 36 + 220 + 38 + 26 + debuffExtra,
+            Rings = 36 + 140 + 38 + 26 + debuffExtra,
+        }
+
+        -- ── Always-visible footer controls (repositioned when mode changes) ──
+        -- Container for the hide-over-duration slider so all its widgets move together.
+        local hideDurContainer = CreateFrame("Frame", nil, grp)
+        hideDurContainer:SetSize(GRP_W, 38)
+        local _,_,rHideDur = CreateNudgeSlider(hideDurContainer, "Hide if duration over (0=off)", 0, 600, 1,
+            0, 0, SW, prefix.."HideOverDuration", db, applyAuras)
+
+        local showCB = CreateCheckbox(grp, isDebuff and "Show Debuffs" or "Show Buffs", gx, -20,
             function() return db()[showKey] ~= false end,
             function(v) db()[showKey] = v; applyAuras() end)
 
-        -- Debuff-only filter checkboxes
         local playerOnlyCB, curableOnlyCB
         if isDebuff then
-            gy = gy - 26
-            playerOnlyCB = CreateCheckbox(grp, "Only cast by player", gx, gy,
+            playerOnlyCB = CreateCheckbox(grp, "Only cast by player", gx, -20,
                 function() return db().debuffPlayerOnly or false end,
                 function(v) db().debuffPlayerOnly = v; applyAuras() end)
-            gy = gy - 26
-            curableOnlyCB = CreateCheckbox(grp, "Only curable", gx, gy,
+            curableOnlyCB = CreateCheckbox(grp, "Only curable", gx, -20,
                 function() return db().debuffCurableOnly or false end,
                 function(v) db().debuffCurableOnly = v; applyAuras() end)
         end
 
+        -- Reposition footer controls below the active sub-frame content
+        local function RepositionFooter(modeH)
+            local subH = modeH - 36 - 38 - 26 - debuffExtra
+            local baseY = -(36 + subH + 4)
+            hideDurContainer:ClearAllPoints()
+            hideDurContainer:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY)
+            showCB:ClearAllPoints()
+            showCB:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY - 38)
+            if playerOnlyCB then
+                playerOnlyCB:ClearAllPoints()
+                playerOnlyCB:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY - 38 - 26)
+            end
+            if curableOnlyCB then
+                curableOnlyCB:ClearAllPoints()
+                curableOnlyCB:SetPoint("TOPLEFT", grp, "TOPLEFT", gx, baseY - 38 - 52)
+            end
+        end
+
+        -- ── Mode dropdown + "Show" toggle in the group header area ────────
+        -- Display Mode label + dropdown sit just below the group title,
+        -- sub-frames start below the dropdown row.
+        -- We shift sub-frames down by 36px more to make room.
+        local ddY = -22
+        CreateLabel(grp, "Display", gx, ddY)
+        local modeDD = CreateDropdown(grp, gx + 56, ddY - 18, 110, {"Icons","Bars","Rings"},
+            function() return db()[prefix.."DisplayMode"] or "Icons" end,
+            function(v)
+                db()[prefix.."DisplayMode"] = v; applyAuras()
+                -- Rebuild visibility
+                local mh = MODE_H[v] or MODE_H.Icons
+                grp:SetHeight(mh)
+                iconsF:SetShown(v == "Icons")
+                barsF:SetShown(v == "Bars")
+                ringsF:SetShown(v == "Rings")
+                RepositionFooter(mh)
+            end)
+
+        -- Shift sub-frames down past dropdown row (38px)
+        iconsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36 - 38)
+        barsF:SetPoint("TOPLEFT",  grp, "TOPLEFT", 0, -36 - 38)
+        ringsF:SetPoint("TOPLEFT", grp, "TOPLEFT", 0, -36 - 38)
+
+        -- Recalculate heights with dropdown row factored in
+        for k, v in pairs(MODE_H) do MODE_H[k] = v + 38 end
+
+        -- Initialise visibility
+        local function ApplyMode(silent)
+            local v  = db()[prefix.."DisplayMode"] or "Icons"
+            local mh = MODE_H[v] or MODE_H.Icons
+            grp:SetHeight(mh)
+            iconsF:SetShown(v == "Icons")
+            barsF:SetShown(v  == "Bars")
+            ringsF:SetShown(v == "Rings")
+            RepositionFooter(mh)
+        end
+        ApplyMode()
+
         refreshFns[#refreshFns+1] = function()
-            for _, fn in ipairs(refreshList) do fn() end
-            anchorCB:Refresh(); showCB:Refresh()
-            growXDD:SetSelection(gdb("GrowX") or (isDebuff and "LEFT" or "RIGHT"))
-            growYDD:SetSelection(gdb("GrowY") or (isDebuff and "UP" or "DOWN"))
+            modeDD:SetSelection(db()[prefix.."DisplayMode"] or "Icons")
+            for _, fn in ipairs(iconsRefresh) do fn() end
+            for _, fn in ipairs(barsRefresh)  do fn() end
+            for _, fn in ipairs(ringsRefresh) do fn() end
+            anchorCB:Refresh(); showCB:Refresh(); timerCB:Refresh(); rHideDur()
+            growXDD:SetSelection(db()[prefix.."GrowX"] or (isDebuff and "LEFT" or "RIGHT"))
+            growYDD:SetSelection(db()[prefix.."GrowY"] or (isDebuff and "UP"   or "DOWN"))
             if playerOnlyCB  then playerOnlyCB:Refresh()  end
             if curableOnlyCB then curableOnlyCB:Refresh() end
+            ApplyMode()
         end
     end
 
@@ -1695,7 +1781,8 @@ local function BuildBuffsContent(content, unit, getDB, panel)
     BuildSection("debuff", true,  8 + GRP_W + 8, -8)
 
     -- ── Tooltip section (below both columns) ────────────────────────────────
-    local ttY   = -(8 + GRP_H_DEB + 8)
+    -- Height is dynamic but we place it at a fixed offset; scroll handles overflow.
+    local ttY   = -580
     local ttGrp = CreateGroupBox(content, "Tooltips", 8, ttY, GRP_W * 2 + 8, 96)
     local ttgx  = 8
 
@@ -1981,11 +2068,15 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "resourceSolidColor","resourceGradStart","resourceGradEnd","resourceGradPerPip",
         },
         -- 5: Auras
-        { "buffIconSize","buffPerRow","buffMaxShown","buffGrowX","buffGrowY",
+        { "buffDisplayMode","buffIconSize","buffPerRow","buffMaxShown","buffGrowX","buffGrowY",
           "buffXOffset","buffYOffset","buffAnchorToFrame","buffShowBuffs",
-          "debuffIconSize","debuffPerRow","debuffMaxShown","debuffGrowX","debuffGrowY",
+          "buffBarWidth","buffBarHeight","buffBarX","buffBarY","buffBarShowTimer",
+          "buffRingRadius","buffRingGap","buffHideOverDuration",
+          "debuffDisplayMode","debuffIconSize","debuffPerRow","debuffMaxShown","debuffGrowX","debuffGrowY",
           "debuffXOffset","debuffYOffset","debuffAnchorToFrame","debuffShowDebuffs",
           "debuffPlayerOnly","debuffCurableOnly",
+          "debuffBarWidth","debuffBarHeight","debuffBarX","debuffBarY","debuffBarShowTimer",
+          "debuffRingRadius","debuffRingGap","debuffHideOverDuration",
           "auraTooltipEnabled","auraTooltipDelay",
         },
         -- 6: Conditions

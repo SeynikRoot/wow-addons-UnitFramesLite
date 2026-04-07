@@ -67,6 +67,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         resourceShowOutCombat   = true,   -- show custom bar out of combat (always shown in combat)
         resourceShowWithTarget  = false,  -- also show custom bar when target selected (any combat state)
         -- Buff display
+        buffDisplayMode   = "Icons",   -- "Icons" | "Bars" | "Rings"
         buffIconSize      = 24,
         buffPerRow        = 4,
         buffMaxShown      = 8,
@@ -76,7 +77,19 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         buffYOffset       = -15,
         buffAnchorToFrame = true,
         buffShowBuffs     = true,
+        -- Buff bars mode
+        buffBarWidth      = 160,
+        buffBarHeight     = 18,
+        buffBarX          = 0,
+        buffBarY          = 0,
+        buffBarShowTimer  = true,
+        -- Buff rings mode
+        buffRingRadius    = 60,
+        buffRingGap       = 8,
+        -- Hide auras with total duration > this value (seconds); 0 = disabled
+        buffHideOverDuration  = 0,
         -- Debuff display
+        debuffDisplayMode = "Icons",   -- "Icons" | "Bars" | "Rings"
         debuffIconSize    = 24,
         debuffPerRow      = 4,
         debuffMaxShown    = 8,
@@ -88,6 +101,17 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         debuffShowDebuffs = true,
         debuffPlayerOnly  = false,
         debuffCurableOnly = false,
+        -- Debuff bars mode
+        debuffBarWidth    = 160,
+        debuffBarHeight   = 18,
+        debuffBarX        = 0,
+        debuffBarY        = 0,
+        debuffBarShowTimer = true,
+        -- Debuff rings mode
+        debuffRingRadius  = 60,
+        debuffRingGap     = 8,
+        -- Hide auras with total duration > this value (seconds); 0 = disabled
+        debuffHideOverDuration = 0,
         auraTooltipEnabled = true,
         auraTooltipDelay   = 0,
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
@@ -226,6 +250,30 @@ local function CopyDefaults(src, dest)
     return dest
 end
 
+
+-- ── Donut ring textures ───────────────────────────────────────────────────────
+-- Pre-built TGA ring textures with real alpha-channel holes.  Used for aura
+-- rings and the orb inner border so the background shows through the centre.
+-- Native texture size assumed for all Ring_Npx textures (square).
+local RING_TEX_NATIVE = 128
+-- Desired visual band thickness in screen pixels.
+local RING_BAND_PX = 12
+-- {nativeBandWidth, addonRelativePath}
+local RING_TEXTURES = {
+    { 10, "Interface\\AddOns\\UnitFramesLite\\Textures\\Ring_10px" },
+    { 20, "Interface\\AddOns\\UnitFramesLite\\Textures\\Ring_20px" },
+    { 30, "Interface\\AddOns\\UnitFramesLite\\Textures\\Ring_30px" },
+    { 40, "Interface\\AddOns\\UnitFramesLite\\Textures\\Ring_40px" },
+}
+local function ChooseRingTexture(outerDiameter)
+    local bestPath, bestDiff = RING_TEXTURES[1][2], math.huge
+    for _, entry in ipairs(RING_TEXTURES) do
+        local nativeBand, path = entry[1], entry[2]
+        local diff = math.abs(nativeBand * (outerDiameter / RING_TEX_NATIVE) - RING_BAND_PX)
+        if diff < bestDiff then bestDiff = diff; bestPath = path end
+    end
+    return bestPath
+end
 
 local function GetDB(unit)
     UnitFramesLiteDB = UnitFramesLiteDB or {}
@@ -1207,15 +1255,16 @@ function UnitFramesLite_UpdateFrame(unit)
             if frame.orbFill2 then frame.orbFill2:Hide() end
         end
 
-        -- Inner border (circular band just outside the health orb)
+        -- Inner border (donut ring just outside the health orb)
         if db.showOrbBorder and frame.orbBorderFrame then
             local bt = math.max(1, db.orbBorderThickness or 4)
             local borderSz = sz + bt * 2
             frame.orbBorderFrame:SetSize(borderSz, borderSz)
             frame.orbBorderFrame:ClearAllPoints()
             frame.orbBorderFrame:SetPoint("CENTER", frame, "CENTER", 0, 0)
+            frame.orbBorderTex:SetTexture(ChooseRingTexture(borderSz))
             local bc = db.orbBorderColor or {0, 0, 0, 1}
-            frame.orbBorderTex:SetColorTexture(bc[1], bc[2], bc[3], bc[4])
+            frame.orbBorderTex:SetVertexColor(bc[1], bc[2], bc[3], bc[4])
             frame.orbBorderFrame:Show()
         elseif frame.orbBorderFrame then
             frame.orbBorderFrame:Hide()
@@ -2008,6 +2057,8 @@ local function SetupFrame(displayFrame, unit)
     displayFrame.orbPowerBarBg = orbPowerBarBg
 
     -- ── Orb inner border (between power ring fills and health orb) ───────
+    -- Uses a donut TGA with a real alpha-channel hole so the background shows
+    -- through the centre rather than being covered by a solid disc.
     local orbBorderFrame = CreateFrame("Frame", nil, displayFrame)
     orbBorderFrame:Hide()
     orbBorderFrame:SetFrameLevel(powerRingFrame:GetFrameLevel() + 2)
@@ -2016,13 +2067,8 @@ local function SetupFrame(displayFrame, unit)
 
     local orbBorderTex = orbBorderFrame:CreateTexture(nil, "BACKGROUND")
     orbBorderTex:SetAllPoints()
-    orbBorderTex:SetColorTexture(0, 0, 0, 1)
+    orbBorderTex:SetBlendMode("BLEND")
     displayFrame.orbBorderTex = orbBorderTex
-
-    local orbBorderMask = orbBorderFrame:CreateMaskTexture()
-    orbBorderMask:SetTexture(ORB_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    orbBorderMask:SetAllPoints()
-    orbBorderTex:AddMaskTexture(orbBorderMask)
 
     -- ── Orb (above power ring and inner border) ───────────────────────────
     local orbFrame = CreateFrame("Frame", nil, displayFrame)
@@ -2290,7 +2336,7 @@ local function GetAuraData(unit)
     local function makeSlot(suffix)
         local c = CreateFrame("Frame", "UFL_Auras_" .. unit .. "_" .. suffix, UIParent)
         c:SetSize(1, 1); c:Hide()
-        return { container = c, pool = {} }
+        return { container = c }
     end
     auraFrames[unit] = { buff = makeSlot("buff"), debuff = makeSlot("debuff") }
     return auraFrames[unit]
@@ -2376,12 +2422,24 @@ local function GetFrameVerticalExtent(frame, db)
     end
 end
 
+-- Hide every item in every mode-specific pool for a slot (called on mode switch).
+local function HideAllPools(slot)
+    for _, pool in ipairs({ slot.iconPool or {}, slot.barPool or {}, slot.ringPool or {} }) do
+        for i = 1, #pool do pool[i]:Hide() end
+    end
+end
+
 -- Lay out one aura strip (buffs or debuffs) given collected aura list + config.
 local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShown,
                                 growX, growY, xOffset, yOffset, anchorToFrame, extraVertPad,
                                 unit, auraFilter)
+    slot.iconPool = slot.iconPool or {}
+    -- Hide other-mode pools so stale frames don't show through
+    for _, p in ipairs({ slot.barPool or {}, slot.ringPool or {} }) do
+        for i = 1, #p do p[i]:Hide() end
+    end
     local container = slot.container
-    local pool      = slot.pool
+    local pool      = slot.iconPool
     local gap       = 2
 
     -- Clamp to maxShown
@@ -2498,6 +2556,242 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
     container:Show()
 end
 
+-- ── Aura Bars layout ─────────────────────────────────────────────────────────
+-- Each aura is a horizontal status bar with icon + name label + optional timer.
+-- The bar frame is a free-floating window anchored to UIParent, position stored
+-- in db as barX/barY (offset from screen centre).
+
+local function GetOrCreateBar(pool, idx, container)
+    if pool[idx] then return pool[idx] end
+    local bar = CreateFrame("StatusBar", nil, container)
+    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(1)
+
+    local icon = bar:CreateTexture(nil, "OVERLAY")
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    bar.icon = icon
+
+    local name = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    name:SetJustifyH("LEFT")
+    name:SetWordWrap(false)
+    bar.name = name
+
+    local timer = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timer:SetJustifyH("RIGHT")
+    bar.timer = timer
+
+    local cd = CreateFrame("Cooldown", nil, bar, "CooldownFrameTemplate")
+    cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(true)
+    bar.cd = cd
+
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.5)
+    bar.bg = bg
+
+    pool[idx] = bar
+    return bar
+end
+
+local function LayoutAuraBars(slot, auras, frame, db, prefix, unit, auraFilter)
+    slot.barPool = slot.barPool or {}
+    for _, p in ipairs({ slot.iconPool or {}, slot.ringPool or {} }) do
+        for i = 1, #p do p[i]:Hide() end
+    end
+    local container = slot.container
+    local pool      = slot.barPool
+    local maxShown  = db[prefix.."MaxShown"]  or 8
+    local barW      = math.max(40, db[prefix.."BarWidth"]  or 160)
+    local barH      = math.max(8,  db[prefix.."BarHeight"] or 18)
+    local barX      = db[prefix.."BarX"] or 0
+    local barY      = db[prefix.."BarY"] or 0
+    local showTimer = db[prefix.."BarShowTimer"] ~= false
+    local count     = math.min(#auras, maxShown)
+
+    if count == 0 then
+        container:Hide()
+        for i = 1, #pool do pool[i]:Hide() end
+        return
+    end
+
+    local iconSz = barH
+    local gap    = 2
+    local totalH = count * (barH + gap) - gap
+
+    container:SetSize(barW, math.max(1, totalH))
+    container:ClearAllPoints()
+    container:SetPoint("CENTER", UIParent, "CENTER", barX, barY)
+
+    for i = 1, count do
+        local aura = auras[i]
+        local bar  = GetOrCreateBar(pool, i, container)
+        bar:SetSize(barW, barH)
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -(i - 1) * (barH + gap))
+
+        -- Icon
+        bar.icon:SetSize(iconSz, iconSz)
+        bar.icon:SetPoint("LEFT", bar, "LEFT", 0, 0)
+        bar.icon:SetTexture(aura.icon)
+
+        -- Colour: debuff type colour, else class-ish teal for buffs
+        local r, g, b = 0.2, 0.6, 1.0
+        pcall(function()
+            if aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] then
+                local dc = DEBUFF_COLORS[aura.dispelName]
+                r, g, b = dc[1], dc[2], dc[3]
+            elseif not aura.isHarmful then
+                r, g, b = 0.2, 0.8, 0.4
+            end
+        end)
+        bar:SetStatusBarColor(r, g, b, 0.8)
+
+        -- Duration: apply cooldown sweep + drive fill fraction.
+        -- WoW 12.0 durations are secret numbers — all arithmetic is in pcall.
+        local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
+        if not durObj then
+            durObj = C_DurationUtil.CreateDuration()
+            durObj:SetTimeFromEnd(0, 0, 1)
+        end
+        -- Cooldown countdown numbers (shown over the bar when showTimer is on)
+        bar.cd:SetAllPoints(bar)
+        bar.cd:SetHideCountdownNumbers(not showTimer)
+        bar.cd:SetCooldownFromDurationObject(durObj)
+
+        -- Status bar fill: best-effort; falls back to full on secret-number failure
+        bar:SetValue(1)
+        pcall(function()
+            if aura.duration and aura.duration > 0 then
+                local frac = 1 - math.max(0, math.min(1,
+                    (aura.duration - (aura.expirationTime - GetTime())) / aura.duration))
+                bar:SetValue(frac)
+            end
+        end)
+
+        -- Name label (between icon and right edge; shrinks when timer is shown)
+        local textX = iconSz + 3
+        bar.name:ClearAllPoints()
+        bar.name:SetPoint("LEFT",  bar, "LEFT",  textX, 0)
+        bar.name:SetPoint("RIGHT", bar, "RIGHT", showTimer and -38 or -3, 0)
+        bar.name:SetText(aura.name or "")
+        bar.timer:Hide()  -- timer is handled by the cd frame countdown numbers
+
+        bar:Show()
+    end
+
+    for i = count + 1, #pool do pool[i]:Hide() end
+    container:Show()
+end
+
+-- ── Aura Rings layout ────────────────────────────────────────────────────────
+-- Each aura is a donut ring centred on the unit orb.  Rings grow outward
+-- from startRadius, each ring gap apart.  Colour indicates dispel type / buff.
+
+local function GetOrCreateRing(pool, idx, container)
+    if pool[idx] then return pool[idx] end
+    local f = CreateFrame("Frame", nil, container)
+
+    -- Single donut texture with a real alpha-channel hole — background shows through.
+    local tex = f:CreateTexture(nil, "BACKGROUND")
+    tex:SetAllPoints()
+    tex:SetTexture(RING_TEXTURES[2][2])  -- default; updated each layout pass
+    tex:SetBlendMode("BLEND")
+    f.tex = tex
+
+    -- Cooldown sweep (clock wipe showing remaining duration)
+    local cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
+    cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetDrawSwipe(true)
+    cd:SetHideCountdownNumbers(true)
+    f.cd = cd
+
+    -- Stack count label at top-right of the ring frame
+    local stack = f:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    stack:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+    f.stack = stack
+
+    pool[idx] = f
+    return f
+end
+
+local function LayoutAuraRings(slot, auras, frame, db, prefix, unit, auraFilter)
+    slot.ringPool = slot.ringPool or {}
+    for _, p in ipairs({ slot.iconPool or {}, slot.barPool or {} }) do
+        for i = 1, #p do p[i]:Hide() end
+    end
+    local container = slot.container
+    local pool      = slot.ringPool
+    local maxShown  = db[prefix.."MaxShown"]  or 8
+    local startR    = math.max(10, db[prefix.."RingRadius"] or 60)
+    local gap       = math.max(2,  db[prefix.."RingGap"]    or 8)
+    local count     = math.min(#auras, maxShown)
+
+    if count == 0 then
+        container:Hide()
+        for i = 1, #pool do pool[i]:Hide() end
+        return
+    end
+
+    -- Container is a 1×1 point anchored to the orb centre; each ring is a
+    -- child centred on this point, growing outward.
+    container:SetSize(1, 1)
+    container:ClearAllPoints()
+    if frame then
+        container:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    else
+        container:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
+
+    for i = 1, count do
+        local aura = auras[i]
+        local ring = GetOrCreateRing(pool, i, container)
+
+        -- Each ring's outer diameter grows by gap per step
+        local outerR  = startR + (i - 1) * gap
+        local sz      = outerR * 2
+
+        ring:SetSize(sz, sz)
+        ring:ClearAllPoints()
+        ring:SetPoint("CENTER", container, "CENTER", 0, 0)
+
+        -- Pick the donut texture whose band scales closest to RING_BAND_PX
+        ring.tex:SetTexture(ChooseRingTexture(sz))
+
+        -- Colour by dispel type or buff
+        local cr, cg, cb, ca = 0.2, 0.8, 0.4, 0.75
+        pcall(function()
+            if aura.isHarmful then
+                if aura.dispelName and DEBUFF_COLORS[aura.dispelName] then
+                    local dc = DEBUFF_COLORS[aura.dispelName]
+                    cr, cg, cb = dc[1], dc[2], dc[3]
+                else
+                    cr, cg, cb = 1, 0.2, 0.2
+                end
+                ca = 0.7
+            end
+        end)
+        ring.tex:SetVertexColor(cr, cg, cb, ca)
+
+        -- Stack count
+        local showStack = false
+        pcall(function() showStack = aura.applications and aura.applications > 1 end)
+        ring.stack:SetText(showStack and aura.applications or "")
+
+        -- Cooldown sweep
+        local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
+        if not durObj then
+            durObj = C_DurationUtil.CreateDuration()
+            durObj:SetTimeFromEnd(0, 0, 1)
+        end
+        ring.cd:SetCooldownFromDurationObject(durObj)
+
+        ring:Show()
+    end
+
+    for i = count + 1, #pool do pool[i]:Hide() end
+    container:Show()
+end
+
 function UnitFramesLite_UpdateAuras(unit)
     local data = GetAuraData(unit)
 
@@ -2513,11 +2807,20 @@ function UnitFramesLite_UpdateAuras(unit)
     -- Collect buffs
     local buffs = {}
     if db.buffShowBuffs ~= false and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        local threshold = db.buffHideOverDuration or 0
         local i = 1
         while true do
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
             if not aura then break end
-            buffs[#buffs + 1] = aura
+            if threshold > 0 then
+                local dur = 0
+                pcall(function() dur = aura.duration or 0 end)
+                if dur > 0 and dur <= threshold then
+                    buffs[#buffs + 1] = aura
+                end
+            else
+                buffs[#buffs + 1] = aura
+            end
             i = i + 1
         end
     end
@@ -2525,6 +2828,7 @@ function UnitFramesLite_UpdateAuras(unit)
     -- Collect debuffs
     local debuffs = {}
     if db.debuffShowDebuffs ~= false and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        local threshold = db.debuffHideOverDuration or 0
         local i = 1
         while true do
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL")
@@ -2535,6 +2839,12 @@ function UnitFramesLite_UpdateAuras(unit)
                 -- skip
             elseif db.debuffCurableOnly and not (aura.dispelName and DISPEL_TYPES[aura.dispelName]) then
                 -- skip
+            elseif threshold > 0 then
+                local dur = 0
+                pcall(function() dur = aura.duration or 0 end)
+                if dur > 0 and dur <= threshold then
+                    debuffs[#debuffs + 1] = aura
+                end
             else
                 debuffs[#debuffs + 1] = aura
             end
@@ -2542,39 +2852,33 @@ function UnitFramesLite_UpdateAuras(unit)
         end
     end
 
-    -- Layout buffs (below frame)
-    if db.buffShowBuffs ~= false and #buffs > 0 then
-        LayoutAuraStrip(data.buff, buffs, frame, db,
-            db.buffIconSize  or 24,
-            db.buffPerRow    or 4,
-            db.buffMaxShown  or 8,
-            db.buffGrowX     or "RIGHT",
-            db.buffGrowY     or "DOWN",
-            db.buffXOffset   or 0,
-            db.buffYOffset   or 0,
-            db.buffAnchorToFrame ~= false,
-            0, unit, "HELPFUL")
-    else
-        data.buff.container:Hide()
-        for i = 1, #data.buff.pool do data.buff.pool[i]:Hide() end
+    local function layoutSlot(slot, auras, showKey, prefix, defaultGrowX, defaultGrowY, filter)
+        if db[showKey] == false or #auras == 0 then
+            slot.container:Hide()
+            HideAllPools(slot)
+            return
+        end
+        local mode = db[prefix.."DisplayMode"] or "Icons"
+        if mode == "Bars" then
+            LayoutAuraBars(slot, auras, frame, db, prefix, unit, filter)
+        elseif mode == "Rings" then
+            LayoutAuraRings(slot, auras, frame, db, prefix, unit, filter)
+        else  -- "Icons"
+            LayoutAuraStrip(slot, auras, frame, db,
+                db[prefix.."IconSize"]  or 24,
+                db[prefix.."PerRow"]    or 4,
+                db[prefix.."MaxShown"]  or 8,
+                db[prefix.."GrowX"]     or defaultGrowX,
+                db[prefix.."GrowY"]     or defaultGrowY,
+                db[prefix.."XOffset"]   or 0,
+                db[prefix.."YOffset"]   or 0,
+                db[prefix.."AnchorToFrame"] ~= false,
+                0, unit, filter)
+        end
     end
 
-    -- Layout debuffs (above frame)
-    if db.debuffShowDebuffs ~= false and #debuffs > 0 then
-        LayoutAuraStrip(data.debuff, debuffs, frame, db,
-            db.debuffIconSize  or 24,
-            db.debuffPerRow    or 4,
-            db.debuffMaxShown  or 8,
-            db.debuffGrowX     or "LEFT",
-            db.debuffGrowY     or "UP",
-            db.debuffXOffset   or 0,
-            db.debuffYOffset   or 0,
-            db.debuffAnchorToFrame ~= false,
-            0, unit, "HARMFUL")
-    else
-        data.debuff.container:Hide()
-        for i = 1, #data.debuff.pool do data.debuff.pool[i]:Hide() end
-    end
+    layoutSlot(data.buff,   buffs,   "buffShowBuffs",   "buff",   "RIGHT", "DOWN", "HELPFUL")
+    layoutSlot(data.debuff, debuffs, "debuffShowDebuffs","debuff", "LEFT",  "UP",   "HARMFUL")
 end
 
 function UnitFramesLite_UpdateAllAuras()
@@ -2699,8 +3003,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if td then
             td.buff.container:Hide()
             td.debuff.container:Hide()
-            for _, btn in ipairs(td.buff.pool)   do btn:Hide() end
-            for _, btn in ipairs(td.debuff.pool) do btn:Hide() end
+            HideAllPools(td.buff)
+            HideAllPools(td.debuff)
         end
         UnitFramesLite_UpdateAuras("target")
     elseif event == "PLAYER_FOCUS_CHANGED" then
