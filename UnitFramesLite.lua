@@ -88,6 +88,11 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         buffRingGap       = 8,
         -- Hide auras with total duration > this value (seconds); 0 = disabled
         buffHideOverDuration  = 0,
+        -- Timer text (all display modes)
+        buffShowTimer     = true,
+        buffTimerFont     = nil,           -- nil = default font
+        buffTimerFontSize = 10,
+        buffTimerColor    = {1, 1, 1, 1},
         -- Debuff display
         debuffDisplayMode = "Icons",   -- "Icons" | "Bars" | "Rings"
         debuffIconSize    = 24,
@@ -112,8 +117,15 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         debuffRingGap     = 8,
         -- Hide auras with total duration > this value (seconds); 0 = disabled
         debuffHideOverDuration = 0,
-        auraTooltipEnabled = true,
-        auraTooltipDelay   = 0,
+        -- Timer text (all display modes)
+        debuffShowTimer   = true,
+        debuffTimerFont   = nil,           -- nil = default font
+        debuffTimerFontSize = 10,
+        debuffTimerColor  = {1, 1, 1, 1},
+        buffTooltipEnabled  = true,
+        buffTooltipDelay    = 0,
+        debuffTooltipEnabled = true,
+        debuffTooltipDelay  = 0,
         hpContent = "Cur / Max",  -- "Cur / Max" | "Current" | "Max"
         hpFormat  = "Full",       -- "Full" | "Short" (÷1000k)
         nameTextFontSize = 12, nameTextX = 0, nameTextY = 0,
@@ -2382,8 +2394,14 @@ local function GetOrCreateIcon(pool, idx, container)
     border:SetAllPoints()
     border:SetColorTexture(0, 0, 0, 1)
     local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
-    cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(false)
+    cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(true)
     btn.cd = cd
+    -- Custom timer FontString — gives full control over font and colour.
+    local timerFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timerFS:SetPoint("BOTTOM", btn, "BOTTOM", 0, 1)
+    timerFS:SetJustifyH("CENTER")
+    timerFS:SetText("")
+    btn.timerFS = timerFS
     local stack = btn:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     stack:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 2, 0)
     btn.stack = stack
@@ -2397,8 +2415,10 @@ local function GetOrCreateIcon(pool, idx, container)
     local tooltipTimer = nil
     btn:SetScript("OnEnter", function(self)
         local db = self.auraUnit and GetDB(self.auraUnit)
-        if not db or not db.auraTooltipEnabled then return end
-        local delay = db.auraTooltipDelay or 0
+        if not db then return end
+        local pfx   = (self.auraFilter == "HELPFUL") and "buff" or "debuff"
+        if db[pfx.."TooltipEnabled"] == false then return end
+        local delay = db[pfx.."TooltipDelay"] or 0
         local function showTip()
             tooltipTimer = nil
             if not self:IsMouseOver() then return end
@@ -2447,6 +2467,45 @@ local function GetFrameVerticalExtent(frame, db)
     end
 end
 
+-- Format a remaining-duration value (seconds) as a short timer string.
+-- All arithmetic is via pcall because expirationTime may be a secret number.
+local function FormatAuraTimer(aura)
+    local remaining = 0
+    local ok = pcall(function()
+        if aura.expirationTime and aura.expirationTime > 0 then
+            remaining = aura.expirationTime - GetTime()
+        end
+    end)
+    if not ok or remaining <= 0 then return "" end
+    if remaining >= 3600 then
+        return string.format("%dh", math.floor(remaining / 3600))
+    elseif remaining >= 60 then
+        return string.format("%dm", math.floor(remaining / 60))
+    else
+        return string.format("%ds", math.ceil(remaining))
+    end
+end
+
+-- Apply font, size, and colour to a FontString used for aura timer display.
+local function ApplyTimerStyle(fs, fontName, fontSize, color)
+    local path = nil
+    if fontName and LSM then
+        path = LSM:Fetch("font", fontName)
+    end
+    local sz = fontSize or 10
+    if path then
+        fs:SetFont(path, sz, "OUTLINE")
+    else
+        local existingPath, _, flags = fs:GetFont()
+        if existingPath then
+            fs:SetFont(existingPath, sz, flags or "OUTLINE")
+        end
+    end
+    if color then
+        fs:SetTextColor(color[1], color[2], color[3], color[4] or 1)
+    end
+end
+
 -- Hide every item in every mode-specific pool for a slot (called on mode switch).
 local function HideAllPools(slot)
     for _, pool in ipairs({ slot.iconPool or {}, slot.barPool or {}, slot.ringPool or {} }) do
@@ -2457,7 +2516,7 @@ end
 -- Lay out one aura strip (buffs or debuffs) given collected aura list + config.
 local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShown,
                                 growX, growY, xOffset, yOffset, anchorToFrame, extraVertPad,
-                                unit, auraFilter)
+                                unit, auraFilter, prefix)
     slot.iconPool = slot.iconPool or {}
     -- Hide other-mode pools so stale frames don't show through
     for _, p in ipairs({ slot.barPool or {}, slot.ringPool or {} }) do
@@ -2562,6 +2621,25 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
             durObj:SetTimeFromEnd(0, 0, 1)
         end
         btn.cd:SetCooldownFromDurationObject(durObj)
+        -- Custom timer text
+        local showTimer  = prefix and db[prefix.."ShowTimer"] ~= false
+        local timerFont  = prefix and db[prefix.."TimerFont"]
+        local timerSize  = prefix and (db[prefix.."TimerFontSize"] or 10)
+        local timerColor = prefix and (db[prefix.."TimerColor"] or {1,1,1,1})
+        if showTimer then
+            ApplyTimerStyle(btn.timerFS, timerFont, timerSize, timerColor)
+            -- Drive the timer text via an OnUpdate on the button.
+            btn._auraForTimer = aura
+            btn:SetScript("OnUpdate", function(self)
+                local a = self._auraForTimer
+                if a then self.timerFS:SetText(FormatAuraTimer(a)) end
+            end)
+            btn.timerFS:Show()
+        else
+            btn:SetScript("OnUpdate", nil)
+            btn.timerFS:SetText("")
+            btn.timerFS:Hide()
+        end
         local showBorder = false
         pcall(function()
             showBorder = aura.isHarmful and aura.dispelName and DEBUFF_COLORS[aura.dispelName] ~= nil
@@ -2576,8 +2654,11 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
         btn:Show()
     end
 
-    -- Hide unused pool slots
-    for i = count + 1, #pool do pool[i]:Hide() end
+    -- Hide unused pool slots; clear timer OnUpdate to avoid stale updates.
+    for i = count + 1, #pool do
+        pool[i]:SetScript("OnUpdate", nil)
+        pool[i]:Hide()
+    end
     container:Show()
 end
 
@@ -2626,13 +2707,16 @@ local function LayoutAuraBars(slot, auras, frame, db, prefix, unit, auraFilter)
     end
     local container = slot.container
     local pool      = slot.barPool
-    local maxShown  = db[prefix.."MaxShown"]  or 8
-    local barW      = math.max(40, db[prefix.."BarWidth"]  or 160)
-    local barH      = math.max(8,  db[prefix.."BarHeight"] or 18)
-    local barX      = db[prefix.."BarX"] or 0
-    local barY      = db[prefix.."BarY"] or 0
-    local showTimer = db[prefix.."BarShowTimer"] ~= false
-    local count     = math.min(#auras, maxShown)
+    local maxShown   = db[prefix.."MaxShown"]  or 8
+    local barW       = math.max(40, db[prefix.."BarWidth"]  or 160)
+    local barH       = math.max(8,  db[prefix.."BarHeight"] or 18)
+    local barX       = db[prefix.."BarX"] or 0
+    local barY       = db[prefix.."BarY"] or 0
+    local showTimer  = db[prefix.."ShowTimer"] ~= false
+    local timerFont  = db[prefix.."TimerFont"]
+    local timerSize  = db[prefix.."TimerFontSize"] or 10
+    local timerColor = db[prefix.."TimerColor"] or {1, 1, 1, 1}
+    local count      = math.min(#auras, maxShown)
 
     if count == 0 then
         container:Hide()
@@ -2679,9 +2763,9 @@ local function LayoutAuraBars(slot, auras, frame, db, prefix, unit, auraFilter)
             durObj = C_DurationUtil.CreateDuration()
             durObj:SetTimeFromEnd(0, 0, 1)
         end
-        -- Cooldown countdown numbers (shown over the bar when showTimer is on)
+        -- Cooldown sweep (no countdown numbers — we use a custom FontString for the timer)
         bar.cd:SetAllPoints(bar)
-        bar.cd:SetHideCountdownNumbers(not showTimer)
+        bar.cd:SetHideCountdownNumbers(true)
         bar.cd:SetCooldownFromDurationObject(durObj)
 
         -- Status bar fill: best-effort; falls back to full on secret-number failure
@@ -2700,12 +2784,31 @@ local function LayoutAuraBars(slot, auras, frame, db, prefix, unit, auraFilter)
         bar.name:SetPoint("LEFT",  bar, "LEFT",  textX, 0)
         bar.name:SetPoint("RIGHT", bar, "RIGHT", showTimer and -38 or -3, 0)
         bar.name:SetText(aura.name or "")
-        bar.timer:Hide()  -- timer is handled by the cd frame countdown numbers
+
+        -- Custom timer text on the right side of the bar
+        if showTimer then
+            ApplyTimerStyle(bar.timer, timerFont, timerSize, timerColor)
+            bar.timer:ClearAllPoints()
+            bar.timer:SetPoint("RIGHT", bar, "RIGHT", -3, 0)
+            bar._auraForTimer = aura
+            bar:SetScript("OnUpdate", function(self)
+                local a = self._auraForTimer
+                if a then self.timer:SetText(FormatAuraTimer(a)) end
+            end)
+            bar.timer:Show()
+        else
+            bar:SetScript("OnUpdate", nil)
+            bar.timer:SetText("")
+            bar.timer:Hide()
+        end
 
         bar:Show()
     end
 
-    for i = count + 1, #pool do pool[i]:Hide() end
+    for i = count + 1, #pool do
+        pool[i]:SetScript("OnUpdate", nil)
+        pool[i]:Hide()
+    end
     container:Show()
 end
 
@@ -2735,6 +2838,13 @@ local function GetOrCreateRing(pool, idx, container)
     stack:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
     f.stack = stack
 
+    -- Custom timer text shown at the bottom-centre of the ring
+    local timerFS = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timerFS:SetPoint("BOTTOM", f, "BOTTOM", 0, 2)
+    timerFS:SetJustifyH("CENTER")
+    timerFS:SetText("")
+    f.timerFS = timerFS
+
     pool[idx] = f
     return f
 end
@@ -2746,10 +2856,14 @@ local function LayoutAuraRings(slot, auras, frame, db, prefix, unit, auraFilter)
     end
     local container = slot.container
     local pool      = slot.ringPool
-    local maxShown  = db[prefix.."MaxShown"]  or 8
-    local startR    = math.max(10, db[prefix.."RingRadius"] or 60)
-    local gap       = math.max(2,  db[prefix.."RingGap"]    or 8)
-    local count     = math.min(#auras, maxShown)
+    local maxShown   = db[prefix.."MaxShown"]  or 8
+    local startR     = math.max(10, db[prefix.."RingRadius"] or 60)
+    local gap        = math.max(2,  db[prefix.."RingGap"]    or 8)
+    local showTimer  = db[prefix.."ShowTimer"] ~= false
+    local timerFont  = db[prefix.."TimerFont"]
+    local timerSize  = db[prefix.."TimerFontSize"] or 10
+    local timerColor = db[prefix.."TimerColor"] or {1, 1, 1, 1}
+    local count      = math.min(#auras, maxShown)
 
     if count == 0 then
         container:Hide()
@@ -2810,10 +2924,28 @@ local function LayoutAuraRings(slot, auras, frame, db, prefix, unit, auraFilter)
         end
         ring.cd:SetCooldownFromDurationObject(durObj)
 
+        -- Custom timer text
+        if showTimer then
+            ApplyTimerStyle(ring.timerFS, timerFont, timerSize, timerColor)
+            ring._auraForTimer = aura
+            ring:SetScript("OnUpdate", function(self)
+                local a = self._auraForTimer
+                if a then self.timerFS:SetText(FormatAuraTimer(a)) end
+            end)
+            ring.timerFS:Show()
+        else
+            ring:SetScript("OnUpdate", nil)
+            ring.timerFS:SetText("")
+            ring.timerFS:Hide()
+        end
+
         ring:Show()
     end
 
-    for i = count + 1, #pool do pool[i]:Hide() end
+    for i = count + 1, #pool do
+        pool[i]:SetScript("OnUpdate", nil)
+        pool[i]:Hide()
+    end
     container:Show()
 end
 
@@ -2832,27 +2964,20 @@ function UnitFramesLite_UpdateAuras(unit)
     -- Collect buffs
     local buffs = {}
     if db.buffShowBuffs ~= false and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        local threshold = db.buffHideOverDuration or 0
+        local threshold    = db.buffHideOverDuration or 0
+        local applyFilter  = threshold > 0 and UnitIsFriend("player", unit)
         local i = 1
         while true do
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
             if not aura then break end
-            if threshold > 0 then
-                -- aura.duration is a secret number in WoW 12.x; comparisons throw.
-                -- Use DoesAuraHaveExpirationTime (takes spellId) to detect permanents.
-                -- For finite-duration auras, pcall the comparison: succeeds for plain
-                -- numbers (player's own auras), throws for secret numbers (enemy auras).
-                -- On throw we include conservatively so enemy debuffs always show.
-                local hasExpiry = C_UnitAuras and C_UnitAuras.DoesAuraHaveExpirationTime
-                    and C_UnitAuras.DoesAuraHaveExpirationTime(unit, aura.spellId)
-                if hasExpiry then
-                    local fits, ok = false, false
-                    ok = pcall(function()
-                        fits = aura.duration <= threshold
-                    end)
-                    if fits or not ok then buffs[#buffs + 1] = aura end
-                end
-                -- hasExpiry == false → permanent aura, exclude when threshold active
+            if applyFilter then
+                -- aura.duration is a plain number on friendly units (not secret).
+                -- duration == 0 means permanent — exclude. duration > threshold — exclude.
+                local include = false
+                pcall(function()
+                    include = aura.duration > 0 and aura.duration <= threshold
+                end)
+                if include then buffs[#buffs + 1] = aura end
             else
                 buffs[#buffs + 1] = aura
             end
@@ -2863,7 +2988,8 @@ function UnitFramesLite_UpdateAuras(unit)
     -- Collect debuffs
     local debuffs = {}
     if db.debuffShowDebuffs ~= false and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        local threshold = db.debuffHideOverDuration or 0
+        local threshold   = db.debuffHideOverDuration or 0
+        local applyFilter = threshold > 0 and UnitIsFriend("player", unit)
         local i = 1
         while true do
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL")
@@ -2874,16 +3000,14 @@ function UnitFramesLite_UpdateAuras(unit)
                 -- skip
             elseif db.debuffCurableOnly and not (aura.dispelName and DISPEL_TYPES[aura.dispelName]) then
                 -- skip
-            elseif threshold > 0 then
-                local hasExpiry = C_UnitAuras and C_UnitAuras.DoesAuraHaveExpirationTime
-                    and C_UnitAuras.DoesAuraHaveExpirationTime(unit, aura.spellId)
-                if hasExpiry then
-                    local fits, ok = false, false
-                    ok = pcall(function()
-                        fits = aura.duration <= threshold
-                    end)
-                    if fits or not ok then debuffs[#debuffs + 1] = aura end
-                end
+            elseif applyFilter then
+                -- Only filter by duration on friendly units (duration is a plain number there).
+                -- duration == 0 means permanent — exclude. duration > threshold — exclude.
+                local include = false
+                pcall(function()
+                    include = aura.duration > 0 and aura.duration <= threshold
+                end)
+                if include then debuffs[#debuffs + 1] = aura end
             else
                 debuffs[#debuffs + 1] = aura
             end
@@ -2912,7 +3036,7 @@ function UnitFramesLite_UpdateAuras(unit)
                 db[prefix.."XOffset"]   or 0,
                 db[prefix.."YOffset"]   or 0,
                 db[prefix.."AnchorToFrame"] ~= false,
-                0, unit, filter)
+                0, unit, filter, prefix)
         end
     end
 

@@ -1682,10 +1682,7 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         local _,_,rBarX  = CreateNudgeSlider(barsF,"X Position",-2000,2000,1, gx,by,SW, prefix.."BarX",db,applyAuras)
         barsRefresh[#barsRefresh+1] = rBarX;  by = by - 38
         local _,_,rBarY  = CreateNudgeSlider(barsF,"Y Position",-2000,2000,1, gx,by,SW, prefix.."BarY",db,applyAuras)
-        barsRefresh[#barsRefresh+1] = rBarY;  by = by - 32
-        local timerCB = CreateCheckbox(barsF,"Show timer text",gx,by,
-            function() return db()[prefix.."BarShowTimer"] ~= false end,
-            function(v) db()[prefix.."BarShowTimer"] = v; applyAuras() end)
+        barsRefresh[#barsRefresh+1] = rBarY
 
         -- ── RINGS controls ────────────────────────────────────────────────
         local ringsRefresh = {}
@@ -1697,17 +1694,36 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         local _,_,rMaxR    = CreateNudgeSlider(ringsF,"Max Shown",1,20,1,      gx,ry,SW, prefix.."MaxShown",db,applyAuras)
         ringsRefresh[#ringsRefresh+1] = rMaxR
 
-        -- Heights: header(36) + Display-row(38) + mode-sub + hideDur(38) + debuffExtras
-        -- bodyF height = Display-row(38) + mode-sub + hideDur(38) + debuffExtras
-        local debuffExtra = isDebuff and 52 or 0
-        local BODY_H = {
-            Icons = 38 + 320 + 38 + debuffExtra,
-            Bars  = 38 + 220 + 38 + debuffExtra,
-            Rings = 38 + 140 + 38 + debuffExtra,
-        }
+        local debuffExtra        = isDebuff and 52 or 0
+        local MODE_SUB_H = { Icons = 320, Bars = 184, Rings = 140 }
+        local TIMER_GRP_BODY_H   = 106  -- font row(38) + font-size row(38) + colour row(20) + gap(10)
+        local TIMER_GRP_TOTAL_H  = 36 + TIMER_GRP_BODY_H
+        local TOOLTIP_GRP_H      = 78   -- group border(title 16) + checkbox(26) + delay slider(36)
+
+        local function TimerGrpH()
+            return (db()[prefix.."ShowTimer"] ~= false) and TIMER_GRP_TOTAL_H or 36
+        end
+
+        -- bodyF height is derived directly from the same arithmetic used in RepositionFooter
+        -- so positions and container size always agree:
+        --   Display row:  38
+        --   mode sub:     subH  (anchored at -38 inside bodyF)
+        --   gap:          4
+        --   hideDur:      38
+        --   debuffExtras: debuffExtra (2 × 26)
+        --   gap:          4
+        --   timerGrp:     TimerGrpH()
+        --   gap:          4
+        --   tooltipGrp:   TOOLTIP_GRP_H
+        --   bottom pad:   8
+        local function CalcBodyH(mode)
+            local subH = MODE_SUB_H[mode] or MODE_SUB_H.Icons
+            return 38 + subH + 4 + 38 + debuffExtra + 4 + TimerGrpH() + 4 + TOOLTIP_GRP_H + 8
+        end
 
         -- ── Footer controls inside bodyF ──────────────────────────────────
-        -- Hide-over-duration slider, and debuff-only filters.
+
+        -- Hide-over-duration slider
         local hideDurContainer = CreateFrame("Frame", nil, bodyF)
         hideDurContainer:SetSize(GRP_W, 38)
         local _,_,rHideDur = CreateNudgeSlider(hideDurContainer, "Hide if duration over (0=off)", 0, 600, 1,
@@ -1723,20 +1739,85 @@ local function BuildBuffsContent(content, unit, getDB, panel)
                 function(v) db().debuffCurableOnly = v; applyAuras() end)
         end
 
-        -- Position the footer controls at the bottom of bodyF.
-        local function RepositionFooter(bodyH)
-            local subH   = bodyH - 38 - 38 - debuffExtra  -- remove Display-row, hideDur, debuffExtras
-            local baseY  = -(38 + subH + 4)
+        -- ── Timer group box (collapsible, at bottom of bodyF) ─────────────
+        local timerGrp = CreateGroupBox(bodyF, "", 0, 0, GRP_W - 6, 36, "GameFontNormal")
+
+        -- "Show Timer" checkbox acts as the group header label.
+        local showTimerCB = CreateCheckbox(timerGrp, "Show Timer", gx, -10,
+            function() return db()[prefix.."ShowTimer"] ~= false end,
+            function(v) db()[prefix.."ShowTimer"] = v; applyAuras() end)
+
+        -- Timer body frame (hidden when collapsed)
+        local timerBodyF = CreateFrame("Frame", nil, timerGrp)
+        timerBodyF:SetPoint("TOPLEFT", timerGrp, "TOPLEFT", 0, -36)
+        timerBodyF:SetSize(GRP_W - 6, TIMER_GRP_BODY_H)
+
+        local fontList = GetFontList()
+        local ty = -8
+        CreateLabel(timerBodyF, "Font", gx, ty)
+        local timerFontDD = CreateDropdown(timerBodyF, gx + 40, ty - 18, 170, fontList,
+            function() return db()[prefix.."TimerFont"] or fontList[1] end,
+            function(v) db()[prefix.."TimerFont"] = v; applyAuras() end)
+        ty = ty - 38
+        local _,_,rTimerSize = CreateNudgeSlider(timerBodyF, "Font Size", 6, 32, 1,
+            gx, ty, SW, prefix.."TimerFontSize", db, applyAuras)
+        ty = ty - 28
+        local timerColorSwatch = CreateColorSwatch(timerBodyF, gx, ty, "Timer Colour",
+            db, prefix.."TimerColor",
+            function() applyAuras() end)
+
+        local RepositionFooter  -- forward declaration; defined below after tooltipGrp exists
+
+        -- Collapse/expand the timer group box.
+        local function ApplyTimerGroupState()
+            local expanded = db()[prefix.."ShowTimer"] ~= false
+            timerBodyF:SetShown(expanded)
+            timerGrp:SetHeight(TimerGrpH())
+        end
+        -- Re-wire showTimerCB to also resize the group and outer frame.
+        showTimerCB:SetScript("OnClick", function(self)
+            db()[prefix.."ShowTimer"] = self:GetChecked() and true or false
+            applyAuras()
+            ApplyTimerGroupState()
+            local v  = db()[prefix.."DisplayMode"] or "Icons"
+            local bh = CalcBodyH(v)
+            bodyF:SetHeight(bh)
+            grp:SetHeight(36 + bh)
+            RepositionFooter(v)
+        end)
+
+        -- ── Tooltip controls (below timer group) ─────────────────────────
+        local tooltipGrp = CreateGroupBox(bodyF, "Tooltips", 0, 0, GRP_W - 6, TOOLTIP_GRP_H)
+        local tooltipCB = CreateCheckbox(tooltipGrp, "Show tooltips on mouseover", gx, -20,
+            function() return db()[prefix.."TooltipEnabled"] ~= false end,
+            function(v) db()[prefix.."TooltipEnabled"] = v end)
+        local _,_,rTTDelay = CreateNudgeSlider(tooltipGrp, "Tooltip delay (s)", 0, 2, 0.1,
+            gx, -50, SW, prefix.."TooltipDelay", db, function() end)
+
+        -- Position all footer controls — mirrors CalcBodyH arithmetic exactly.
+        RepositionFooter = function(mode)
+            local subH  = MODE_SUB_H[mode] or MODE_SUB_H.Icons
+            -- hideDur sits 4px below the mode sub
+            local y = -(38 + subH + 4)
             hideDurContainer:ClearAllPoints()
-            hideDurContainer:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, baseY)
+            hideDurContainer:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, y)
+            y = y - 38   -- below hideDur
             if playerOnlyCB then
                 playerOnlyCB:ClearAllPoints()
-                playerOnlyCB:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, baseY - 38)
+                playerOnlyCB:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, y)
+                y = y - 26
             end
             if curableOnlyCB then
                 curableOnlyCB:ClearAllPoints()
-                curableOnlyCB:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, baseY - 38 - 26)
+                curableOnlyCB:SetPoint("TOPLEFT", bodyF, "TOPLEFT", gx, y)
+                y = y - 26
             end
+            y = y - 4   -- gap before timer group
+            timerGrp:ClearAllPoints()
+            timerGrp:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, y)
+            y = y - TimerGrpH() - 4   -- gap before tooltip group
+            tooltipGrp:ClearAllPoints()
+            tooltipGrp:SetPoint("TOPLEFT", bodyF, "TOPLEFT", 0, y)
         end
 
         -- ── Display Mode dropdown (top of bodyF) ──────────────────────────
@@ -1746,28 +1827,29 @@ local function BuildBuffsContent(content, unit, getDB, panel)
             function() return db()[prefix.."DisplayMode"] or "Icons" end,
             function(v)
                 db()[prefix.."DisplayMode"] = v; applyAuras()
-                local bh = BODY_H[v] or BODY_H.Icons
+                local bh = CalcBodyH(v)
                 bodyF:SetHeight(bh)
                 grp:SetHeight(36 + bh)
                 iconsF:SetShown(v == "Icons")
                 barsF:SetShown(v == "Bars")
                 ringsF:SetShown(v == "Rings")
-                RepositionFooter(bh)
+                RepositionFooter(v)
             end)
 
         -- ── Show/hide body when checkbox toggled ──────────────────────────
         local function ApplyShowState()
+            ApplyTimerGroupState()
             local shown = db()[showKey] ~= false
             bodyF:SetShown(shown)
             if shown then
                 local v  = db()[prefix.."DisplayMode"] or "Icons"
-                local bh = BODY_H[v] or BODY_H.Icons
+                local bh = CalcBodyH(v)
                 bodyF:SetHeight(bh)
                 grp:SetHeight(36 + bh)
                 iconsF:SetShown(v == "Icons")
                 barsF:SetShown(v == "Bars")
                 ringsF:SetShown(v == "Rings")
-                RepositionFooter(bh)
+                RepositionFooter(v)
             else
                 grp:SetHeight(36)
             end
@@ -1786,11 +1868,17 @@ local function BuildBuffsContent(content, unit, getDB, panel)
         ApplyShowState()
 
         refreshFns[#refreshFns+1] = function()
-            modeDD:SetSelection(db()[prefix.."DisplayMode"] or "Icons")
+            local v = db()[prefix.."DisplayMode"] or "Icons"
+            modeDD:SetSelection(v)
             for _, fn in ipairs(iconsRefresh) do fn() end
             for _, fn in ipairs(barsRefresh)  do fn() end
             for _, fn in ipairs(ringsRefresh) do fn() end
-            anchorCB:Refresh(); timerCB:Refresh(); rHideDur()
+            anchorCB:Refresh(); rHideDur()
+            showTimerCB:Refresh()
+            timerFontDD:SetSelection(db()[prefix.."TimerFont"] or fontList[1])
+            rTimerSize()
+            timerColorSwatch:RefreshSwatch()
+            tooltipCB:Refresh(); rTTDelay()
             growXDD:SetSelection(db()[prefix.."GrowX"] or (isDebuff and "LEFT" or "RIGHT"))
             growYDD:SetSelection(db()[prefix.."GrowY"] or (isDebuff and "UP"   or "DOWN"))
             if playerOnlyCB  then playerOnlyCB:Refresh()  end
@@ -1801,24 +1889,6 @@ local function BuildBuffsContent(content, unit, getDB, panel)
 
     BuildSection("buff",   false, 8,             -8)
     BuildSection("debuff", true,  8 + GRP_W + 8, -8)
-
-    -- ── Tooltip section (below both columns) ────────────────────────────────
-    -- Height is dynamic but we place it at a fixed offset; scroll handles overflow.
-    local ttY   = -580
-    local ttGrp = CreateGroupBox(content, "Tooltips", 8, ttY, GRP_W * 2 + 8, 96)
-    local ttgx  = 8
-
-    local tooltipCheck = CreateCheckbox(ttGrp, "Show aura tooltips on mouseover", ttgx, -20,
-        function() return getDB().auraTooltipEnabled ~= false end,
-        function(v) getDB().auraTooltipEnabled = v end)
-
-    local _,_,rTTDelay = CreateNudgeSlider(ttGrp, "Tooltip delay (s)", 0, 2, 0.1,
-        ttgx, -50, 120, "auraTooltipDelay", getDB, function() end)
-
-    refreshFns[#refreshFns+1] = function()
-        tooltipCheck:Refresh()
-        rTTDelay()
-    end
 
     panel.refreshBuffs = function()
         for _, fn in ipairs(refreshFns) do fn() end
@@ -2097,12 +2167,15 @@ local function BuildUnitPanel(panel, unit, tabSync)
           "buffXOffset","buffYOffset","buffAnchorToFrame","buffShowBuffs",
           "buffBarWidth","buffBarHeight","buffBarX","buffBarY","buffBarShowTimer",
           "buffRingRadius","buffRingGap","buffHideOverDuration",
+          "buffShowTimer","buffTimerFont","buffTimerFontSize","buffTimerColor",
+          "buffTooltipEnabled","buffTooltipDelay",
           "debuffDisplayMode","debuffIconSize","debuffPerRow","debuffMaxShown","debuffGrowX","debuffGrowY",
           "debuffXOffset","debuffYOffset","debuffAnchorToFrame","debuffShowDebuffs",
           "debuffPlayerOnly","debuffCurableOnly",
           "debuffBarWidth","debuffBarHeight","debuffBarX","debuffBarY","debuffBarShowTimer",
           "debuffRingRadius","debuffRingGap","debuffHideOverDuration",
-          "auraTooltipEnabled","auraTooltipDelay",
+          "debuffShowTimer","debuffTimerFont","debuffTimerFontSize","debuffTimerColor",
+          "debuffTooltipEnabled","debuffTooltipDelay",
         },
         -- 6: Conditions
         { "loadMounted","loadInVehicle","loadResting","loadStealthed","loadInCombat",
