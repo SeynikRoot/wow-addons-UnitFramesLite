@@ -4,6 +4,20 @@ _G.UnitFramesLite = UFL
 
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 
+-- Masque (optional): provides button skinning.  Groups are created lazily on
+-- first use so the library is not required at load time.
+local MSQ         = LibStub and LibStub("Masque", true)
+local msqGroups   = {}   -- msqGroups["buff"] / msqGroups["debuff"]
+
+local function GetMSQGroup(prefix)
+    if not MSQ then return nil end
+    if not msqGroups[prefix] then
+        local label = (prefix == "buff") and "Buffs" or "Debuffs"
+        msqGroups[prefix] = MSQ:Group("UnitFramesLite", label)
+    end
+    return msqGroups[prefix]
+end
+
 -- CurveConstants.ScaleTo100: when passed to UnitHealthPercent as the third arg,
 -- causes it to return a plain (non-secret) number in the 0-100 range.
 local SCALE_TO_100 = CurveConstants and CurveConstants.ScaleTo100
@@ -2406,7 +2420,7 @@ end
 -- Keep old name for event-init call compatibility
 local function GetAuraContainer(unit) return GetAuraData(unit) end
 
-local function GetOrCreateIcon(pool, idx, container)
+local function GetOrCreateIcon(pool, idx, container, prefix)
     if pool[idx] then return pool[idx] end
     local btn = CreateFrame("Button", nil, container)
     btn:SetSize(24, 24)
@@ -2417,10 +2431,34 @@ local function GetOrCreateIcon(pool, idx, container)
     local border = btn:CreateTexture(nil, "BACKGROUND")
     border:SetAllPoints()
     border:SetColorTexture(0, 0, 0, 1)
+    btn.border = border
     local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
     cd:SetAllPoints(); cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(true)
     cd:SetReverse(true)
     btn.cd = cd
+
+    -- Register with Masque if available.  Pass only the regions that exist on
+    -- these simple icon buttons; set everything else to false so Masque won't
+    -- try to skin regions that aren't there.
+    if prefix then
+        local grp = GetMSQGroup(prefix)
+        if grp then
+            grp:AddButton(btn, {
+                Icon      = btn.icon,
+                Cooldown  = btn.cd,
+                Normal    = false,
+                Pushed    = false,
+                Disabled  = false,
+                Checked   = false,
+                Highlight = false,
+                Flash     = false,
+                Border    = btn.border,
+                Backdrop  = false,
+                Gloss     = false,
+                Shadow    = false,
+            })
+        end
+    end
     -- Custom timer FontString — gives full control over font and colour.
     local timerFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     timerFS:SetPoint("BOTTOM", btn, "BOTTOM", 0, 1)
@@ -2493,6 +2531,30 @@ local function GetFrameVerticalExtent(frame, db)
 end
 
 -- Format a remaining-duration value (seconds) as a short timer string.
+-- Apply the cooldown swipe to a Cooldown frame for an aura.
+-- Tries GetAuraDuration first (handles secret numbers on real enemy auras).
+-- Falls back to plain SetCooldown arithmetic for test auras or friendly auras
+-- whose plain-number fields are directly usable.
+local function SetAuraCooldown(cd, unit, aura)
+    local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
+    if durObj then
+        cd:SetCooldownFromDurationObject(durObj)
+        return
+    end
+    -- durObj is nil: either permanent aura, or test aura with plain numbers.
+    -- Try plain arithmetic in pcall — succeeds for test auras; no-ops if secret.
+    local set = false
+    pcall(function()
+        if aura.duration and aura.duration > 0 and aura.expirationTime and aura.expirationTime > 0 then
+            cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
+            set = true
+        end
+    end)
+    if not set then
+        cd:SetCooldown(0, 0)
+    end
+end
+
 -- All arithmetic is via pcall because expirationTime may be a secret number.
 local function FormatAuraTimer(aura)
     local remaining = 0
@@ -2617,7 +2679,7 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
     -- Place icons
     for i = 1, count do
         local aura = auras[i]
-        local btn  = GetOrCreateIcon(pool, i, container)
+        local btn  = GetOrCreateIcon(pool, i, container, prefix)
         btn:SetSize(iconSize, iconSize)
         local col  = (i - 1) % cols
         local row  = math.floor((i - 1) / cols)
@@ -2637,14 +2699,7 @@ local function LayoutAuraStrip(slot, auras, frame, db, iconSize, perRow, maxShow
         local showStack = false
         pcall(function() showStack = aura.applications and aura.applications > 1 end)
         btn.stack:SetText(showStack and aura.applications or "")
-        -- SetCooldownFromDurationObject handles secret numbers safely.
-        -- SetReverse(true) on the frame makes the swipe drain (bright→dim) rather than fill.
-        local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
-        if not durObj then
-            durObj = C_DurationUtil.CreateDuration()
-            durObj:SetTimeFromEnd(0, 0, 1)
-        end
-        btn.cd:SetCooldownFromDurationObject(durObj)
+        SetAuraCooldown(btn.cd, unit, aura)
         -- Custom timer text
         local showTimer  = prefix and db[prefix.."ShowTimer"] ~= false
         local timerFont  = prefix and db[prefix.."TimerFont"]
@@ -2782,16 +2837,9 @@ local function LayoutAuraBars(slot, auras, frame, db, prefix, unit, auraFilter)
         bar:SetStatusBarColor(r, g, b, 0.8)
 
         -- Duration: apply cooldown sweep + drive fill fraction.
-        -- SetCooldownFromDurationObject handles secret numbers safely.
-        -- SetReverse(true) on the frame makes the swipe drain (bright→dim) rather than fill.
-        local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
-        if not durObj then
-            durObj = C_DurationUtil.CreateDuration()
-            durObj:SetTimeFromEnd(0, 0, 1)
-        end
         bar.cd:SetAllPoints(bar)
         bar.cd:SetHideCountdownNumbers(true)
-        bar.cd:SetCooldownFromDurationObject(durObj)
+        SetAuraCooldown(bar.cd, unit, aura)
 
         -- Status bar fill: best-effort; falls back to full on secret-number failure
         bar:SetValue(1)
@@ -2942,14 +2990,7 @@ local function LayoutAuraRings(slot, auras, frame, db, prefix, unit, auraFilter)
         pcall(function() showStack = aura.applications and aura.applications > 1 end)
         ring.stack:SetText(showStack and aura.applications or "")
 
-        -- Cooldown sweep — SetCooldownFromDurationObject handles secret numbers safely.
-        -- SetReverse(true) on the frame makes the swipe drain (bright→dim) rather than fill.
-        local durObj = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
-        if not durObj then
-            durObj = C_DurationUtil.CreateDuration()
-            durObj:SetTimeFromEnd(0, 0, 1)
-        end
-        ring.cd:SetCooldownFromDurationObject(durObj)
+        SetAuraCooldown(ring.cd, unit, aura)
 
         -- Custom timer text
         if showTimer then
@@ -3257,6 +3298,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         SetupResourcePips()
         RegisterResourceOnUpdate(eventFrame)
         UnitFramesLite_UpdateResourceVisibility()
+        -- Register Masque groups eagerly so UnitFramesLite appears in Masque's
+        -- addon list even before any aura icons have been created.
+        GetMSQGroup("buff")
+        GetMSQGroup("debuff")
         -- Initialise aura containers for all units
         for unit in pairs(defaults) do GetAuraContainer(unit) end
         UnitFramesLite_UpdateAllAuras()
