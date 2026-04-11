@@ -68,6 +68,7 @@ local function MakeUnitDefaults(x, y, solidColor, gradStart, gradEnd, orbStart, 
         resourcePipBorderEnabled   = false,
         resourcePipBorderThickness = 1,
         resourcePipBorderColor     = {0, 0, 0, 1},
+        resourcePipBgColor         = {0.1, 0.1, 0.1, 0.8},
         resourceX               = 0,
         resourceY               = 0,
         resourceAlpha           = 1.0,
@@ -828,30 +829,48 @@ local function SetupResourcePips()
             -- Border: a texture on pip at BACKGROUND sublevel -7.
             -- pip.bg is at sublevel -8 (below border), StatusBar fill is above both.
             -- Textures can be anchored/sized outside their parent frame's bounds.
-            local borderTex = pip:CreateTexture(nil, "BACKGROUND", nil, -7)
-            borderTex:SetAllPoints(pip)   -- default; resized in UpdateResourceLayout
-            borderTex:SetColorTexture(0, 0, 0, 1)
-            borderTex:Hide()
-            pip.borderTex = borderTex
-            -- Mask texture for Circle/Diamond shaped borders
-            local borderMask = pip:CreateMaskTexture()
-            borderMask:SetAllPoints(pip)
-            pip.borderMask = borderMask
+            -- borderTex lives on bgFrame (transparent Frame on resourceFrame) so it
+            -- composites against the world rather than the StatusBar's opaque background.
+            -- It is sized larger than the pip to form a border ring; shapeBg/pip.bg
+            -- render on top covering the interior, leaving only the ring visible.
+            -- (borderTex and borderMask are created after bgFrame below)
 
             pip:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
             pip:SetMinMaxValues(0, 1)
             pip:SetValue(0)
-            local bg = pip:CreateTexture(nil, "BACKGROUND", nil, -8)
-            bg:SetAllPoints()
+            -- bgFrame: a plain transparent Frame parented to resourceFrame so its
+            -- background textures composite against the world (not the StatusBar pip
+            -- which has an inherent opaque black background).  We sync show/hide via
+            -- pip's OnShow/OnHide hooks below.
+            local bgFrame = CreateFrame("Frame", nil, resourceFrame)
+            bgFrame:SetSize(1, 1)  -- sized in UpdateResourceLayout loop
+            bgFrame:SetFrameLevel(pip:GetFrameLevel())
+            pip.bgFrame = bgFrame
+            pip:HookScript("OnShow", function() bgFrame:Show() end)
+            pip:HookScript("OnHide", function() bgFrame:Hide() end)
+            -- Border texture on bgFrame at lowest sublevel — pip bg/shapeBg at higher
+            -- sublevels cover the interior; only the ring extending beyond pip size shows.
+            local borderTex = bgFrame:CreateTexture(nil, "BACKGROUND", nil, -7)
+            borderTex:SetAllPoints(bgFrame)
+            borderTex:SetColorTexture(0, 0, 0, 1)
+            borderTex:Hide()
+            pip.borderTex = borderTex
+            -- Mask texture for Circle/Diamond shaped borders (on bgFrame)
+            local borderMask = bgFrame:CreateMaskTexture()
+            borderMask:SetAllPoints(bgFrame)
+            pip.borderMask = borderMask
+
+            local bg = bgFrame:CreateTexture(nil, "BACKGROUND", nil, -6)
+            bg:SetAllPoints(bgFrame)
             bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
             pip.bg = bg
             -- Shape mask (applied/removed in UpdateResourceLayout)
             local mask = pip:CreateMaskTexture()
             mask:SetAllPoints()
             pip.shapeMask = mask
-            -- Pre-create BG mask too
-            local bgMask = pip:CreateMaskTexture()
-            bgMask:SetAllPoints()
+            -- Pre-create BG mask too (on bgFrame so it composites correctly)
+            local bgMask = bgFrame:CreateMaskTexture()
+            bgMask:SetAllPoints(bgFrame)
             pip.bgMask = bgMask
             pip.borderFrame = borderFrame
             resourcePips[i] = pip
@@ -958,19 +977,17 @@ function UnitFramesLite_UpdateResourceLayout()
         if useCustom and not useSolid then
             local isVertical = (colorMode == "Vertical Gradient")
             if gradPerPip or isVertical then
-                -- Each pip shows the full gradient (either per-pip ticked, or vertical direction
-                -- which makes no sense spread across pips and is better applied per-pip).
                 local gradDir = isVertical and "VERTICAL" or "HORIZONTAL"
                 pip.shapeFillGradient = {
                     dir = gradDir,
-                    r1 = gs[1], g1 = gs[2], b1 = gs[3],
-                    r2 = ge[1], g2 = ge[2], b2 = ge[3],
+                    r1 = gs[1], g1 = gs[2], b1 = gs[3], a1 = gs[4] or 1,
+                    r2 = ge[1], g2 = ge[2], b2 = ge[3], a2 = ge[4] or 1,
                 }
                 pip.shapeFillColor = nil
-                -- Apply with alpha=1; UpdateResourcePips will reapply with correct fill alpha.
+                -- Apply with fillFrac=1; UpdateResourcePips reapplies with correct active alpha.
                 sf:SetGradient(gradDir,
-                    CreateColor(gs[1], gs[2], gs[3], 1),
-                    CreateColor(ge[1], ge[2], ge[3], 1))
+                    CreateColor(gs[1], gs[2], gs[3], gs[4] or 1),
+                    CreateColor(ge[1], ge[2], ge[3], ge[4] or 1))
             else
                 -- Horizontal, spread across bar: interpolated solid colour per pip position.
                 pip.shapeFillGradient = nil
@@ -978,13 +995,14 @@ function UnitFramesLite_UpdateResourceLayout()
                 local r = gs[1] + (ge[1] - gs[1]) * t
                 local g = gs[2] + (ge[2] - gs[2]) * t
                 local b = gs[3] + (ge[3] - gs[3]) * t
-                pip.shapeFillColor = {r, g, b}
-                sf:SetVertexColor(r, g, b, 1)
+                local a = (gs[4] or 1) + ((ge[4] or 1) - (gs[4] or 1)) * t
+                pip.shapeFillColor = {r, g, b, a}
+                sf:SetVertexColor(r, g, b, a)
             end
         else
             pip.shapeFillGradient = nil
-            local a = db.resourceAlpha or 1.0
-            pip.shapeFillColor = {col[1], col[2], col[3]}
+            local a = col[4] or (db.resourceAlpha or 1.0)
+            pip.shapeFillColor = {col[1], col[2], col[3], a}
             sf:SetVertexColor(col[1], col[2], col[3], a)
         end
     end
@@ -995,6 +1013,12 @@ function UnitFramesLite_UpdateResourceLayout()
             pip:SetSize(pipW, pipH)
             pip:ClearAllPoints()
             pip:SetPoint("LEFT", resourceFrame, "LEFT", (i-1) * (pipW + pipGap), 0)
+            -- Keep bgFrame (transparent Frame on resourceFrame) in sync with pip
+            if pip.bgFrame then
+                pip.bgFrame:SetSize(pipW, pipH)
+                pip.bgFrame:ClearAllPoints()
+                pip.bgFrame:SetPoint("LEFT", resourceFrame, "LEFT", (i-1) * (pipW + pipGap), 0)
+            end
 
             -- ── Apply colour to StatusBar-based pips ──────────────────────────
             local function ApplyStatusBarColour()
@@ -1034,7 +1058,7 @@ function UnitFramesLite_UpdateResourceLayout()
                 if pip.shapeBg   then pip.shapeBg:Hide()   end
                 -- Remove any masks from pip.bg (applied by Circle mode) then restore it
                 pcall(function() if pip.bg and pip.bgMask then pip.bg:RemoveMaskTexture(pip.bgMask) end end)
-                if pip.bg then pip.bg:Show(); pip.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8) end
+                if pip.bg then pip.bg:Show(); local bc = db.resourcePipBgColor or {0.1,0.1,0.1,0.8}; pip.bg:SetColorTexture(bc[1],bc[2],bc[3],bc[4] or 0.8) end
             end
 
             -- Set up shaped textures for non-StatusBar shapes (Diamond, Triangle, Arrow)
@@ -1052,7 +1076,7 @@ function UnitFramesLite_UpdateResourceLayout()
                 -- Hide the StatusBar bg rectangle — shaped pips draw their own bg via shapeBg texture
                 if pip.bg then pip.bg:Hide() end
                 if not pip.shapeFill then pip.shapeFill = pip:CreateTexture(nil, "ARTWORK") end
-                if not pip.shapeBg   then pip.shapeBg   = pip:CreateTexture(nil, "BACKGROUND") end
+                if not pip.shapeBg   then pip.shapeBg   = pip.bgFrame:CreateTexture(nil, "BACKGROUND") end
             end
 
             -- ── Border ────────────────────────────────────────────────────────
@@ -1122,7 +1146,7 @@ function UnitFramesLite_UpdateResourceLayout()
                 sb:SetRotation(0)
                 sb:SetSize(circSize, circSize)
                 sb:ClearAllPoints(); sb:SetPoint("CENTER", pip, "CENTER", 0, 0)
-                sb:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+                do local bc = db.resourcePipBgColor or {0.1,0.1,0.1,0.8}; sb:SetVertexColor(bc[1],bc[2],bc[3],bc[4] or 0.8) end
                 -- Apply circle mask to both fill and bg textures
                 if pip.shapeMask then
                     pip.shapeMask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
@@ -1152,7 +1176,7 @@ function UnitFramesLite_UpdateResourceLayout()
                 sb:SetRotation(math.pi / 4)
                 sb:SetSize(s, s)
                 sb:ClearAllPoints(); sb:SetPoint("CENTER", pip, "CENTER", 0, 0)
-                sb:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+                do local bc = db.resourcePipBgColor or {0.1,0.1,0.1,0.8}; sb:SetVertexColor(bc[1],bc[2],bc[3],bc[4] or 0.8) end
                 ApplyShapedPipColour(pip, sf, i)
                 sf:Show(); sb:Show()
 
@@ -1177,11 +1201,11 @@ local function ApplyShapedFillAlpha(pip, fillFrac)
         if pip.shapeFillGradient then
             local gd = pip.shapeFillGradient
             sf:SetGradient(gd.dir,
-                CreateColor(gd.r1, gd.g1, gd.b1, fillFrac),
-                CreateColor(gd.r2, gd.g2, gd.b2, fillFrac))
+                CreateColor(gd.r1, gd.g1, gd.b1, (gd.a1 or 1) * fillFrac),
+                CreateColor(gd.r2, gd.g2, gd.b2, (gd.a2 or 1) * fillFrac))
         else
-            local vc = pip.shapeFillColor or {1, 1, 1}
-            sf:SetVertexColor(vc[1], vc[2], vc[3], fillFrac)
+            local vc = pip.shapeFillColor or {1, 1, 1, 1}
+            sf:SetVertexColor(vc[1], vc[2], vc[3], (vc[4] or 1) * fillFrac)
         end
     end
     if pip.shapeFill2 then pip.shapeFill2:SetAlpha(fillFrac) end

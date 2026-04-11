@@ -718,6 +718,15 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
         self:SetChecked(v); colorDetails:SetShown(v)
     end
 
+    -- Background colour (always visible, placed below colorDetails) ────────────
+    -- Wrap swatch in a light border frame so dark colours are visible
+    local bgBorder = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    bgBorder:SetSize(22, 22)
+    bgBorder:SetPoint("TOPLEFT", content, "TOPLEFT", x, -451)
+    bgBorder:SetBackdrop({edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=1})
+    bgBorder:SetBackdropBorderColor(0.7, 0.7, 0.7, 1)
+    local bgSwatch = CreateColorSwatch(bgBorder, 1, -1, "Background", resDB, "resourcePipBgColor", applyRes)
+
     -- Right: Pip Border ────────────────────────────────────────────────────────
     local bx = rx   -- right column, same x as Pip Size section above
     CreateLabel(content, "Pip Border", bx, -294)
@@ -2200,7 +2209,7 @@ local function BuildUnitPanel(panel, unit, tabSync)
         { "showResources","resourceShowOutCombat","resourceShowWithTarget","resourceAlpha",
           "resourceX","resourceY",
           "resourcePipWidth","resourcePipHeight","resourcePipGap","resourcePipShape",
-          "resourcePipBorderEnabled","resourcePipBorderThickness","resourcePipBorderColor",
+          "resourcePipBorderEnabled","resourcePipBorderThickness","resourcePipBorderColor","resourcePipBgColor",
           "resourceUseCustomColor","resourceColorMode","resourceUseSolidColor",
           "resourceSolidColor","resourceGradStart","resourceGradEnd","resourceGradPerPip",
         },
