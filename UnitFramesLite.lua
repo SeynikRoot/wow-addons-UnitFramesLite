@@ -956,9 +956,11 @@ function UnitFramesLite_UpdateResourceLayout()
     local function ApplyShapedPipColour(pip, sf, i)
         if not sf then return end
         if useCustom and not useSolid then
-            if gradPerPip then
-                -- Each pip shows the full gradient: store gradient info for UpdateResourcePips.
-                local gradDir = (colorMode == "Vertical Gradient") and "VERTICAL" or "HORIZONTAL"
+            local isVertical = (colorMode == "Vertical Gradient")
+            if gradPerPip or isVertical then
+                -- Each pip shows the full gradient (either per-pip ticked, or vertical direction
+                -- which makes no sense spread across pips and is better applied per-pip).
+                local gradDir = isVertical and "VERTICAL" or "HORIZONTAL"
                 pip.shapeFillGradient = {
                     dir = gradDir,
                     r1 = gs[1], g1 = gs[2], b1 = gs[3],
@@ -970,7 +972,7 @@ function UnitFramesLite_UpdateResourceLayout()
                     CreateColor(gs[1], gs[2], gs[3], 1),
                     CreateColor(ge[1], ge[2], ge[3], 1))
             else
-                -- Spread across bar: interpolated solid colour per pip position.
+                -- Horizontal, spread across bar: interpolated solid colour per pip position.
                 pip.shapeFillGradient = nil
                 local t = maxPips > 1 and (i - 1) / (maxPips - 1) or 0
                 local r = gs[1] + (ge[1] - gs[1]) * t

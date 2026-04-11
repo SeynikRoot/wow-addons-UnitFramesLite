@@ -705,7 +705,7 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
         pipGradEBtn:SetShown(not isSolid)
         pipGradDirLabel:SetShown(not isSolid)
         pipGradDirDD:SetShown(not isSolid)
-        local showPerPip = not isSolid and not isVertical
+        local showPerPip = not isSolid
         gradPerPipCB:SetShown(showPerPip)
         gradPerPipLabel:SetShown(showPerPip)
     end
