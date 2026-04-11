@@ -873,9 +873,16 @@ function UnitFramesLite_UpdateResourceLayout()
     local db = GetDB("player")
     local cls = resourceClass
     local cfg = cls and CLASS_RESOURCES[cls]
-    if not cfg then resourceFrame:Hide(); return end
+    if not cfg then
+        if testResourceActive then
+            cfg = { powerType = Enum.PowerType.ComboPoints, maxPips = 5, hideWhenEmpty = false }
+        else
+            resourceFrame:Hide()
+            return
+        end
+    end
 
-    if db.showResources == false then resourceFrame:Hide(); return end
+    if db.showResources == false and not testResourceActive then resourceFrame:Hide(); return end
 
     local maxPips = resourceMaxPips > 0 and resourceMaxPips or cfg.maxPips
     local pipW    = db.resourcePipWidth   or 18
@@ -919,8 +926,8 @@ function UnitFramesLite_UpdateResourceLayout()
 
     local shape = db.resourcePipShape or "Rectangle"
 
-    -- Helper: apply colour to a texture based on current colour settings.
-    -- Uses SetVertexColor (not SetColorTexture) so that the texture's shape/rotation is preserved.
+    -- Helper: apply colour to a texture based on current colour settings (Rectangle/StatusBar only).
+    -- SetGradient is safe here because StatusBar visibility is controlled by SetValue, not SetAlpha.
     local function ApplyColourToTex(tex, i)
         if not tex then return end
         if useCustom and not useSolid then
@@ -939,6 +946,43 @@ function UnitFramesLite_UpdateResourceLayout()
         else
             local a = db.resourceAlpha or 1.0
             tex:SetVertexColor(col[1], col[2], col[3], a)
+        end
+    end
+
+    -- Helper: apply colour to a shaped pip's fill texture and store the colour info on the pip
+    -- so UpdateResourcePips can reapply it with the correct fill alpha later.
+    -- Shaped pips use vertex colour alpha (not SetAlpha) to avoid SetGradient resetting SetAlpha.
+    local function ApplyShapedPipColour(pip, sf, i)
+        if not sf then return end
+        if useCustom and not useSolid then
+            if gradPerPip then
+                -- Each pip shows the full gradient: store gradient info for UpdateResourcePips.
+                local gradDir = (colorMode == "Vertical Gradient") and "VERTICAL" or "HORIZONTAL"
+                pip.shapeFillGradient = {
+                    dir = gradDir,
+                    r1 = gs[1], g1 = gs[2], b1 = gs[3],
+                    r2 = ge[1], g2 = ge[2], b2 = ge[3],
+                }
+                pip.shapeFillColor = nil
+                -- Apply with alpha=1; UpdateResourcePips will reapply with correct fill alpha.
+                sf:SetGradient(gradDir,
+                    CreateColor(gs[1], gs[2], gs[3], 1),
+                    CreateColor(ge[1], ge[2], ge[3], 1))
+            else
+                -- Spread across bar: interpolated solid colour per pip position.
+                pip.shapeFillGradient = nil
+                local t = maxPips > 1 and (i - 1) / (maxPips - 1) or 0
+                local r = gs[1] + (ge[1] - gs[1]) * t
+                local g = gs[2] + (ge[2] - gs[2]) * t
+                local b = gs[3] + (ge[3] - gs[3]) * t
+                pip.shapeFillColor = {r, g, b}
+                sf:SetVertexColor(r, g, b, 1)
+            end
+        else
+            pip.shapeFillGradient = nil
+            local a = db.resourceAlpha or 1.0
+            pip.shapeFillColor = {col[1], col[2], col[3]}
+            sf:SetVertexColor(col[1], col[2], col[3], a)
         end
     end
 
@@ -1087,8 +1131,7 @@ function UnitFramesLite_UpdateResourceLayout()
                     pip.bgMask:SetAllPoints(pip)
                     pcall(function() sb:AddMaskTexture(pip.bgMask) end)
                 end
-                ApplyColourToTex(sf, i)
-                sf:SetAlpha(0)  -- alpha set by UpdateResourcePips; default to empty
+                ApplyShapedPipColour(pip, sf, i)
                 sf:Show(); sb:Show()
 
             elseif shape == "Diamond" then
@@ -1107,8 +1150,7 @@ function UnitFramesLite_UpdateResourceLayout()
                 sb:SetSize(s, s)
                 sb:ClearAllPoints(); sb:SetPoint("CENTER", pip, "CENTER", 0, 0)
                 sb:SetVertexColor(0.1, 0.1, 0.1, 0.8)
-                ApplyColourToTex(sf, i)
-                sf:SetAlpha(0)  -- alpha set by UpdateResourcePips; default to empty
+                ApplyShapedPipColour(pip, sf, i)
                 sf:Show(); sb:Show()
 
             end
@@ -1118,6 +1160,7 @@ function UnitFramesLite_UpdateResourceLayout()
     end
 
     resourceFrame:Show()
+    if UpdateResourcePips then UpdateResourcePips() end
 end
 
 local runeUpdateElapsed = 0
@@ -1130,6 +1173,23 @@ UpdateResourcePips = function()
     if not cfg then return end
 
     local maxPips = resourceMaxPips > 0 and resourceMaxPips or cfg.maxPips
+
+    -- In test mode, fill all pips to full so the user can see and adjust the layout.
+    if testResourceActive then
+        for i = 1, maxPips do
+            local pip = resourcePips[i]
+            if pip then
+                pip:Show()
+                if pip.isShapedPip then
+                    if pip.shapeFill  then pip.shapeFill:SetAlpha(1)  end
+                    if pip.shapeFill2 then pip.shapeFill2:SetAlpha(1) end
+                else
+                    pip:SetValue(1); pip:SetAlpha(1)
+                end
+            end
+        end
+        return
+    end
 
     if cfg.isRunes then
         -- Death Knight runes: use GetRuneCooldown
@@ -1206,8 +1266,20 @@ UpdateResourcePips = function()
                     else
                         pip:Show()
                         if pip.isShapedPip then
-                            if pip.shapeFill  then pip.shapeFill:SetAlpha(fillFrac)  end
-                            if pip.shapeFill2 then pip.shapeFill2:SetAlpha(fillFrac) end
+                            local sf = pip.shapeFill
+                            if sf then
+                                if pip.shapeFillGradient then
+                                    -- Reapply gradient with fill alpha baked in so SetGradient
+                                    -- doesn't override visibility — vertex colour alpha controls it.
+                                    local gd = pip.shapeFillGradient
+                                    sf:SetGradient(gd.dir,
+                                        CreateColor(gd.r1, gd.g1, gd.b1, fillFrac),
+                                        CreateColor(gd.r2, gd.g2, gd.b2, fillFrac))
+                                else
+                                    local vc = pip.shapeFillColor or {1, 1, 1}
+                                    sf:SetVertexColor(vc[1], vc[2], vc[3], fillFrac)
+                                end
+                            end
                         else
                             pip:SetValue(fillFrac)
                             pip:SetAlpha(active and 1 or 0.35)
@@ -1782,7 +1854,9 @@ function UnitFramesLite_UpdateResourceVisibility()
 
     local cfg = resourceClass and CLASS_RESOURCES[resourceClass]
     local shouldShow = true
-    if db.showResources == false then
+    if testResourceActive then
+        shouldShow = true
+    elseif db.showResources == false then
         shouldShow = false
     elseif IsResourceGated(cfg) then
         shouldShow = false
@@ -3064,6 +3138,16 @@ function UnitFramesLite_SetTestAuras(enable)
     for u in pairs(frames) do
         UnitFramesLite_UpdateAuras(u)
     end
+end
+
+local testResourceActive = false
+function UnitFramesLite_SetTestResource(enable)
+    testResourceActive = enable
+    UnitFramesLite_UpdateResourceVisibility()
+    if UpdateResourcePips then UpdateResourcePips() end
+end
+function UnitFramesLite_IsTestResourceActive()
+    return testResourceActive
 end
 
 function UnitFramesLite_UpdateAuras(unit)

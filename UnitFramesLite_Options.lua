@@ -487,8 +487,7 @@ end
 -- Tab 6: Class Resources (player-only) ----------------------------------------
 
 local function BuildClassResourcesContent(content, unit, getDB, panel)
-    if unit ~= "player" then return end
-
+    -- Class Resources always apply to the player regardless of which unit panel is active.
     local function resDB() return UnitFramesLite_GetDB("player") end
     local function applyRes()
         if UnitFramesLite_UpdateResourceLayout then UnitFramesLite_UpdateResourceLayout() end
@@ -540,17 +539,32 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
         showWithTargetLabel = fs
     end
 
+    -- ── Test button ───────────────────────────────────────────────────────────
+    local testResBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    testResBtn:SetSize(130, 22)
+    testResBtn:SetPoint("TOPLEFT", content, "TOPLEFT", x, -100)
+    local function UpdateTestResBtn()
+        local active = UnitFramesLite_IsTestResourceActive and UnitFramesLite_IsTestResourceActive()
+        testResBtn:SetText(active and "Stop Testing" or "Test Resource Bar")
+    end
+    UpdateTestResBtn()
+    testResBtn:SetScript("OnClick", function()
+        local active = UnitFramesLite_IsTestResourceActive and UnitFramesLite_IsTestResourceActive()
+        if UnitFramesLite_SetTestResource then UnitFramesLite_SetTestResource(not active) end
+        UpdateTestResBtn()
+    end)
+
     -- ── Alpha ─────────────────────────────────────────────────────────────────
     local sep1 = content:CreateTexture(nil,"ARTWORK"); sep1:SetColorTexture(0.3,0.3,0.3,0.8); sep1:SetHeight(1)
-    sep1:SetPoint("TOPLEFT",content,"TOPLEFT",x,-104); sep1:SetSize(230,1)
-    local _,_,rAlpha = CreateNudgeSlider(content,"Alpha",0,1,0.01, x,-114,120,"resourceAlpha",resDB,applyRes)
+    sep1:SetPoint("TOPLEFT",content,"TOPLEFT",x,-128); sep1:SetSize(230,1)
+    local _,_,rAlpha = CreateNudgeSlider(content,"Alpha",0,1,0.01, x,-138,120,"resourceAlpha",resDB,applyRes)
 
     -- ── Position ──────────────────────────────────────────────────────────────
     local sep2 = content:CreateTexture(nil,"ARTWORK"); sep2:SetColorTexture(0.3,0.3,0.3,0.8); sep2:SetHeight(1)
-    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-150); sep2:SetSize(230,1)
-    CreateLabel(content, "Position", x, -160)
-    local _,_,rResX = CreateNudgeSlider(content,"X Offset",-1000,1000,1, x,-180,120,"resourceX",resDB,applyRes)
-    local _,_,rResY = CreateNudgeSlider(content,"Y Offset", -600, 600,1, x,-220,120,"resourceY",resDB,applyRes)
+    sep2:SetPoint("TOPLEFT",content,"TOPLEFT",x,-174); sep2:SetSize(230,1)
+    CreateLabel(content, "Position", x, -184)
+    local _,_,rResX = CreateNudgeSlider(content,"X Offset",-1000,1000,1, x,-204,120,"resourceX",resDB,applyRes)
+    local _,_,rResY = CreateNudgeSlider(content,"Y Offset", -600, 600,1, x,-244,120,"resourceY",resDB,applyRes)
 
     -- ── Vertical separator between left and right columns ─────────────────────
     local vsep = content:CreateTexture(nil,"ARTWORK"); vsep:SetColorTexture(0.3,0.3,0.3,0.8); vsep:SetWidth(1)
@@ -613,21 +627,20 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
 
     -- ── Bottom section: Pip Colour (left) + Pip Border (right) side by side ──
     local sep3 = content:CreateTexture(nil,"ARTWORK"); sep3:SetColorTexture(0.3,0.3,0.3,0.8); sep3:SetHeight(1)
-    sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-260); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-8,-260)
+    sep3:SetPoint("TOPLEFT",content,"TOPLEFT",x,-284); sep3:SetPoint("TOPRIGHT",content,"TOPRIGHT",-8,-284)
 
     -- Left: Pip Colour ─────────────────────────────────────────────────────────
-    CreateLabel(content, "Pip Colour", x, -270)
+    CreateLabel(content, "Pip Colour", x, -294)
 
     local colorDetails
-    local useCustomCheck = CreateCheckbox(content, "Use Custom Colour", x, -288,
+    local useCustomCheck = CreateCheckbox(content, "Use Custom Colour", x, -312,
         function() return resDB().resourceUseCustomColor or false end,
         function(v) resDB().resourceUseCustomColor = v; colorDetails:SetShown(v); applyRes() end)
 
     colorDetails = CreateFrame("Frame", nil, content)
-    colorDetails:SetPoint("TOPLEFT", content, "TOPLEFT", x, -312)
-    colorDetails:SetSize(240, 70)
+    colorDetails:SetPoint("TOPLEFT", content, "TOPLEFT", x, -336)
+    colorDetails:SetSize(240, 110)
 
-    local COLOR_MODES = {"Solid", "Horizontal Gradient", "Vertical Gradient"}
     local function getColorMode()
         local m = resDB().resourceColorMode
         if m == "Gradient" then m = "Horizontal Gradient" end  -- migrate old value
@@ -635,26 +648,40 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
         return (resDB().resourceUseSolidColor ~= false) and "Solid" or "Horizontal Gradient"
     end
 
-    -- Dropdown width=130; UIDropDownMenuTemplate rendered right edge ≈ x + 146 (130+32-16).
-    -- Swatches start at x+154 to give an 8px gap.
-    local colorModeDD = CreateDropdown(colorDetails, 0, -4, 130, COLOR_MODES,
-        getColorMode,
+    -- "Use Solid Colour" checkbox (mirrors Orb style)
+    local pipSolidCheck = CreateCheckbox(colorDetails, "Use Solid Colour", 0, -4,
+        function() return getColorMode() == "Solid" end,
         function(v)
-            resDB().resourceColorMode = v
-            resDB().resourceUseSolidColor = (v == "Solid")
+            resDB().resourceColorMode    = v and "Solid" or "Horizontal Gradient"
+            resDB().resourceUseSolidColor = v
             colorDetails:UpdateColourMode()
             applyRes()
         end)
 
-    local solidSwatch     = CreateColorSwatch(colorDetails, 154, -10, "", resDB, "resourceSolidColor", applyRes)
-    local gradStartSwatch = CreateColorSwatch(colorDetails, 154, -10, "", resDB, "resourceGradStart",  applyRes)
-    local gradEndSwatch   = CreateColorSwatch(colorDetails, 178, -10, "", resDB, "resourceGradEnd",    applyRes)
+    local pipSolidSwatch = CreateColorSwatch(colorDetails, 0, -32, "Solid",      resDB, "resourceSolidColor", applyRes)
+    local pipGradSBtn    = CreateColorSwatch(colorDetails, 0, -32, "Grad Start", resDB, "resourceGradStart",  applyRes)
+    local pipGradEBtn    = CreateColorSwatch(colorDetails, 110, -32, "Grad End", resDB, "resourceGradEnd",    applyRes)
+
+    -- Gradient direction dropdown (shown when gradient mode active)
+    local pipGradDirLabel = colorDetails:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    pipGradDirLabel:SetPoint("TOPLEFT", colorDetails, "TOPLEFT", 0, -60)
+    pipGradDirLabel:SetText("Direction")
+    local pipGradDirDD = CreateDropdown(colorDetails, 70, -58, 110, {"Horizontal", "Vertical"},
+        function()
+            local m = getColorMode()
+            return (m == "Vertical Gradient") and "Vertical" or "Horizontal"
+        end,
+        function(v)
+            resDB().resourceColorMode = (v == "Vertical") and "Vertical Gradient" or "Horizontal Gradient"
+            colorDetails:UpdateColourMode()
+            applyRes()
+        end)
 
     local gradPerPipCB, gradPerPipLabel
     do
         local cb = CreateFrame("CheckButton", nil, colorDetails, "UICheckButtonTemplate")
         cb:SetSize(24, 24)
-        cb:SetPoint("TOPLEFT", colorDetails, "TOPLEFT", 0, -32)
+        cb:SetPoint("TOPLEFT", colorDetails, "TOPLEFT", 0, -84)
         local fs = colorDetails:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
         fs:SetText("Colour each pip individually")
@@ -672,13 +699,15 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
         local mode = getColorMode()
         local isSolid    = (mode == "Solid")
         local isVertical = (mode == "Vertical Gradient")
-        solidSwatch:SetShown(isSolid)
-        gradStartSwatch:SetShown(not isSolid)
-        gradEndSwatch:SetShown(not isSolid)
+        pipSolidCheck:SetChecked(isSolid)
+        pipSolidSwatch:SetShown(isSolid)
+        pipGradSBtn:SetShown(not isSolid)
+        pipGradEBtn:SetShown(not isSolid)
+        pipGradDirLabel:SetShown(not isSolid)
+        pipGradDirDD:SetShown(not isSolid)
         local showPerPip = not isSolid and not isVertical
         gradPerPipCB:SetShown(showPerPip)
         gradPerPipLabel:SetShown(showPerPip)
-        colorModeDD:SetSelection(mode)
     end
 
     colorDetails:SetShown(resDB().resourceUseCustomColor or false)
@@ -691,11 +720,11 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
 
     -- Right: Pip Border ────────────────────────────────────────────────────────
     local bx = rx   -- right column, same x as Pip Size section above
-    CreateLabel(content, "Pip Border", bx, -270)
+    CreateLabel(content, "Pip Border", bx, -294)
 
     -- Thickness slider (hidden until Enabled is ticked)
     local borderDetails = CreateFrame("Frame", nil, content)
-    borderDetails:SetPoint("TOPLEFT", content, "TOPLEFT", bx, -314)
+    borderDetails:SetPoint("TOPLEFT", content, "TOPLEFT", bx, -338)
     borderDetails:SetSize(220, 36)
     local _,_,rBorderThick = CreateNudgeSlider(borderDetails, "Thickness", 1, 10, 1, 0, -4, 100,
         "resourcePipBorderThickness", resDB, applyRes)
@@ -704,7 +733,7 @@ local function BuildClassResourcesContent(content, unit, getDB, panel)
     -- Checkbox (24px) + "Enabled" label (~50px) + gap → swatch label at bx+88, swatch at bx+128.
     local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
     cb:SetSize(24, 24)
-    cb:SetPoint("TOPLEFT", content, "TOPLEFT", bx, -288)
+    cb:SetPoint("TOPLEFT", content, "TOPLEFT", bx, -312)
     local enabledLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     enabledLabel:SetPoint("LEFT", cb, "RIGHT", 2, 0)
     enabledLabel:SetText("Enabled")
@@ -2364,18 +2393,9 @@ function CreateOptionsPanel()
     end
     unitPanels["player"]:Show()
 
-    local classResourcesBtn  -- forward-declared; set after tab buttons are created
-
     local function SelectUnit(unit)
         profilesPanel:Hide()
         for _, p in pairs(unitPanels) do p:Hide() end
-        -- Class Resources tab is player-only: hide button for other units and
-        -- fall back to tab 1 if it was active
-        local isPlayer = (unit == "player")
-        if classResourcesBtn then classResourcesBtn:SetShown(isPlayer) end
-        if not isPlayer and tabSync.current == 4 then
-            tabSync.current = 1
-        end
         if unitPanels[unit] then
             unitPanels[unit]:Show()
             if unitPanels[unit].SelectTab then
@@ -2400,7 +2420,6 @@ function CreateOptionsPanel()
         local btn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
         btn:SetSize(tabWidths[i] or 76, 22); btn:SetText(name)
         sharedTabBtns[i] = btn
-        if i == 4 then classResourcesBtn = btn end
         btn:SetScript("OnClick", function()
             tabSync.current = i
             -- SelectUnit hides the profiles panel and shows the correct unit panel
