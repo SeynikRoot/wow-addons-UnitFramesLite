@@ -1891,7 +1891,7 @@ function UnitFramesLite_UpdateResourceVisibility()
         shouldShow = false
     elseif inCombat then
         shouldShow = true
-    elseif showWithTarget and hasTarget then
+    elseif showWithTarget and hasTarget and (UnitReaction("target", "player") or 4) <= 3 then
         shouldShow = true
     else
         shouldShow = showOutCombat
