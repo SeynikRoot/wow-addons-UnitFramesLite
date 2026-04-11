@@ -768,10 +768,11 @@ end
 
 -- Resource pips (class resources: combo points, holy power, etc.) ------------
 
-local resourceFrame   = nil   -- created once on PLAYER_LOGIN
-local resourcePips    = {}
-local resourceClass   = nil
-local resourceMaxPips = 0     -- live value from UnitPowerMax; updated in SetupResourcePips
+local resourceFrame      = nil   -- created once on PLAYER_LOGIN
+local resourcePips       = {}
+local resourceClass      = nil
+local resourceMaxPips    = 0     -- live value from UnitPowerMax; updated in SetupResourcePips
+local testResourceActive = false -- set by UnitFramesLite_SetTestResource
 local UpdateResourcePips  -- forward declaration so SetupResourcePips can call it
 
 local function GetPlayerClass()
@@ -1166,6 +1167,24 @@ end
 local runeUpdateElapsed = 0
 local RUNE_UPDATE_RATE  = 0.05
 
+-- Applies fill alpha to a shaped pip's fill texture using stored gradient/colour info.
+-- Kept at module scope so both UpdateResourcePips and the test-mode path can call it.
+local function ApplyShapedFillAlpha(pip, fillFrac)
+    local sf = pip.shapeFill
+    if sf then
+        if pip.shapeFillGradient then
+            local gd = pip.shapeFillGradient
+            sf:SetGradient(gd.dir,
+                CreateColor(gd.r1, gd.g1, gd.b1, fillFrac),
+                CreateColor(gd.r2, gd.g2, gd.b2, fillFrac))
+        else
+            local vc = pip.shapeFillColor or {1, 1, 1}
+            sf:SetVertexColor(vc[1], vc[2], vc[3], fillFrac)
+        end
+    end
+    if pip.shapeFill2 then pip.shapeFill2:SetAlpha(fillFrac) end
+end
+
 UpdateResourcePips = function()
     if not resourceFrame then return end
     local cls = resourceClass
@@ -1181,8 +1200,7 @@ UpdateResourcePips = function()
             if pip then
                 pip:Show()
                 if pip.isShapedPip then
-                    if pip.shapeFill  then pip.shapeFill:SetAlpha(1)  end
-                    if pip.shapeFill2 then pip.shapeFill2:SetAlpha(1) end
+                    ApplyShapedFillAlpha(pip, 1)
                 else
                     pip:SetValue(1); pip:SetAlpha(1)
                 end
@@ -1199,8 +1217,7 @@ UpdateResourcePips = function()
                 local start, duration, ready = GetRuneCooldown(i)
                 if ready then
                     if pip.isShapedPip then
-                        if pip.shapeFill  then pip.shapeFill:SetAlpha(1)  end
-                        if pip.shapeFill2 then pip.shapeFill2:SetAlpha(1) end
+                        ApplyShapedFillAlpha(pip, 1)
                     else
                         pip:SetValue(1); pip:SetAlpha(1)
                     end
@@ -1209,8 +1226,7 @@ UpdateResourcePips = function()
                     local elapsed = now - (start or now)
                     local frac = duration and duration > 0 and (elapsed / duration) or 0
                     if pip.isShapedPip then
-                        if pip.shapeFill  then pip.shapeFill:SetAlpha(frac)  end
-                        if pip.shapeFill2 then pip.shapeFill2:SetAlpha(frac) end
+                        ApplyShapedFillAlpha(pip, math.max(0, math.min(1, frac)))
                     else
                         pip:SetValue(math.max(0, math.min(1, frac))); pip:SetAlpha(0.4)
                     end
@@ -1266,20 +1282,7 @@ UpdateResourcePips = function()
                     else
                         pip:Show()
                         if pip.isShapedPip then
-                            local sf = pip.shapeFill
-                            if sf then
-                                if pip.shapeFillGradient then
-                                    -- Reapply gradient with fill alpha baked in so SetGradient
-                                    -- doesn't override visibility — vertex colour alpha controls it.
-                                    local gd = pip.shapeFillGradient
-                                    sf:SetGradient(gd.dir,
-                                        CreateColor(gd.r1, gd.g1, gd.b1, fillFrac),
-                                        CreateColor(gd.r2, gd.g2, gd.b2, fillFrac))
-                                else
-                                    local vc = pip.shapeFillColor or {1, 1, 1}
-                                    sf:SetVertexColor(vc[1], vc[2], vc[3], fillFrac)
-                                end
-                            end
+                            ApplyShapedFillAlpha(pip, fillFrac)
                         else
                             pip:SetValue(fillFrac)
                             pip:SetAlpha(active and 1 or 0.35)
@@ -3140,7 +3143,6 @@ function UnitFramesLite_SetTestAuras(enable)
     end
 end
 
-local testResourceActive = false
 function UnitFramesLite_SetTestResource(enable)
     testResourceActive = enable
     UnitFramesLite_UpdateResourceVisibility()
