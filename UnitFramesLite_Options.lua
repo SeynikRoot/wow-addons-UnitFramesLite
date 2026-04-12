@@ -430,36 +430,10 @@ local function BuildGeneralContent(content, unit, getDB, panel)
         end
     end)
 
-    -- Left column continued: Blizzard Unit Frames --------------------------------
-    do
-        local blizzGroup = CreateGroupBox(content, "Blizzard Unit Frames", x, -152, 320, 140)
-        local function getGlobal() return UnitFramesLiteDB and UnitFramesLiteDB.global or {} end
-        local blizzDefs = {
-            {"Hide Blizzard Player Frame", "hideBlizzPlayer"},
-            {"Hide Blizzard Target Frame", "hideBlizzTarget"},
-            {"Hide Blizzard Focus Frame",  "hideBlizzFocus"},
-            {"Hide Blizzard Pet Frame",    "hideBlizzPet"},
-        }
-        for i, def in ipairs(blizzDefs) do
-            local label, key = def[1], def[2]
-            CreateCheckbox(blizzGroup, label, 8, -16 - (i-1)*24,
-                function() return getGlobal()[key] or false end,
-                function(v)
-                    getGlobal()[key] = v
-                    if UnitFramesLite_ApplyBlizzardFrames then
-                        UnitFramesLite_ApplyBlizzardFrames()
-                    end
-                end)
-        end
-        local note = blizzGroup:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        note:SetPoint("BOTTOMLEFT", blizzGroup, "BOTTOMLEFT", 8, 10)
-        note:SetText("|cffaaaaaa/reload to restore hidden Blizzard frames|r")
-    end
-
     -- Interface Buttons -------------------------------------------------------
     do
         local function getGlobal() return UnitFramesLiteDB and UnitFramesLiteDB.global or {} end
-        local btnGroup = CreateGroupBox(content, "Interface Buttons", x, -304, 320, 72)
+        local btnGroup = CreateGroupBox(content, "Interface Buttons", x, -152, 320, 72)
 
         CreateCheckbox(btnGroup, "Show minimap button", 8, -16,
             function() return getGlobal().showMinimapButton ~= false end,
@@ -2388,6 +2362,7 @@ function CreateOptionsPanel()
     local tabSync = {current = 1}
 
     local profilesPanel  -- forward-declared so SelectUnit and tab buttons can reference it
+    local blizzPanel     -- forward-declared so SelectUnit can reference it
 
     -- Build a panel for each unit
     local unitPanels = {}
@@ -2404,6 +2379,7 @@ function CreateOptionsPanel()
 
     local function SelectUnit(unit)
         profilesPanel:Hide()
+        if blizzPanel then blizzPanel:Hide() end
         for _, p in pairs(unitPanels) do p:Hide() end
         if unitPanels[unit] then
             unitPanels[unit]:Show()
@@ -2618,6 +2594,97 @@ function CreateOptionsPanel()
         RefreshSelDD(); RefreshProfilePanel()
     end)
 
+    -- ── "Blizzard Frames" top-level panel ────────────────────────────────────
+    blizzPanel = CreateFrame("Frame", nil, mainFrame)
+    blizzPanel:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, -68)
+    blizzPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
+    blizzPanel:Hide()
+
+    local function GetGlobalDB() return UnitFramesLiteDB and UnitFramesLiteDB.global or {} end
+
+    local bpx, bpy = 16, -16
+
+    -- ── Unit Frames group ─────────────────────────────────────────────────────
+    local ufBox = CreateGroupBox(blizzPanel, "Unit Frames", bpx, bpy, 300, 182)
+
+    local function MakeBlizzCB(parent, label, subLabel, bx, by, key)
+        local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+        cb:SetSize(24, 24)
+        cb:SetPoint("TOPLEFT", parent, "TOPLEFT", bx, by)
+        local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        fs:SetText(label)
+        if subLabel then
+            local sub = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+            sub:SetPoint("LEFT", fs, "RIGHT", 4, 0)
+            sub:SetTextColor(0.6, 0.6, 0.6, 1)
+            sub:SetText(subLabel)
+        end
+        local function Refresh() cb:SetChecked(GetGlobalDB()[key] or false) end
+        Refresh()
+        cb:SetScript("OnClick", function(self)
+            local g = GetGlobalDB()
+            if g then
+                g[key] = self:GetChecked()
+                if UnitFramesLite_ApplyBlizzardFrames then UnitFramesLite_ApplyBlizzardFrames() end
+            end
+        end)
+        cb.Refresh = Refresh
+        return cb
+    end
+
+    -- Parent rows (indent=8), child rows (indent=26, GameFontNormalSmall via subLabel trick)
+    -- We use MakeBlizzCB for children too but pass a slightly smaller x indent.
+    local function MakeBlizzChildCB(parent, label, bx, by, key)
+        local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+        cb:SetSize(20, 20)
+        cb:SetPoint("TOPLEFT", parent, "TOPLEFT", bx, by)
+        local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        fs:SetText(label)
+        local function Refresh() cb:SetChecked(GetGlobalDB()[key] or false) end
+        Refresh()
+        cb:SetScript("OnClick", function(self)
+            local g = GetGlobalDB()
+            if g then
+                g[key] = self:GetChecked()
+                if UnitFramesLite_ApplyBlizzardFrames then UnitFramesLite_ApplyBlizzardFrames() end
+            end
+        end)
+        cb.Refresh = Refresh
+        return cb
+    end
+
+    MakeBlizzCB(     ufBox, "Hide Player frame",  "(includes Alternate Mana Bar)", 8,  -18, "hideBlizzPlayer")
+    MakeBlizzCB(     ufBox, "Hide Target frame",  nil,                             8,  -44, "hideBlizzTarget")
+    MakeBlizzChildCB(ufBox, "Hide Target's Target",                               26,  -66, "hideBlizzTargetToT")
+    MakeBlizzCB(     ufBox, "Hide Focus frame",   nil,                             8,  -90, "hideBlizzFocus")
+    MakeBlizzChildCB(ufBox, "Hide Focus Target",                                  26, -112, "hideBlizzFocusToT")
+    MakeBlizzCB(     ufBox, "Hide Pet frame",     nil,                             8, -136, "hideBlizzPet")
+    MakeBlizzChildCB(ufBox, "Hide Pet Target",                                    26, -158, "hideBlizzPetTarget")
+
+    blizzPanel:SetScript("OnShow", function(self)
+        -- Refresh all checkboxes to reflect current DB state
+        for _, child in next, {self:GetChildren()} do
+            if child.GetChildren then
+                for _, sub in next, {child:GetChildren()} do
+                    if sub.Refresh then sub:Refresh() end
+                end
+            end
+        end
+    end)
+
+    -- ── "Blizzard Frames" button ──────────────────────────────────────────────
+    local blizzTabBtn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
+    blizzTabBtn:SetSize(108, 22)
+    blizzTabBtn:SetText("Blizzard Frames")
+
+    blizzTabBtn:SetScript("OnClick", function()
+        for _, p in pairs(unitPanels) do p:Hide() end
+        profilesPanel:Hide()
+        blizzPanel:Show()
+    end)
+
     -- ── "Profiles" top-level button beside the unit dropdown ────────────────
     local profilesTabBtn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
     profilesTabBtn:SetSize(76, 22)
@@ -2625,12 +2692,14 @@ function CreateOptionsPanel()
 
     profilesTabBtn:SetScript("OnClick", function()
         for _, p in pairs(unitPanels) do p:Hide() end
+        blizzPanel:Hide()
         profilesPanel:Show()
     end)
 
-    -- Ordered list of all tab buttons for reflow (Profiles last)
+    -- Ordered list of all tab buttons for reflow (Blizzard Frames, then Profiles last)
     local allTabBtns = {}
     for _, b in ipairs(sharedTabBtns) do allTabBtns[#allTabBtns + 1] = b end
+    allTabBtns[#allTabBtns + 1] = blizzTabBtn
     allTabBtns[#allTabBtns + 1] = profilesTabBtn
 
     -- TAB_START_X: x offset where the first tab button begins (after "Unit:" + dropdown)
@@ -2656,6 +2725,9 @@ function CreateOptionsPanel()
         profilesPanel:ClearAllPoints()
         profilesPanel:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, panelY)
         profilesPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
+        blizzPanel:ClearAllPoints()
+        blizzPanel:SetPoint("TOPLEFT",     mainFrame, "TOPLEFT",     0, panelY)
+        blizzPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
     end
 
     local function ReflowTabButtons()
@@ -2663,15 +2735,16 @@ function CreateOptionsPanel()
         if not frameW or frameW == 0 then return end
 
         -- Place buttons left-to-right, wrapping to a new row when they would overflow.
-        -- Profiles gets an extra 8px left gap to visually separate it from the tab buttons.
+        -- Blizzard Frames and Profiles get an extra 8px left gap to visually separate
+        -- them from the unit-tab buttons.
         local RIGHT_MARGIN = 16
         local rowYs = {ROW1_Y, ROW2_Y}
         local x   = TAB_START_X
         local row = 1
 
         for i, btn in ipairs(allTabBtns) do
-            local isProfiles = (btn == profilesTabBtn)
-            local extraGap   = isProfiles and 8 or 0
+            local isTopLevel = (btn == blizzTabBtn or btn == profilesTabBtn)
+            local extraGap   = isTopLevel and 8 or 0
             local btnW       = btn:GetWidth()
 
             -- Wrap to next row if this button (plus its gap) would exceed the right edge

@@ -1907,31 +1907,48 @@ function UnitFramesLite_UpdateResourceVisibility()
     end
 end
 
+-- Blizzard frame names per setting key.  Each group includes the primary frame
+-- and all linked/child frames that should hide along with it.
+-- Frames hidden via alpha=0 + mouse disabled.  These are frames Blizzard leaves
+-- shown persistently, so SetAlpha is stable.  Restoring is SetAlpha + EnableMouse.
 local BLIZZ_FRAMES = {
-    hideBlizzPlayer = {"PlayerFrame"},
-    hideBlizzTarget = {"TargetFrame"},
-    hideBlizzFocus  = {"FocusFrame"},
-    hideBlizzPet    = {"PetFrame"},
+    hideBlizzPlayer    = {"PlayerFrame", "PlayerFrameAlternateManaBar"},
+    hideBlizzTarget    = {"TargetFrame"},
+    hideBlizzTargetToT = {"TargetFrameToT"},
+    hideBlizzFocus     = {"FocusFrame"},
+    hideBlizzFocusToT  = {"FocusFrameToT"},
+    hideBlizzPet       = {"PetFrame"},
+    hideBlizzPetTarget = {"PetFrameToT"},
 }
+
+
+local blizzSavedAlpha    = {}  -- [frameName] = original alpha
 
 function UnitFramesLite_ApplyBlizzardFrames()
     local g = UnitFramesLiteDB and UnitFramesLiteDB.global
     if not g then return end
+
+    -- Persistent frames: alpha approach
     for key, frameNames in pairs(BLIZZ_FRAMES) do
         local hide = g[key]
-        if hide then
-            for _, name in ipairs(frameNames) do
-                local f = _G[name]
-                if f then
-                    f:UnregisterAllEvents()
-                    f:Hide()
+        for _, name in ipairs(frameNames) do
+            local f = _G[name]
+            if f then
+                if hide then
+                    if blizzSavedAlpha[name] == nil then
+                        blizzSavedAlpha[name] = f:GetAlpha()
+                    end
+                    f:SetAlpha(0)
+                    f:EnableMouse(false)
+                else
+                    f:SetAlpha(blizzSavedAlpha[name] or 1)
+                    blizzSavedAlpha[name] = nil
+                    f:EnableMouse(true)
                 end
             end
         end
-        -- When hide=false we do nothing: calling Show() on a Blizzard frame
-        -- that has been hidden mid-session triggers taint via UnitFrame update
-        -- callbacks. A /reload is required to restore hidden Blizzard frames.
     end
+
 end
 
 -- Minimap button + Bazooka plugin (LibDataBroker / LibDBIcon) ----------------
@@ -2031,7 +2048,40 @@ SlashCmdList["UNITFRAMESLITE"] = function(msg)
         end
         return
     end
-    print("UnitFramesLite commands:  /ufl options  /ufl reset  /ufl debug")
+    if cmd == "blizz" then
+        local candidates = {
+            "ComboPointPlayerFrame", "ComboFrame", "ComboPoints",
+            "PlayerPowerBarAlt", "PlayerPowerBar",
+            "ClassNameplateBar", "ClassNameplateManaBar",
+            "NamePlatePlayerFrame",
+        }
+        print("UFL blizz frame scan:")
+        for _, name in ipairs(candidates) do
+            local f = _G[name]
+            if f and type(f) == "table" and f.IsShown then
+                print("  |cff00ff00FRAME|r " .. name
+                    .. " shown=" .. tostring(f:IsShown())
+                    .. " alpha=" .. tostring(f:GetAlpha()))
+            elseif f then
+                print("  |cffffff00TABLE|r " .. name .. " (not a frame)")
+            else
+                print("  |cffff4444NIL|r   " .. name)
+            end
+        end
+        -- Scan PlayerFrame children for combo/resource related sub-frames
+        print("UFL PlayerFrame children scan:")
+        local pf = _G["PlayerFrame"]
+        if pf and pf.GetChildren then
+            for _, child in next, {pf:GetChildren()} do
+                local n = child:GetName()
+                if n then
+                    print("  " .. n .. " shown=" .. tostring(child:IsShown()) .. " alpha=" .. tostring(child:GetAlpha()))
+                end
+            end
+        end
+        return
+    end
+    print("UnitFramesLite commands:  /ufl options  /ufl reset  /ufl debug  /ufl blizz")
 end
 
 -- Status flags ---------------------------------------------------------------
@@ -3346,17 +3396,23 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         UnitFramesLiteDB = UnitFramesLiteDB or {}
         -- Global (non-unit) settings
         UnitFramesLiteDB.global = UnitFramesLiteDB.global or {
-            hideBlizzPlayer   = false,
-            hideBlizzTarget   = false,
-            hideBlizzFocus    = false,
-            hideBlizzPet      = false,
-            showMinimapButton = true,
-            showBazookaPlugin = true,
+            hideBlizzPlayer    = false,
+            hideBlizzTarget    = false,
+            hideBlizzTargetToT = false,
+            hideBlizzFocus     = false,
+            hideBlizzFocusToT  = false,
+            hideBlizzPet       = false,
+            hideBlizzPetTarget = false,
+            showMinimapButton  = true,
+            showBazookaPlugin  = true,
         }
         -- Migrate: ensure new global keys exist for older SavedVariables
         local g = UnitFramesLiteDB.global
-        if g.showMinimapButton == nil then g.showMinimapButton = true end
-        if g.showBazookaPlugin == nil then g.showBazookaPlugin = true end
+        if g.showMinimapButton  == nil then g.showMinimapButton  = true  end
+        if g.showBazookaPlugin  == nil then g.showBazookaPlugin  = true  end
+        if g.hideBlizzTargetToT == nil then g.hideBlizzTargetToT = false end
+        if g.hideBlizzFocusToT  == nil then g.hideBlizzFocusToT  = false end
+        if g.hideBlizzPetTarget == nil then g.hideBlizzPetTarget = false end
         -- Profiles table: { active="Default", profiles={ Default={player={...}, target={...}, ...} } }
         UnitFramesLiteDB.profiles = UnitFramesLiteDB.profiles or { active = "Default", list = {} }
         -- Migrate: showOrbPower (bool) → orbPowerMode (string)
