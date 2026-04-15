@@ -231,37 +231,381 @@ local function SetTextDefaults(d, nameX, nameY, nameAlign, hpX, hpY, hpAlign, lv
 end
 
 local defaults = {
-    player = SetTextDefaults(MakeUnitDefaults(-220, -160,
+    player = SetTextDefaults(MakeUnitDefaults(-175, -75,
         {0.2,0.8,0.2,1}, {0.2,0.8,0.2,1}, {0.1,0.4,0.1,1},
         {0.2,0.5,0.9,1}, {0.05,0.15,0.6,1}),
-        0, 15, "LEFT",    -- name: X=0, Y=15, LEFT
-        70, -15, "CENTER", -- hp:   X=70, Y=-15, CENTER
-        70, 15, "CENTER"), -- level: X=70, Y=15, CENTER
-    target = SetTextDefaults(MakeUnitDefaults( 220, -160,
+        0, -118, "Center",
+        0, -39, "Center",
+        0, 99, "Center"),
+    target = SetTextDefaults(MakeUnitDefaults( 175, -75,
         {0.8,0.2,0.2,1}, {0.8,0.2,0.2,1}, {0.4,0.1,0.1,1},
         {0.9,0.3,0.1,1}, {0.5,0.1,0.05,1}),
-        0, 15, "RIGHT",    -- name: X=0, Y=15, RIGHT (mirrored from player)
-        -70, -15, "CENTER", -- hp:   X=-70 (mirrored), Y=-15, CENTER
-        -70, 15, "CENTER"), -- level: X=-70 (mirrored), Y=15, CENTER
-    focus  = SetTextDefaults(MakeUnitDefaults(   0, -220,
+        0, -118, "Center",
+        0, -39, "Center",
+        0, 99, "Center"),
+    focus  = SetTextDefaults(MakeUnitDefaults(-384, -225,
         {0.6,0.1,0.9,1}, {0.6,0.1,0.9,1}, {0.3,0.05,0.5,1},
         {0.5,0.1,0.9,1}, {0.25,0.05,0.45,1}),
-        0, 15, "LEFT",    -- focus matches player
-        70, -15, "CENTER",
-        70, 15, "CENTER"),
-    pet    = MakeUnitDefaults(-220, -240,
+        0, -123, "CENTER",
+        0, -39, "CENTER",
+        0, 99, "CENTER"),
+    pet    = SetTextDefaults(MakeUnitDefaults(-338, -158,
         {0.1,0.7,0.4,1}, {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1},
         {0.1,0.7,0.4,1}, {0.05,0.35,0.2,1}),
+        0, -98, "CENTER",
+        0, -29, "CENTER",
+        0, 72, "CENTER"),
 }
 
--- Apply per-unit defaults
-defaults.player.eliteBorderReversed = true   -- player dragon faces left by default
-defaults.player.buffGrowX   = "LEFT"
-defaults.player.debuffGrowX = "LEFT"
-defaults.target.buffGrowX   = "RIGHT"
-defaults.target.buffXOffset  = 45
-defaults.target.debuffXOffset = 45
-defaults.target.debuffGrowX = "RIGHT"
+-- ── Per-unit default overrides ────────────────────────────────────────────────
+
+-- Player
+defaults.player.font                   = "DorisPP"
+defaults.player.nameFont               = "Enigmatic"
+defaults.player.nameAlign              = "Center"
+defaults.player.hpFormat               = "Short"
+defaults.player.hpContent              = "Max"
+defaults.player.hpBarHeight            = 41
+defaults.player.hpTextFontSize         = 10
+defaults.player.hpTextY                = -39
+defaults.player.hpTextAlign            = "Center"
+defaults.player.showHPPct              = true
+defaults.player.hpPctFontSize          = 32
+defaults.player.hpPctY                 = 0
+defaults.player.hpPctShowSymbol        = false
+defaults.player.hpPctFont              = "DorisPP"
+defaults.player.levelTextFontSize      = 12
+defaults.player.levelTextY             = 99
+defaults.player.levelColorByReaction   = true
+defaults.player.nameTextFontSize       = 11
+defaults.player.statusbarTexture       = "BantoBar"
+defaults.player.sphereMode             = true
+defaults.player.sphereSize             = 100
+defaults.player.portraitMode           = "2D"
+defaults.player.portraitSide           = "Left"
+defaults.player.orbPowerMode           = "Bar"
+defaults.player.orbPowerBarWidth       = 260
+defaults.player.orbPowerBarHeight      = 5
+defaults.player.orbPowerBarY           = -120
+defaults.player.orbPowerBarCentreToScreen = true
+defaults.player.orbPowerBarUseTypeColor = true
+defaults.player.orbPowerBarColor       = {0.294117659330368, 0.658823549747467, 0.6117647290229797, 1}
+defaults.player.orbPowerBarBgColor     = {0, 0, 0, 0.4166660606861115}
+defaults.player.orbPowerShowOutOfCombat = false
+defaults.player.orbPowerRingCCW        = true
+defaults.player.orbPowerRingThickness  = 4
+defaults.player.orbPowerRingColor      = {0, 0.4000000357627869, 0.7529412508010864, 0.7786459922790527}
+defaults.player.orbPowerRingBgColor    = {0.415686309337616, 0.415686309337616, 0.415686309337616, 0.5963543057441711}
+defaults.player.showOrbBorder          = true
+defaults.player.orbBorderThickness     = 4
+defaults.player.showOrbOuterBorder     = true
+defaults.player.orbOuterBorderThickness = 3
+defaults.player.orbBgColor             = {0.0470588281750679, 0.0784313753247261, 0.0784313753247261, 0.3177079260349274}
+defaults.player.orbGradientStart       = {1, 0.2901960909366608, 0, 1}
+defaults.player.orbGradientEnd         = {0, 0, 0, 0.8984372019767761}
+defaults.player.orbSolidColor          = {0, 0.6392157077789307, 1, 1}
+defaults.player.alphaOutCombat         = 0.5
+defaults.player.alphaCombat            = 1
+defaults.player.fadeNoTarget           = true
+defaults.player.fadeNoTargetAlpha      = 0
+defaults.player.fadeHostileTarget      = true
+defaults.player.powerBarAttach         = false
+defaults.player.showPowerBar           = true
+defaults.player.showOrbPower           = true
+defaults.player.eliteBorderReversed    = true
+defaults.player.eliteBorderAutoFit     = true
+defaults.player.eliteBorderScale       = 1.25
+defaults.player.eliteBorderX           = -3
+defaults.player.eliteBorderTexture     = "RareElite"
+defaults.player.buffGrowX              = "LEFT"
+defaults.player.buffGrowY              = "DOWN"
+defaults.player.buffXOffset            = 63
+defaults.player.buffYOffset            = -30
+defaults.player.buffIconSize           = 35
+defaults.player.debuffGrowX            = "LEFT"
+defaults.player.debuffGrowY            = "UP"
+defaults.player.debuffXOffset          = 63
+defaults.player.debuffYOffset          = 20
+defaults.player.debuffIconSize         = 35
+defaults.player.debuffHideOverDuration = 30
+defaults.player.buffHideOverDuration   = 30
+defaults.player.buffTimerFontSize      = 17
+defaults.player.buffShowTimer          = false
+defaults.player.debuffShowTimer        = false
+defaults.player.resourcePipShape       = "Circle"
+defaults.player.resourcePipWidth       = 17
+defaults.player.resourcePipHeight      = 17
+defaults.player.resourcePipGap         = 10
+defaults.player.resourceY              = -100
+defaults.player.resourceShowOutCombat  = false
+defaults.player.resourceShowWithTarget = true
+defaults.player.resourceUseCustomColor = true
+defaults.player.resourceColorMode      = "Horizontal Gradient"
+defaults.player.resourceUseSolidColor  = false
+defaults.player.resourceGradStart      = {0.6823529601097107, 0, 0.1803921610116959, 1}
+defaults.player.resourceGradEnd        = {0.9529412388801575, 1, 0, 1}
+defaults.player.resourcePipBorderEnabled   = true
+defaults.player.resourcePipBorderThickness = 1
+defaults.player.resourcePipBorderColor = {0.04313725605607033, 0.04313725605607033, 0.04313725605607033, 0.7708333134651184}
+defaults.player.resourcePipBgColor     = {0.1607843190431595, 0.1607843190431595, 0.1607843190431595, 0.3541665375232697}
+defaults.player.hpBarBgColor           = {0, 0, 0, 0}
+defaults.player.hpDisplayMode         = "percent"
+
+-- Target
+defaults.target.font                   = "DorisPP"
+defaults.target.nameFont               = "Enigmatic"
+defaults.target.nameAlign              = "Center"
+defaults.target.hpFormat               = "Short"
+defaults.target.hpContent              = "Max"
+defaults.target.hpBarHeight            = 41
+defaults.target.hpTextFontSize         = 10
+defaults.target.hpTextY                = -39
+defaults.target.hpTextAlign            = "Center"
+defaults.target.showHPPct              = true
+defaults.target.hpPctFontSize          = 32
+defaults.target.hpPctY                 = 0
+defaults.target.hpPctShowSymbol        = false
+defaults.target.hpPctFont              = "DorisPP"
+defaults.target.levelTextFontSize      = 12
+defaults.target.levelTextY             = 99
+defaults.target.levelColorByReaction   = true
+defaults.target.nameTextFontSize       = 11
+defaults.target.nameWrap               = true
+defaults.target.nameWrapWidth          = 120
+defaults.target.statusbarTexture       = "BantoBar"
+defaults.target.sphereMode             = true
+defaults.target.sphereSize             = 100
+defaults.target.portraitMode           = "2D"
+defaults.target.portraitSide           = "Right"
+defaults.target.orbPowerMode           = "Bar"
+defaults.target.orbPowerBarWidth       = 260
+defaults.target.orbPowerBarHeight      = 5
+defaults.target.orbPowerBarY           = -120
+defaults.target.orbPowerBarCentreToScreen = true
+defaults.target.orbPowerBarUseTypeColor = true
+defaults.target.orbPowerBarColor       = {0.294117659330368, 0.658823549747467, 0.6117647290229797, 1}
+defaults.target.orbPowerBarBgColor     = {0, 0, 0, 0.4166660606861115}
+defaults.target.orbPowerShowOutOfCombat = false
+defaults.target.orbPowerRingCCW        = true
+defaults.target.orbPowerRingThickness  = 4
+defaults.target.orbPowerRingColor      = {0, 0.4000000357627869, 0.7529412508010864, 0.7786459922790527}
+defaults.target.orbPowerRingBgColor    = {0.415686309337616, 0.415686309337616, 0.415686309337616, 0.5963543057441711}
+defaults.target.showOrbBorder          = true
+defaults.target.orbBorderThickness     = 4
+defaults.target.showOrbOuterBorder     = true
+defaults.target.orbOuterBorderThickness = 3
+defaults.target.orbBgColor             = {0.0470588281750679, 0.0784313753247261, 0.0784313753247261, 0.3177079260349274}
+defaults.target.orbGradientStart       = {1, 0.2901960909366608, 0, 1}
+defaults.target.orbGradientEnd         = {0, 0, 0, 0.8984372019767761}
+defaults.target.orbSolidColor          = {0, 0.6392157077789307, 1, 1}
+defaults.target.alphaOutCombat         = 0.5
+defaults.target.alphaCombat            = 1
+defaults.target.fadeNoTarget           = false
+defaults.target.fadeNoTargetAlpha      = 0
+defaults.target.fadeHostileTarget      = true
+defaults.target.powerBarAttach         = false
+defaults.target.showPowerBar           = true
+defaults.target.showOrbPower           = true
+defaults.target.nameColorByReaction    = true
+defaults.target.showEliteBorder        = true
+defaults.target.eliteBorderTexture     = "RareElite"
+defaults.target.eliteBorderAutoFit     = true
+defaults.target.eliteBorderScale       = 1.25
+defaults.target.eliteBorderX           = 7
+defaults.target.eliteBorderY           = 1
+defaults.target.buffGrowX              = "RIGHT"
+defaults.target.buffGrowY              = "DOWN"
+defaults.target.buffXOffset            = 63
+defaults.target.buffYOffset            = -30
+defaults.target.buffIconSize           = 35
+defaults.target.debuffGrowX            = "RIGHT"
+defaults.target.debuffGrowY            = "UP"
+defaults.target.debuffXOffset          = 63
+defaults.target.debuffYOffset          = 20
+defaults.target.debuffIconSize         = 35
+defaults.target.debuffHideOverDuration = 30
+defaults.target.buffHideOverDuration   = 30
+defaults.target.buffTimerFontSize      = 17
+defaults.target.buffShowTimer          = false
+defaults.target.debuffShowTimer        = false
+defaults.target.resourcePipShape       = "Circle"
+defaults.target.resourcePipWidth       = 19
+defaults.target.resourcePipHeight      = 19
+defaults.target.resourcePipGap         = 5
+defaults.target.resourceY              = -100
+defaults.target.resourceShowOutCombat  = true
+defaults.target.resourceShowWithTarget = false
+defaults.target.resourceUseCustomColor = false
+defaults.target.resourceGradPerPip     = true
+defaults.target.resourcePipBorderEnabled   = true
+defaults.target.resourcePipBorderThickness = 2
+defaults.target.resourcePipBorderColor = {0, 0, 0, 1}
+defaults.target.resourcePipBgColor     = {0.1, 0.1, 0.1, 0.8}
+defaults.target.hpBarBgColor           = {0, 0, 0, 0}
+defaults.target.hpDisplayMode          = "percent"
+defaults.target.levelColor             = {1, 0.9921569228172302, 0.9803922176361084, 1}
+
+-- Focus
+defaults.focus.font                    = "DorisPP"
+defaults.focus.nameFont                = "DorisPP"
+defaults.focus.nameAlign               = "CENTER"
+defaults.focus.hpFormat                = "Short"
+defaults.focus.hpContent               = "Max"
+defaults.focus.hpBarHeight             = 41
+defaults.focus.hpTextFontSize          = 10
+defaults.focus.hpTextY                 = -39
+defaults.focus.hpTextAlign             = "CENTER"
+defaults.focus.showHPPct               = true
+defaults.focus.hpPctFontSize           = 32
+defaults.focus.hpPctY                  = 0
+defaults.focus.hpPctShowSymbol         = false
+defaults.focus.hpPctFont               = "DorisPP"
+defaults.focus.levelTextFontSize       = 10
+defaults.focus.levelTextY              = 99
+defaults.focus.nameTextFontSize        = 10
+defaults.focus.nameTextY               = -123
+defaults.focus.statusbarTexture        = "BantoBar"
+defaults.focus.sphereMode              = true
+defaults.focus.sphereSize              = 100
+defaults.focus.portraitMode            = "2D"
+defaults.focus.portraitSide            = "Left"
+defaults.focus.orbPowerMode            = "Bar"
+defaults.focus.orbPowerBarWidth        = 248
+defaults.focus.orbPowerBarHeight       = 4
+defaults.focus.orbPowerBarX            = 220
+defaults.focus.orbPowerBarY            = 39
+defaults.focus.orbPowerBarUseTypeColor = true
+defaults.focus.orbPowerBarColor        = {0.294117659330368, 0.658823549747467, 0.6117647290229797, 1}
+defaults.focus.orbPowerBarBgColor      = {0, 0, 0, 0.4166660606861115}
+defaults.focus.orbPowerShowOutOfCombat = false
+defaults.focus.orbPowerRingCCW         = true
+defaults.focus.orbPowerRingThickness   = 4
+defaults.focus.orbPowerRingColor       = {0, 0.4000000357627869, 0.7529412508010864, 0.7786459922790527}
+defaults.focus.orbPowerRingBgColor     = {0.415686309337616, 0.415686309337616, 0.415686309337616, 0.5963543057441711}
+defaults.focus.showOrbBorder           = false
+defaults.focus.orbBorderColor          = {0, 0, 0, 0.4557291865348816}
+defaults.focus.showOrbOuterBorder      = true
+defaults.focus.orbOuterBorderThickness = 3
+defaults.focus.orbBgColor              = {0.0470588281750679, 0.0784313753247261, 0.0784313753247261, 0.3177079260349274}
+defaults.focus.orbGradientStart        = {0, 0, 0, 1}
+defaults.focus.orbGradientEnd          = {0.7686275243759155, 0.4078431725502014, 1, 0.8984372019767761}
+defaults.focus.orbSolidColor           = {1, 0.5490196347236633, 0.7529412508010864, 1}
+defaults.focus.alphaOutCombat          = 0.5
+defaults.focus.alphaCombat             = 1
+defaults.focus.fadeNoTarget            = true
+defaults.focus.fadeNoTargetAlpha       = 0
+defaults.focus.fadeHostileTarget       = false
+defaults.focus.powerBarAttach          = true
+defaults.focus.showPowerBar            = true
+defaults.focus.showOrbPower            = true
+defaults.focus.buffGrowX               = "LEFT"
+defaults.focus.buffGrowY               = "DOWN"
+defaults.focus.buffXOffset             = 45
+defaults.focus.buffYOffset             = -18
+defaults.focus.debuffGrowX             = "LEFT"
+defaults.focus.debuffGrowY             = "UP"
+defaults.focus.debuffHideOverDuration  = 60
+defaults.focus.buffHideOverDuration    = 60
+defaults.focus.resourcePipShape        = "Circle"
+defaults.focus.resourcePipWidth        = 19
+defaults.focus.resourcePipHeight       = 19
+defaults.focus.resourcePipGap          = 5
+defaults.focus.resourceY               = -100
+defaults.focus.resourceShowOutCombat   = true
+defaults.focus.resourceShowWithTarget  = false
+defaults.focus.resourceUseCustomColor  = false
+defaults.focus.resourceColorMode       = "Horizontal Gradient"
+defaults.focus.resourceGradPerPip      = true
+defaults.focus.resourceGradStart       = {1, 0.9411765336990356, 0.8509804606437683, 1}
+defaults.focus.resourceGradEnd         = {1, 0.003921568859368563, 0.2000000178813934, 1}
+defaults.focus.resourcePipBorderEnabled   = true
+defaults.focus.resourcePipBorderThickness = 2
+defaults.focus.resourcePipBorderColor  = {0, 0, 0, 1}
+defaults.focus.resourcePipBgColor      = {0.1, 0.1, 0.1, 0.8}
+defaults.focus.hpBarBgColor            = {0, 0, 0, 0}
+defaults.focus.hpDisplayMode           = "percent"
+defaults.focus.showResources           = false
+
+-- Pet
+defaults.pet.font                      = "DorisPP"
+defaults.pet.nameFont                  = "DorisPP"
+defaults.pet.nameAlign                 = "CENTER"
+defaults.pet.hpFormat                  = "Short"
+defaults.pet.hpContent                 = "Max"
+defaults.pet.hpBarHeight               = 41
+defaults.pet.hpTextFontSize            = 10
+defaults.pet.hpTextY                   = -29
+defaults.pet.hpTextAlign               = "CENTER"
+defaults.pet.showHPPct                 = true
+defaults.pet.hpPctFontSize             = 32
+defaults.pet.hpPctY                    = 0
+defaults.pet.hpPctShowSymbol           = false
+defaults.pet.hpPctFont                 = "DorisPP"
+defaults.pet.levelTextFontSize         = 10
+defaults.pet.levelTextY                = 72
+defaults.pet.nameTextFontSize          = 10
+defaults.pet.statusbarTexture          = "BantoBar"
+defaults.pet.sphereMode                = true
+defaults.pet.sphereSize                = 74
+defaults.pet.portraitMode              = "2D"
+defaults.pet.portraitSide              = "Left"
+defaults.pet.orbPowerMode              = "Bar"
+defaults.pet.orbPowerBarWidth          = 248
+defaults.pet.orbPowerBarHeight         = 4
+defaults.pet.orbPowerBarX              = 220
+defaults.pet.orbPowerBarY              = 39
+defaults.pet.orbPowerBarUseTypeColor   = true
+defaults.pet.orbPowerBarColor          = {0.294117659330368, 0.658823549747467, 0.6117647290229797, 1}
+defaults.pet.orbPowerBarBgColor        = {0, 0, 0, 0.4166660606861115}
+defaults.pet.orbPowerShowOutOfCombat   = false
+defaults.pet.orbPowerRingCCW           = true
+defaults.pet.orbPowerRingThickness     = 4
+defaults.pet.orbPowerRingColor         = {0, 0.4000000357627869, 0.7529412508010864, 0.7786459922790527}
+defaults.pet.orbPowerRingBgColor       = {0.415686309337616, 0.415686309337616, 0.415686309337616, 0.5963543057441711}
+defaults.pet.showOrbBorder             = false
+defaults.pet.orbBorderColor            = {0, 0, 0, 0.4557291865348816}
+defaults.pet.showOrbOuterBorder        = true
+defaults.pet.orbOuterBorderThickness   = 3
+defaults.pet.orbBgColor                = {0.0470588281750679, 0.0784313753247261, 0.0784313753247261, 0.3177079260349274}
+defaults.pet.orbGradientStart          = {0, 0, 0, 1}
+defaults.pet.orbGradientEnd            = {0.7686275243759155, 0.4078431725502014, 1, 0.8984372019767761}
+defaults.pet.orbSolidColor             = {1, 0.5490196347236633, 0.7529412508010864, 1}
+defaults.pet.alphaOutCombat            = 0.5
+defaults.pet.alphaCombat               = 1
+defaults.pet.fadeNoTarget              = true
+defaults.pet.fadeNoTargetAlpha         = 0
+defaults.pet.fadeHostileTarget         = false
+defaults.pet.powerBarAttach            = true
+defaults.pet.showPowerBar              = true
+defaults.pet.showOrbPower              = true
+defaults.pet.buffGrowX                 = "LEFT"
+defaults.pet.buffGrowY                 = "DOWN"
+defaults.pet.buffXOffset               = 45
+defaults.pet.buffYOffset               = -18
+defaults.pet.buffShowBuffs             = false
+defaults.pet.debuffGrowX               = "LEFT"
+defaults.pet.debuffGrowY               = "UP"
+defaults.pet.debuffHideOverDuration    = 60
+defaults.pet.buffHideOverDuration      = 60
+defaults.pet.resourcePipShape          = "Circle"
+defaults.pet.resourcePipWidth          = 19
+defaults.pet.resourcePipHeight         = 19
+defaults.pet.resourcePipGap            = 5
+defaults.pet.resourceY                 = -100
+defaults.pet.resourceShowOutCombat     = true
+defaults.pet.resourceShowWithTarget    = false
+defaults.pet.resourceUseCustomColor    = false
+defaults.pet.resourceColorMode         = "Horizontal Gradient"
+defaults.pet.resourceGradPerPip        = true
+defaults.pet.resourceGradStart         = {1, 0.9411765336990356, 0.8509804606437683, 1}
+defaults.pet.resourceGradEnd           = {1, 0.003921568859368563, 0.2000000178813934, 1}
+defaults.pet.resourcePipBorderEnabled  = true
+defaults.pet.resourcePipBorderThickness = 2
+defaults.pet.resourcePipBorderColor    = {0, 0, 0, 1}
+defaults.pet.resourcePipBgColor        = {0.1, 0.1, 0.1, 0.8}
+defaults.pet.hpBarBgColor              = {0, 0, 0, 0}
+defaults.pet.hpDisplayMode             = "percent"
+defaults.pet.showResources             = false
 
 local frames = {}
 local auraFrames = {}  -- forward-declared; populated by GetAuraData below
